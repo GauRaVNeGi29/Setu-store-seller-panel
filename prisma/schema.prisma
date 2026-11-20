@@ -1,0 +1,115 @@
+// Setu Vendor Portal
+//
+// Stage 1: a copy of every order line, filed under its vendor, kept in step
+// with Shopify by webhooks. Vendors do not log in yet; the team checks the
+// data in the embedded admin screen.
+//
+//   Shopify order ──< VendorOrderLine (one row per line item, carries vendorName)
+//
+// Shopify stays the source of truth. Every row here can be rebuilt by
+// re-reading the order from Shopify (see app/lib/orders/sync.server.ts).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Shopify session storage (from the app template)
+// ---------------------------------------------------------------------------
+model Session {
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+}
+
+// ---------------------------------------------------------------------------
+// Order lines by vendor
+// ---------------------------------------------------------------------------
+
+enum LineStatus {
+  unfulfilled // nothing shipped yet
+  partial // some units shipped
+  fulfilled // every remaining unit shipped
+  refunded // every unit refunded or removed
+  cancelled // the order was cancelled
+}
+
+/// One Shopify order line. Vendor = the product's Vendor at the time of the order
+/// (Shopify copies it onto the line item, so later product edits don't move it).
+model VendorOrderLine {
+  shop       String
+  lineItemId BigInt // numeric part of gid://shopify/LineItem/…
+  orderId    BigInt
+  orderName  String // "#1003"
+
+  vendorName String // "" when the product had no vendor
+  productId  BigInt?
+  variantId  BigInt?
+  title      String
+  variantTitle String?
+  sku        String?
+
+  quantity          Int // as ordered
+  currentQuantity   Int // after refunds, removals and cancellation
+  refundedQuantity  Int @default(0)
+  fulfilledQuantity Int @default(0)
+
+  currency         String  @default("INR")
+  unitPrice        Decimal @db.Decimal(14, 2) // before discounts
+  lineTotal        Decimal @db.Decimal(14, 2) // after line + order discounts, before refunds
+  refundedAmount   Decimal @default(0) @db.Decimal(14, 2)
+  netAmount        Decimal @db.Decimal(14, 2) // lineTotal − refundedAmount
+
+  status            LineStatus
+  orderCancelled    Boolean   @default(false)
+  financialStatus   String // Shopify's display financial status of the whole order
+  fulfillmentStatus String // Shopify's display fulfilment status of the whole order
+  orderCreatedAt    DateTime
+  orderUpdatedAt    DateTime // Shopify's updatedAt at the time we read it
+  syncedAt          DateTime  @default(now()) @updatedAt
+
+  @@id([shop, lineItemId])
+  @@index([shop, vendorName, orderCreatedAt])
+  @@index([shop, orderId])
+}
+
+/// One row per shop: when the order history was last fully read.
+model SyncState {
+  shop              String    @id
+  lastFullSyncAt    DateTime?
+  lastFullSyncCount Int?
+  lastError         String?
+  updatedAt         DateTime  @updatedAt
+}
+
+/// Every write the app makes to its own data, for tracing problems.
+model AuditLog {
+  id        BigInt   @id @default(autoincrement())
+  shop      String
+  at        DateTime @default(now())
+  actor     String // "webhook:orders/updated", "admin:email", "backfill"
+  action    String // "order.synced", "order.removed", "sync.full"
+  target    String? // "order:19043720364141"
+  detail    Json?
+
+  @@index([shop, at])
+}

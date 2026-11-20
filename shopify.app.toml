@@ -1,0 +1,40 @@
+# DEVELOPMENT app – installed only on the dev store seller-panel-dev.myshopify.com.
+# Never link or deploy this file to the live store (q0zr1f-0m.myshopify.com).
+# Run `npm run config:link` once to fill in client_id from the Dev Dashboard.
+
+client_id = "REPLACE_WITH_DEV_APP_CLIENT_ID"
+name = "Setu Vendor Portal – DEV"
+embedded = true
+application_url = "https://shopify.dev/apps/default-app-home"
+
+[access_scopes]
+# Read-only. Stage 1 needs no write access and no theme access.
+scopes = "read_orders,read_products,read_metaobjects,read_merchant_managed_fulfillment_orders"
+
+[webhooks]
+api_version = "2026-10"
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/uninstalled"
+  topics = [ "app/uninstalled" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/scopes_update"
+  topics = [ "app/scopes_update" ]
+
+  # Every order change re-reads the order from Shopify (see app/lib/orders/sync.server.ts).
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/orders"
+  topics = [ "orders/create", "orders/updated", "orders/cancelled", "orders/fulfilled", "orders/partially_fulfilled", "refunds/create" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/orders"
+  topics = [ "orders/delete" ]
+
+[auth]
+redirect_urls = [ "https://shopify.dev/apps/default-app-home/api/auth" ]
+
+[build]
+include_config_on_deploy = true
+automatically_update_urls_on_dev = true
+dev_store_url = "seller-panel-dev.myshopify.com"

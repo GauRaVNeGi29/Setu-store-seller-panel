@@ -1,0 +1,441 @@
+{
+ "_source": "Read from dev store seller-panel-dev.myshopify.com on 2026-11-20 (test orders T1-T5).",
+ "orders": [
+  {
+   "id": "gid://shopify/Order/19043720134765",
+   "name": "#1001",
+   "createdAt": "2026-11-20T08:43:58Z",
+   "updatedAt": "2026-11-20T08:43:59Z",
+   "cancelledAt": null,
+   "currencyCode": "INR",
+   "displayFinancialStatus": "PAID",
+   "displayFulfillmentStatus": "UNFULFILLED",
+   "lineItems": {
+    "nodes": [
+     {
+      "id": "gid://shopify/LineItem/51011378905197",
+      "title": "Golden Sculpted Statement Ring",
+      "variantTitle": null,
+      "sku": "urban_store896",
+      "vendor": "Urban Store",
+      "quantity": 2,
+      "currentQuantity": 2,
+      "unfulfilledQuantity": 2,
+      "product": {
+       "id": "gid://shopify/Product/15502294974573"
+      },
+      "variant": {
+       "id": "gid://shopify/ProductVariant/68193227341933"
+      },
+      "originalUnitPriceSet": {
+       "shopMoney": {
+        "amount": "60.0"
+       }
+      },
+      "discountedTotalSet": {
+       "shopMoney": {
+        "amount": "120.0"
+       }
+      }
+     }
+    ]
+   },
+   "refunds": []
+  },
+  {
+   "id": "gid://shopify/Order/19043720167533",
+   "name": "#1002",
+   "createdAt": "2026-11-20T08:43:59Z",
+   "updatedAt": "2026-11-20T08:54:13Z",
+   "cancelledAt": null,
+   "currencyCode": "INR",
+   "displayFinancialStatus": "PARTIALLY_REFUNDED",
+   "displayFulfillmentStatus": "UNFULFILLED",
+   "lineItems": {
+    "nodes": [
+     {
+      "id": "gid://shopify/LineItem/51011378970733",
+      "title": "Elegant Spiral Golden Armlet",
+      "variantTitle": null,
+      "sku": "urban_store897",
+      "vendor": "Urban Store",
+      "quantity": 8,
+      "currentQuantity": 8,
+      "unfulfilledQuantity": 8,
+      "product": {
+       "id": "gid://shopify/Product/15502295040109"
+      },
+      "variant": {
+       "id": "gid://shopify/ProductVariant/68193227440237"
+      },
+      "originalUnitPriceSet": {
+       "shopMoney": {
+        "amount": "100.0"
+       }
+      },
+      "discountedTotalSet": {
+       "shopMoney": {
+        "amount": "800.0"
+       }
+      }
+     },
+     {
+      "id": "gid://shopify/LineItem/51011379003501",
+      "title": "Vintage Oval Pearl Statement Ring",
+      "variantTitle": null,
+      "sku": "urban_store898",
+      "vendor": "Urban Store",
+      "quantity": 4,
+      "currentQuantity": 3,
+      "unfulfilledQuantity": 3,
+      "product": {
+       "id": "gid://shopify/Product/15502295138413"
+      },
+      "variant": {
+       "id": "gid://shopify/ProductVariant/68193227505773"
+      },
+      "originalUnitPriceSet": {
+       "shopMoney": {
+        "amount": "75.0"
+       }
+      },
+      "discountedTotalSet": {
+       "shopMoney": {
+        "amount": "300.0"
+       }
+      }
+     }
+    ]
+   },
+   "refunds": [
+    {
+     "id": "gid://shopify/Refund/1117220438125",
+     "refundLineItems": {
+      "nodes": [
+       {
+        "quantity": 1,
+        "lineItem": {
+         "id": "gid://shopify/LineItem/51011379003501"
+        },
+        "subtotalSet": {
+         "shopMoney": {
+          "amount": "75.0"
+         }
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "gid://shopify/Order/19043720298605",
+   "name": "#1003",
+   "createdAt": "2026-11-20T08:44:00Z",
+   "updatedAt": "2026-11-20T08:44:01Z",
+   "cancelledAt": null,
+   "currencyCode": "INR",
+   "displayFinancialStatus": "PAID",
+   "displayFulfillmentStatus": "UNFULFILLED",
+   "lineItems": {
+    "nodes": [
+     {
+      "id": "gid://shopify/LineItem/51011379101805",
+      "title": "Twisted Golden Statement Ring",
+      "variantTitle": null,
+      "sku": "urban_store899",
+      "vendor": "Urban Store",
+      "quantity": 10,
+      "currentQuantity": 10,
+      "unfulfilledQuantity": 10,
+      "product": {
+       "id": "gid://shopify/Product/15502295203949"
+      },
+      "variant": {
+       "id": "gid://shopify/ProductVariant/68193227571309"
+      },
+      "originalUnitPriceSet": {
+       "shopMoney": {
+        "amount": "60.0"
+       }
+      },
+      "discountedTotalSet": {
+       "shopMoney": {
+        "amount": "600.0"
+       }
+      }
+     },
+     {
+      "id": "gid://shopify/LineItem/51011379134573",
+      "title": "Bold Chain Link Statement Ring",
+      "variantTitle": null,
+      "sku": "urban_store900",
+      "vendor": "Urban Store",
+      "quantity": 10,
+      "currentQuantity": 10,
+      "unfulfilledQuantity": 10,
+      "product": {
+       "id": "gid://shopify/Product/15502295269485"
+      },
+      "variant": {
+       "id": "gid://shopify/ProductVariant/68193227636845"
+      },
+      "originalUnitPriceSet": {
+       "shopMoney": {
+        "amount": "65.0"
+       }
+      },
+      "discountedTotalSet": {
+       "shopMoney": {
+        "amount": "650.0"
+       }
+      }
+     },
+     {
+      "id": "gid://shopify/LineItem/51011379167341",
+      "title": "Santa Claus Candle",
+      "variantTitle": null,
+      "sku": "ASH-016",
+      "vendor": "Ashnur",
+      "quantity": 5,
+      "currentQuantity": 5,
+      "unfulfilledQuantity": 5,
+      "product": {
+       "id": "gid://shopify/Product/15502295662701"
+      },
+      "variant": {
+       "id": "gid://shopify/ProductVariant/68193228030061"
+      },
+      "originalUnitPriceSet": {
+       "shopMoney": {
+        "amount": "110.0"
+       }
+      },
+      "discountedTotalSet": {
+       "shopMoney": {
+        "amount": "550.0"
+       }
+      }
+     },
+     {
+      "id": "gid://shopify/LineItem/51011379200109",
+      "title": "Ribbed Pillar Candle",
+      "variantTitle": null,
+      "sku": "ASH-001",
+      "vendor": "Ashnur",
+      "quantity": 2,
+      "currentQuantity": 2,
+      "unfulfilledQuantity": 2,
+      "product": {
+       "id": "gid://shopify/Product/15502296219757"
+      },
+      "variant": {
+       "id": "gid://shopify/ProductVariant/68193228914797"
+      },
+      "originalUnitPriceSet": {
+       "shopMoney": {
+        "amount": "400.0"
+       }
+      },
+      "discountedTotalSet": {
+       "shopMoney": {
+        "amount": "800.0"
+       }
+      }
+     }
+    ]
+   },
+   "refunds": []
+  },
+  {
+   "id": "gid://shopify/Order/19043720364141",
+   "name": "#1004",
+   "createdAt": "2026-11-20T08:44:01Z",
+   "updatedAt": "2026-11-20T08:44:34Z",
+   "cancelledAt": null,
+   "currencyCode": "INR",
+   "displayFinancialStatus": "PAID",
+   "displayFulfillmentStatus": "PARTIALLY_FULFILLED",
+   "lineItems": {
+    "nodes": [
+     {
+      "id": "gid://shopify/LineItem/51011379298413",
+      "title": "Molten Heart Statement Ring",
+      "variantTitle": null,
+      "sku": "urban_store901",
+      "vendor": "Urban Store",
+      "quantity": 12,
+      "currentQuantity": 12,
+      "unfulfilledQuantity": 0,
+      "product": {
+       "id": "gid://shopify/Product/15502295335021"
+      },
+      "variant": {
+       "id": "gid://shopify/ProductVariant/68193227702381"
+      },
+      "originalUnitPriceSet": {
+       "shopMoney": {
+        "amount": "55.0"
+       }
+      },
+      "discountedTotalSet": {
+       "shopMoney": {
+        "amount": "660.0"
+       }
+      }
+     },
+     {
+      "id": "gid://shopify/LineItem/51011379331181",
+      "title": "Aurora Swirl Pearl Statement Ring",
+      "variantTitle": null,
+      "sku": "urban_store902",
+      "vendor": "Urban Store",
+      "quantity": 6,
+      "currentQuantity": 6,
+      "unfulfilledQuantity": 0,
+      "product": {
+       "id": "gid://shopify/Product/15502295400557"
+      },
+      "variant": {
+       "id": "gid://shopify/ProductVariant/68193227767917"
+      },
+      "originalUnitPriceSet": {
+       "shopMoney": {
+        "amount": "70.0"
+       }
+      },
+      "discountedTotalSet": {
+       "shopMoney": {
+        "amount": "420.0"
+       }
+      }
+     },
+     {
+      "id": "gid://shopify/LineItem/51011379363949",
+      "title": "Christmas Tree Cutout Wooden Candle",
+      "variantTitle": "6\"x4\"",
+      "sku": "ASH-001",
+      "vendor": "Ashnur",
+      "quantity": 3,
+      "currentQuantity": 3,
+      "unfulfilledQuantity": 3,
+      "product": {
+       "id": "gid://shopify/Product/15502295859309"
+      },
+      "variant": {
+       "id": "gid://shopify/ProductVariant/68193228226669"
+      },
+      "originalUnitPriceSet": {
+       "shopMoney": {
+        "amount": "175.0"
+       }
+      },
+      "discountedTotalSet": {
+       "shopMoney": {
+        "amount": "525.0"
+       }
+      }
+     }
+    ]
+   },
+   "refunds": []
+  },
+  {
+   "id": "gid://shopify/Order/19043720462445",
+   "name": "#1005",
+   "createdAt": "2026-11-20T08:44:02Z",
+   "updatedAt": "2026-11-20T08:53:50Z",
+   "cancelledAt": "2026-11-20T08:53:50Z",
+   "currencyCode": "INR",
+   "displayFinancialStatus": "REFUNDED",
+   "displayFulfillmentStatus": "FULFILLMENT_NOT_REQUIRED",
+   "lineItems": {
+    "nodes": [
+     {
+      "id": "gid://shopify/LineItem/51011379396717",
+      "title": "Sunburst Pearl Statement Ring",
+      "variantTitle": null,
+      "sku": "urban_store903",
+      "vendor": "Urban Store",
+      "quantity": 20,
+      "currentQuantity": 0,
+      "unfulfilledQuantity": 0,
+      "product": {
+       "id": "gid://shopify/Product/15502295466093"
+      },
+      "variant": {
+       "id": "gid://shopify/ProductVariant/68193227833453"
+      },
+      "originalUnitPriceSet": {
+       "shopMoney": {
+        "amount": "60.0"
+       }
+      },
+      "discountedTotalSet": {
+       "shopMoney": {
+        "amount": "1200.0"
+       }
+      }
+     },
+     {
+      "id": "gid://shopify/LineItem/51011379429485",
+      "title": "Pillar Candle",
+      "variantTitle": null,
+      "sku": "ASH-002",
+      "vendor": "Ashnur",
+      "quantity": 4,
+      "currentQuantity": 0,
+      "unfulfilledQuantity": 0,
+      "product": {
+       "id": "gid://shopify/Product/15502296285293"
+      },
+      "variant": {
+       "id": "gid://shopify/ProductVariant/68193228980333"
+      },
+      "originalUnitPriceSet": {
+       "shopMoney": {
+        "amount": "165.0"
+       }
+      },
+      "discountedTotalSet": {
+       "shopMoney": {
+        "amount": "660.0"
+       }
+      }
+     }
+    ]
+   },
+   "refunds": [
+    {
+     "id": "gid://shopify/Refund/1117220372589",
+     "refundLineItems": {
+      "nodes": [
+       {
+        "quantity": 20,
+        "lineItem": {
+         "id": "gid://shopify/LineItem/51011379396717"
+        },
+        "subtotalSet": {
+         "shopMoney": {
+          "amount": "1200.0"
+         }
+        }
+       },
+       {
+        "quantity": 4,
+        "lineItem": {
+         "id": "gid://shopify/LineItem/51011379429485"
+        },
+        "subtotalSet": {
+         "shopMoney": {
+          "amount": "660.0"
+         }
+        }
+       }
+      ]
+     }
+    }
+   ]
+  }
+ ]
+}
