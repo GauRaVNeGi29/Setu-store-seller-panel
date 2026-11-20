@@ -1,4 +1,4 @@
-# Setu Vendor Portal
+# Setu Store Vendor Portal
 
 Custom Shopify app that will give Setu Store's vendors a secure place to see their own orders, shipments and earnings, replacing the vendor side of Webkul step by step.
 
@@ -35,14 +35,14 @@ Custom Shopify app that will give Setu Store's vendors a secure place to see the
 
 ## First-time setup on your PC
 
-1. **Create the dev app.** Dev Dashboard (dev.shopify.com) → Apps → Create app → name it **Setu Vendor Portal – DEV**.
+1. **Create the dev app.** Dev Dashboard (dev.shopify.com) → Apps → Create app → name it **Setu Store Vendor Portal – DEV**.
 2. **Allow order data.** In that app: API access → Protected customer data access → select *Protected customer data* and give a reason (e.g. "Show vendors their own orders"). Without this, Shopify refuses order webhooks and order reads. Stage 1 does not request customer name/address fields.
 3. **Install and link.**
    ```bash
    git clone https://github.com/GauRaVNeGi29/Setu-store-seller-panel.git
    cd Setu-store-seller-panel
    npm install
-   npm run config:link      # choose "Setu Vendor Portal – DEV"; this fills client_id in shopify.app.toml
+   npm run config:link      # choose "Setu Store Vendor Portal – DEV"; this fills client_id in shopify.app.toml
    ```
 4. **Local database.** Any Postgres works. Easiest: a free Neon project named `setu-vendor-portal-dev` (separate from the Import Duties database). Copy `.env.example` to `.env` and set `DATABASE_URL` and `ALLOWED_SHOPS=seller-panel-dev.myshopify.com`.
 5. **Run.**

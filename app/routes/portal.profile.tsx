@@ -1,4 +1,4 @@
-import type { LoaderFunctionArgs } from "react-router";
+import type { LoaderFunctionArgs, MetaFunction } from "react-router";
 import { useLoaderData } from "react-router";
 import db from "../db.server";
 import { requireVendor } from "../lib/portal/context.server";
@@ -13,37 +13,58 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   return { profile, me: { name: me.user.name, email: me.user.email } };
 };
 
+export const meta: MetaFunction = () => [{ title: "My brand · Setu Store vendor portal" }];
+
+function Rows({ rows }: { rows: [string, string | null][] }) {
+  return (
+    <dl className="vp-dl">
+      {rows.map(([k, v]) => (
+        <div key={k}>
+          <dt>{k}</dt>
+          <dd>{v ? v : <span className="vp-none">Not added yet</span>}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 export default function Profile() {
   const { profile: p, me } = useLoaderData<typeof loader>();
-  const rows: [string, string | null][] = [
-    ["Brand name", p.displayName],
-    ["Phone", p.phone],
-    ["GST number", p.gstNumber],
-    ["City / state", [p.city, p.state].filter(Boolean).join(", ") || null],
-    ["Minimum order value", p.minimumOrderValue ? inr(p.minimumOrderValue) : null],
-    ["What you sell", p.productNote],
-    ["Brand description", p.description],
-    ["Policy", p.policy],
-  ];
   return (
-    <main>
-      <h1>My brand</h1>
-      <p className="vp-sub">How Setu Store has your details. To change anything, contact the Setu team.</p>
-      <div className="vp-card">
-        <dl className="vp-dl">
-          {rows.map(([k, val]) => (
-            <div key={k}>
-              <dt>{k}</dt>
-              <dd>{val ?? <span className="vp-note">Not given</span>}</dd>
-            </div>
-          ))}
-        </dl>
+    <>
+      <div className="vp-pagehead">
+        <div>
+          <h1 className="vp-h1">{p.displayName}</h1>
+          <p className="vp-lead">The details Setu Store holds for your brand. To change any of them, contact the Setu Store team.</p>
+        </div>
       </div>
-      <div className="vp-card">
-        <h2 style={{ fontSize: 16, margin: "0 0 6px" }}>Your sign-in</h2>
-        <p style={{ margin: 0 }}>{me.name ? `${me.name} · ` : ""}{me.email}</p>
-        <p className="vp-note">To change your password, sign out and use &ldquo;Forgot password?&rdquo;.</p>
-      </div>
-    </main>
+
+      <section className="vp-panel" aria-labelledby="b1">
+        <div className="vp-panel-head"><h2 className="vp-h2" id="b1">Business</h2></div>
+        <Rows rows={[
+          ["Phone", p.phone],
+          ["GST number", p.gstNumber],
+          ["City and state", [p.city, p.state].filter(Boolean).join(", ") || null],
+          ["What you sell", p.productNote],
+        ]} />
+      </section>
+
+      <section className="vp-panel" aria-labelledby="b2">
+        <div className="vp-panel-head"><h2 className="vp-h2" id="b2">Your brand on Setu Store</h2></div>
+        <Rows rows={[
+          ["Brand description", p.description],
+          ["Policy", p.policy],
+          ["Minimum order value", p.minimumOrderValue ? inr(p.minimumOrderValue) : null],
+        ]} />
+      </section>
+
+      <section className="vp-panel" aria-labelledby="b3">
+        <div className="vp-panel-head"><h2 className="vp-h2" id="b3">Your sign-in</h2></div>
+        <Rows rows={[["Name", me.name], ["Email", me.email]]} />
+        <p className="vp-small" style={{ padding: "0 20px 18px", margin: 0 }}>
+          To change your password, sign out and choose &ldquo;Forgot password?&rdquo; on the sign-in page.
+        </p>
+      </section>
+    </>
   );
 }

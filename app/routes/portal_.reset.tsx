@@ -2,15 +2,14 @@ import type { ActionFunctionArgs, LinksFunction, LoaderFunctionArgs, MetaFunctio
 import { Form, Link, redirect, useActionData, useLoaderData, useNavigation } from "react-router";
 import db from "../db.server";
 import { clearSessionCookie, clientIp, resetPassword, resetTokenValid } from "../lib/portal/auth.server";
-import { MIN_PASSWORD } from "../lib/portal/rules";
 import { portalShop } from "../lib/portal/context.server";
-import { AuthCard, Field } from "../lib/portal/ui";
-import styles from "../styles/portal.css?url";
+import { MIN_PASSWORD } from "../lib/portal/rules";
+import { AuthLayout, Field, portalLinks } from "../lib/portal/ui";
 
 /** /portal/reset?token=… – choose a new password. Ends every session of that person. */
 
-export const links: LinksFunction = () => [{ rel: "stylesheet", href: styles }];
-export const meta: MetaFunction = () => [{ title: "Choose a new password · Setu vendor portal" }, { name: "robots", content: "noindex" }];
+export const links: LinksFunction = portalLinks;
+export const meta: MetaFunction = () => [{ title: "Choose a new password · Setu Store vendor portal" }, { name: "robots", content: "noindex" }];
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const token = new URL(request.url).searchParams.get("token") ?? "";
@@ -35,20 +34,21 @@ export default function Reset() {
 
   if (!valid) {
     return (
-      <AuthCard title="This link has expired" sub="Reset links work once and expire after 30 minutes.">
-        <p><Link className="vp-btn" to="/portal/forgot">Ask for a new link</Link></p>
-      </AuthCard>
+      <AuthLayout title="This link has expired" lead="Reset links work once and expire 30 minutes after they're sent.">
+        <Link className="vp-btn vp-btn--block" to="/portal/forgot">Send a new link</Link>
+        <p className="vp-auth-alt"><Link to="/portal/login">Back to sign in</Link></p>
+      </AuthLayout>
     );
   }
   return (
-    <AuthCard title="Choose a new password" sub="You'll be signed out everywhere and can sign in with the new password.">
-      {data?.error && <p className="vp-error" role="alert">{data.error}</p>}
+    <AuthLayout title="Choose a new password" lead="You'll be signed out on every device, then you can sign in with the new password.">
+      {data?.error && <p className="vp-msg vp-msg--error" role="alert">{data.error}</p>}
       <Form method="post">
         <input type="hidden" name="token" value={token} />
-        <Field name="password" label="New password" type="password" autoComplete="new-password" required hint={`At least ${MIN_PASSWORD} characters.`} />
+        <Field name="password" label="New password" type="password" autoComplete="new-password" required hint={`At least ${MIN_PASSWORD} characters, with letters as well as numbers.`} />
         <Field name="confirm" label="Confirm new password" type="password" autoComplete="new-password" required />
-        <button className="vp-btn" type="submit" disabled={busy}>{busy ? "Saving…" : "Save new password"}</button>
+        <button className="vp-btn vp-btn--block" type="submit" disabled={busy}>{busy ? "Saving…" : "Save new password"}</button>
       </Form>
-    </AuthCard>
+    </AuthLayout>
   );
 }
