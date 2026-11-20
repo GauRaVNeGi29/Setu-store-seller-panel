@@ -3,12 +3,11 @@ import { Form, Link, redirect, useActionData, useNavigation, useSearchParams } f
 import db from "../db.server";
 import { clientIp, getIdentity, readSessionToken, sessionCookie, signIn } from "../lib/portal/auth.server";
 import { portalShop } from "../lib/portal/context.server";
-import { AuthCard, Field } from "../lib/portal/ui";
-import styles from "../styles/portal.css?url";
+import { AuthLayout, Field, portalLinks } from "../lib/portal/ui";
 
 /** /portal/login – email + password. One generic error for every failure. */
 
-export const links: LinksFunction = () => [{ rel: "stylesheet", href: styles }];
+export const links: LinksFunction = portalLinks;
 export const meta: MetaFunction = () => [{ title: "Sign in · Setu vendor portal" }, { name: "robots", content: "noindex" }];
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -27,7 +26,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return {
       email,
       error: r.reason === "locked"
-        ? "Too many tries. Please wait 15 minutes, or reset your password."
+        ? "Too many tries. Wait 15 minutes, or reset your password."
         : "That email and password don't match an account.",
     };
   }
@@ -38,23 +37,21 @@ export default function Login() {
   const data = useActionData<typeof action>();
   const busy = useNavigation().state !== "idle";
   const [params] = useSearchParams();
-  const notice = params.get("reset") === "1" ? "Your password has been changed. Sign in with the new one." : null;
+  const changed = params.get("reset") === "1";
 
   return (
-    <AuthCard title="Sign in">
-      {notice && <p className="vp-info" role="status">{notice}</p>}
-      {data?.error && <p className="vp-error" role="alert">{data.error}</p>}
+    <AuthLayout title="Sign in" lead="Welcome back. Sign in to see your orders and what to ship.">
+      {changed && <p className="vp-msg vp-msg--ok" role="status">Your password has been changed. Sign in with the new one.</p>}
+      {data?.error && <p className="vp-msg vp-msg--error" role="alert">{data.error}</p>}
       <Form method="post">
         <Field name="email" label="Email" type="email" autoComplete="email" inputMode="email" required defaultValue={data?.email} />
         <Field name="password" label="Password" type="password" autoComplete="current-password" required />
-        <button className="vp-btn" type="submit" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
+        <div className="vp-linkrow"><Link to="/portal/forgot">Forgot password?</Link></div>
+        <button className="vp-btn vp-btn--block" type="submit" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
       </Form>
-      <p className="vp-note" style={{ marginTop: 14 }}>
-        <Link to="/portal/forgot">Forgot password?</Link>
-      </p>
-      <p className="vp-note">
+      <p className="vp-auth-alt">
         New to Setu Store, or invited by the Setu team? <Link to="/portal/signup">Create your account</Link>
       </p>
-    </AuthCard>
+    </AuthLayout>
   );
 }

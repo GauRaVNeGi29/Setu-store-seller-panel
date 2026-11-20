@@ -64,11 +64,26 @@ export async function listMyOrders(db: PrismaClient, scope: VendorScope, filter:
   if (filter === "shipped") orders = orders.filter((o) => o.status === "shipped");
   if (filter === "cancelled") orders = orders.filter((o) => o.status === "cancelled" || o.status === "refunded");
   const safePage = Math.max(1, Math.floor(page) || 1);
+  const all = [...byOrder.values()].map(summarise);
+  const open = all.filter((o) => o.toShip > 0);
   return {
     orders: orders.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE),
     total: orders.length,
     page: safePage,
     pageSize: PAGE_SIZE,
+    /** Across all of this vendor's orders, whatever the filter. */
+    overview: {
+      counts: {
+        all: all.length,
+        to_ship: open.length,
+        shipped: all.filter((o) => o.status === "shipped").length,
+        cancelled: all.filter((o) => o.status === "cancelled" || o.status === "refunded").length,
+      },
+      sales: all.reduce((a, o) => a.plus(o.net), new Decimal(0)).toFixed(2),
+      openOrders: open.length,
+      unitsToShip: open.reduce((a, o) => a + o.toShip, 0),
+      oldestOpen: open.length ? open[open.length - 1].createdAt : null,
+    },
   };
 }
 

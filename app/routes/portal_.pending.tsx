@@ -2,11 +2,12 @@ import type { LinksFunction, LoaderFunctionArgs, MetaFunction } from "react-rout
 import { Form, redirect, useLoaderData } from "react-router";
 import db from "../db.server";
 import { requireUser } from "../lib/portal/context.server";
-import styles from "../styles/portal.css?url";
+import { day } from "../lib/portal/format";
+import { AuthLayout, portalLinks } from "../lib/portal/ui";
 
 /** /portal/pending – a self sign-up waiting for the Setu team. No order data here. */
 
-export const links: LinksFunction = () => [{ rel: "stylesheet", href: styles }];
+export const links: LinksFunction = portalLinks;
 export const meta: MetaFunction = () => [{ title: "Account under review · Setu vendor portal" }, { name: "robots", content: "noindex" }];
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -20,23 +21,26 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export default function Pending() {
   const d = useLoaderData<typeof loader>();
   return (
-    <main className="vp-login" style={{ maxWidth: 520 }}>
-      <div className="vp-card">
-        <div className="vp-brand">Setu Store<small>Vendor portal</small></div>
-        <h1 style={{ marginTop: 18 }}>Thanks{d.name ? `, ${d.name}` : ""} – your account is under review</h1>
-        <p className="vp-sub">
+    <AuthLayout
+      title={d.name ? `Thanks, ${d.name.split(" ")[0]}. We're reviewing your account.` : "We're reviewing your account."}
+      lead={
+        <>
           The Setu team is checking the details you sent{d.brandName ? <> for <b>{d.brandName}</b></> : null}. Once they approve your
-          account and link it to your products on Setu Store, you&apos;ll see your orders here.
-        </p>
-        <p className="vp-note">
-          Signed in as {d.email}
-          {d.since ? ` · submitted ${new Date(d.since).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric" })}` : ""}.
-          Questions? Contact the Setu team.
-        </p>
-        <Form method="post" action="/portal/logout">
-          <button className="vp-btn secondary" type="submit">Sign out</button>
-        </Form>
+          account and link it to your products, your orders will appear here.
+        </>
+      }
+    >
+      <div className="vp-panel vp-panel-body vp-summary" style={{ marginBottom: 20, position: "static" }}>
+        <dl>
+          <div><dt>Signed in as</dt><dd style={{ fontWeight: 500 }}>{d.email}</dd></div>
+          {d.since && <div><dt>Sent</dt><dd style={{ fontWeight: 500 }}>{day(d.since)}</dd></div>}
+          <div><dt>Status</dt><dd><span className="vp-status vp-status--to_ship">Under review</span></dd></div>
+        </dl>
       </div>
-    </main>
+      <p className="vp-small">You don&apos;t need to do anything else. Questions? Contact the Setu team.</p>
+      <Form method="post" action="/portal/logout" className="vp-auth-alt">
+        <button className="vp-btn vp-btn--quiet" type="submit">Sign out</button>
+      </Form>
+    </AuthLayout>
   );
 }
