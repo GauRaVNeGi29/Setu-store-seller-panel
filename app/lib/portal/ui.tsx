@@ -12,6 +12,7 @@ export const portalLinks = () => [
     href: "https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,300..600&family=Red+Hat+Display:wght@400..700&display=swap",
   },
   { rel: "stylesheet", href: styles },
+  { rel: "icon", type: "image/png", href: "/setu-favicon-logo.png" },
 ];
 
 export const Wordmark = ({ sub, to = "/portal" }: { sub?: string; to?: string }) => (
