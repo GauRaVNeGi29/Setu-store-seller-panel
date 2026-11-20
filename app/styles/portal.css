@@ -56,6 +56,7 @@ table.vp-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .vp-login .vp-btn { width: 100%; margin-top: 16px; }
 .vp-note { color: var(--muted); font-size: 13px; }
 .vp-error { background: var(--bad-bg); color: var(--bad); border-radius: 8px; padding: 10px 12px; margin: 12px 0; }
+.vp-dev { background: #fff4dc; border: 1px dashed #8a5a00; color: #5c3d00; border-radius: 8px; padding: 10px 12px; margin: 12px 0; }
 .vp-info { background: var(--ok-bg); border-radius: 8px; padding: 10px 12px; margin: 12px 0; }
 .vp-pager { display: flex; gap: 12px; align-items: center; margin-top: 12px; }
 @media print {

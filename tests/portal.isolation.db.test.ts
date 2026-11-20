@@ -165,8 +165,23 @@ describe("login page", () => {
   it("answers the same for an email with access and one without", async () => {
     const known = await post({ intent: "request", email: "nusrat@ashnur.example" });
     const unknown = await post({ intent: "request", email: "stranger@example.com" });
-    expect(known).toEqual({ step: "code", email: "nusrat@ashnur.example", resent: false });
+    expect(known).toEqual({ step: "code", email: "nusrat@ashnur.example", resent: false }); // no devCode unless enabled
     expect(unknown).toEqual({ step: "code", email: "stranger@example.com", resent: false });
+  });
+
+  it("with PORTAL_DEV_SHOW_CODE in development, the code is shown – and it works", async () => {
+    process.env.PORTAL_DEV_SHOW_CODE = "true";
+    try {
+      const r = (await post({ intent: "request", email: "nusrat@ashnur.example" })) as { devCode?: string };
+      expect(r.devCode).toMatch(/^\d{6}$/);
+      const unknown = (await post({ intent: "request", email: "stranger2@example.com" })) as { devCode?: string };
+      expect(unknown.devCode).toBeUndefined();
+      const v = await post({ intent: "verify", email: "nusrat@ashnur.example", code: r.devCode! });
+      expect(v).toBeInstanceOf(Response);
+      expect((v as Response).headers.get("Set-Cookie")).toContain("__Host-vp_session=");
+    } finally {
+      delete process.env.PORTAL_DEV_SHOW_CODE;
+    }
   });
 
   it("a wrong code gives a generic error and no cookie", async () => {

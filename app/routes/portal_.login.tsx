@@ -20,7 +20,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   return null;
 };
 
-type ActionData = { step: "email"; error?: string } | { step: "code"; email: string; error?: string; resent?: boolean };
+type ActionData = { step: "email"; error?: string } | { step: "code"; email: string; error?: string; resent?: boolean; devCode?: string };
 
 export const action = async ({ request }: ActionFunctionArgs): Promise<ActionData | Response> => {
   const shop = portalShop();
@@ -32,15 +32,16 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<ActionDat
   if (intent === "request" || intent === "resend") {
     const r = await requestCode(db, email, ctx);
     if (r.status === "invalid") return { step: "email", error: "Enter a valid email address." };
+    let devCode: string | undefined;
     if (r.status === "sent") {
       try {
-        await sendLoginCode(r.email, r.code, r.vendorName);
+        devCode = (await sendLoginCode(r.email, r.code, r.vendorName)).devCode;
       } catch (e) {
         console.error("[vendor-portal] could not send sign-in code", e);
         return { step: "email", error: "We couldn't send the email just now. Please try again in a few minutes." };
       }
     }
-    return { step: "code", email: r.email, resent: intent === "resend" };
+    return { step: "code", email: r.email, resent: intent === "resend", ...(devCode ? { devCode } : {}) };
   }
 
   if (intent === "verify") {
@@ -85,6 +86,11 @@ export default function Login() {
               </p>
               {data && "resent" in data && data.resent && <p className="vp-info" role="status">A new code has been sent. Earlier codes no longer work.</p>}
               {data?.error && <p className="vp-error" role="alert">{data.error}</p>}
+              {data && "devCode" in data && data.devCode && (
+                <p className="vp-dev" role="status">
+                  Development only – no email service is set up, so here is the code: <b>{data.devCode}</b>
+                </p>
+              )}
               <label htmlFor="code">6-digit code</label>
               <input id="code" name="code" className="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9 ]{6,7}" maxLength={7} required />
               <input type="hidden" name="email" value={(data as { email: string }).email} />
