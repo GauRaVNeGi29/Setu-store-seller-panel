@@ -16,10 +16,32 @@ export function portalShop(env: Record<string, string | undefined> = process.env
   return shop;
 }
 
-/** Every portal page and action starts here. Signed out → login page. */
-export async function requireVendor(request: Request): Promise<PortalIdentity & { shop: string }> {
+export type ActiveVendor = PortalIdentity & { shop: string; vendor: NonNullable<PortalIdentity["vendor"]> };
+
+/**
+ * Every page with order data starts here. Signed out → login.
+ * Signed in but not yet approved → "under review" page, never order data.
+ */
+export async function requireVendor(request: Request): Promise<ActiveVendor> {
+  const shop = portalShop();
+  const identity = await getIdentity(db, shop, readSessionToken(request));
+  if (!identity) throw redirect("/portal/login");
+  if (identity.user.status !== "active" || !identity.vendor) throw redirect("/portal/pending");
+  return { ...identity, shop, vendor: identity.vendor };
+}
+
+/** Any signed-in person, approved or not (used by the "under review" page). */
+export async function requireUser(request: Request): Promise<PortalIdentity & { shop: string }> {
   const shop = portalShop();
   const identity = await getIdentity(db, shop, readSessionToken(request));
   if (!identity) throw redirect("/portal/login");
   return { ...identity, shop };
+}
+
+/** The public address of the portal, for links in emails. */
+export function portalBaseUrl(request: Request, env: Record<string, string | undefined> = process.env): string {
+  const configured = (env.PORTAL_URL || env.SHOPIFY_APP_URL || "").replace(/\/+$/, "");
+  if (configured) return configured;
+  const url = new URL(request.url);
+  return `${url.protocol}//${url.host}`;
 }

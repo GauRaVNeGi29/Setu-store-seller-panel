@@ -1,33 +1,24 @@
 /**
- * Sends the sign-in code.
+ * Emails from the vendor portal.
  *
- * - With RESEND_API_KEY and PORTAL_EMAIL_FROM set: sends through Resend (https://resend.com).
- * - Without them, outside production: prints the code in the `npm run dev`
- *   terminal, so sign-in can be tested on the dev store without an email service.
- * - Without them in production: refuses, so codes are never only logged in production.
+ * - With RESEND_API_KEY and PORTAL_EMAIL_FROM set: sent through Resend (https://resend.com).
+ * - Without them, outside production: printed in the `npm run dev` output, and
+ *   (with PORTAL_DEV_SHOW_EMAILS=true) also shown on the page that sent them,
+ *   because the Shopify CLI terminal doesn't always display app output.
+ * - Without them in production: refused, so links are never only logged in production.
  *
- * The email contains the code only: no order or customer data.
+ * Emails carry no order or customer data.
  */
 
-/**
- * Development aid: with PORTAL_DEV_SHOW_CODE=true, no email provider and
- * NODE_ENV not "production", the login page also shows the code (the Shopify
- * CLI terminal does not always display app output). Never in production.
- */
-export function showDevCodeOnPage(env: Record<string, string | undefined> = process.env) {
-  return env.NODE_ENV !== "production" && env.PORTAL_DEV_SHOW_CODE === "true" && !(env.RESEND_API_KEY && env.PORTAL_EMAIL_FROM);
+type Env = Record<string, string | undefined>;
+
+export function showDevEmailsOnPage(env: Env = process.env) {
+  return env.NODE_ENV !== "production" && env.PORTAL_DEV_SHOW_EMAILS === "true" && !(env.RESEND_API_KEY && env.PORTAL_EMAIL_FROM);
 }
-export async function sendLoginCode(to: string, code: string, vendorName: string, env: Record<string, string | undefined> = process.env) {
-  const subject = `Your Setu vendor portal code: ${code}`;
-  const text = [
-    `Your sign-in code for the Setu Store vendor portal (${vendorName}) is:`,
-    "",
-    `    ${code}`,
-    "",
-    "It works once and expires in 10 minutes.",
-    "If you didn't ask for it, you can ignore this email.",
-  ].join("\n");
 
+export type Sent = { delivered: "email" | "console"; devPreview?: { subject: string; link?: string } };
+
+async function send(to: string, subject: string, text: string, link: string | undefined, env: Env): Promise<Sent> {
   if (env.RESEND_API_KEY && env.PORTAL_EMAIL_FROM) {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -35,13 +26,23 @@ export async function sendLoginCode(to: string, code: string, vendorName: string
       body: JSON.stringify({ from: env.PORTAL_EMAIL_FROM, to: [to], subject, text }),
     });
     if (!res.ok) throw new Error(`Email provider refused the message (${res.status})`);
-    return { delivered: "email" as const };
+    return { delivered: "email" };
   }
+  if (env.NODE_ENV === "production") throw new Error("No email provider configured (RESEND_API_KEY, PORTAL_EMAIL_FROM)");
+  console.log(`\n[vendor-portal] DEV ONLY – email to ${to}: ${subject}${link ? `\n  ${link}` : ""}\n`);
+  return { delivered: "console", ...(showDevEmailsOnPage(env) ? { devPreview: { subject, link } } : {}) };
+}
 
-  if (env.NODE_ENV === "production") {
-    throw new Error("No email provider configured (RESEND_API_KEY, PORTAL_EMAIL_FROM)");
-  }
-
-  console.log(`\n[vendor-portal] DEV ONLY – sign-in code for ${to} (${vendorName}): ${code}\n`);
-  return { delivered: "console" as const, devCode: showDevCodeOnPage(env) ? code : undefined };
+export function sendPasswordReset(to: string, name: string | null, link: string, env: Env = process.env) {
+  const text = [
+    `Hello${name ? ` ${name}` : ""},`,
+    "",
+    "Someone asked to reset the password for your Setu Store vendor portal account.",
+    "Open this link to choose a new password. It works once and expires in 30 minutes:",
+    "",
+    link,
+    "",
+    "If you didn't ask for this, you can ignore this email; your password stays the same.",
+  ].join("\n");
+  return send(to, "Reset your Setu vendor portal password", text, link, env);
 }

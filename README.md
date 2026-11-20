@@ -5,9 +5,9 @@ Custom Shopify app that will give Setu Store's vendors a secure place to see the
 **Status: Stages 1–4 – development only (dev store).**
 
 - **Stage 1:** the app copies every order line into its own database, filed by vendor, kept current by order webhooks.
-- **Stage 2:** the team sets up vendors and the emails allowed to sign in (Shopify admin → the app → a vendor → *Vendor portal access*).
-- **Stage 3:** vendors sign in at `/portal/login` with a one-time code sent to their email. No passwords.
-- **Stage 4:** vendors see *My orders*, each order's detail (their items only) and *What to ship*.
+- **Stage 2:** the team sets up vendors and invites the emails allowed in (Shopify admin → the app → a vendor → *Vendor portal access*), and approves self sign-ups (*Sign-ups* page).
+- **Stage 3:** vendors create an account at `/portal/signup` and sign in with email + password at `/portal/login`; *Forgot password* emails a reset link. Invited emails get in straight away; anyone else waits for approval.
+- **Stage 4:** vendors see *My orders*, each order's detail (their items only), *What to ship* and *My brand*.
 
 ## Safety rules
 
@@ -28,9 +28,10 @@ Custom Shopify app that will give Setu Store's vendors a secure place to see the
 | Store guard | `app/lib/guard.server.ts` |
 | Database | `prisma/schema.prisma` (VendorOrderLine, SyncState, AuditLog) |
 | Vendor records and access (team) | `app/lib/vendors/vendors.server.ts`, `app/routes/app.vendor.tsx` |
-| Vendor sign-in and sessions | `app/lib/portal/auth.server.ts`, `app/routes/portal_.login.tsx`, `app/routes/portal_.logout.tsx` |
+| Sign-up, sign-in, password reset, sessions | `app/lib/portal/auth.server.ts`, `app/routes/portal_.*.tsx` |
+| Sign-up approval (team) | `app/routes/app.signups.tsx` |
 | Vendor portal pages | `app/routes/portal*.tsx`, `app/lib/portal/data.server.ts` |
-| Tests (57): order mapping, sync, sign-in, sessions, vendor isolation through the real pages | `tests/` |
+| Tests (76): order mapping, sync, passwords, sign-up, approval, reset, sessions, vendor isolation through the real pages | `tests/` |
 
 ## First-time setup on your PC
 
@@ -59,28 +60,22 @@ Custom Shopify app that will give Setu Store's vendors a secure place to see the
 
 ## Trying the vendor portal (dev store)
 
-1. Add to your `.env`:
-   ```
-   PORTAL_SHOP=seller-panel-dev.myshopify.com
-   PORTAL_SECRET=<random 64 characters>
-   ```
-   Generate the secret with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
-   Leave `RESEND_API_KEY` empty: sign-in codes are then printed in the `npm run dev` terminal.
-2. Run `npm run dev` and open the app in the dev store admin.
-3. Click a vendor (e.g. **Ashnur**) → **Set up portal access** → add an email (any address you like for testing).
-4. Open the portal in a new browser window: the tunnel address printed by `npm run dev` (the `https://….trycloudflare.com` one) + `/portal/login`.
-5. Enter that email. Look in the terminal for `DEV ONLY – sign-in code for …` and type the 6 digits.
-6. You are in as that vendor: *My orders*, an order's detail, *What to ship*.
+1. In `.env`: `PORTAL_SHOP=seller-panel-dev.myshopify.com` and `PORTAL_DEV_SHOW_EMAILS=true` (shows the would-be reset email on the page, since no email service is set up yet).
+2. `npm run dev`, open the app in the dev store admin.
+3. **Invited vendor:** click a vendor (e.g. Ashnur) → *Set up portal access* → add an email. Then open `<trycloudflare address>/portal/signup` in a private window, use that email, fill the form → straight into *My orders*.
+4. **New vendor:** sign up with an email nobody invited → *under review*. In the app, *Sign-ups* → choose the Shopify vendor name → *Approve*. Refresh the portal → their orders appear.
+5. **Forgot password:** `/portal/forgot` → the page shows the reset link (development only) → choose a new password.
 
-What vendors never see: other vendors' items, an order's grand total, the buyer's name, email, phone or address.
+What vendors never see: other vendors' items, an order's grand total, the buyer's name, email, phone or address. Applicants waiting for approval see no order data at all.
 
 ### Security rules (enforced on the server, covered by tests)
 
-- Invite-only; the login page answers the same whether or not an email has access.
-- Codes: 6 digits, 10 minutes, single use, 5 wrong tries, 5 per email and 20 per IP per hour; only a keyed hash is stored.
-- Sessions: random token in an `HttpOnly; Secure; SameSite=Lax` cookie, only its hash stored; end after 12 h idle, 7 days, sign-out, or when the team pauses the vendor or removes the person.
-- Every portal query is filtered by the signed-in vendor's name from the session. Another vendor's order returns the same "not found" as an order that doesn't exist. Vendor or shop names in the URL are ignored.
-- Portal pages can't be framed and aren't cached.
+- Passwords: at least 10 characters, not all digits, not the email name; stored as scrypt hashes with a random salt.
+- 5 wrong passwords lock that email for 15 minutes; 30 failures per IP per hour block the IP; 5 sign-ups per IP per hour.
+- The vendor link (which Shopify vendor's orders someone sees) is set only by the team: by inviting the email, or by approving a sign-up. Nothing a vendor types can set it.
+- Reset links: random token (only its hash stored), single use, 30 minutes; a reset ends every session. "Forgot password" answers the same for unknown emails.
+- Sessions: random token in an `HttpOnly; Secure; SameSite=Lax` cookie, only its hash stored; end after 12 h idle, 7 days, sign-out, password reset, or when the team pauses the vendor, declines the sign-up or removes the person.
+- Every portal query is filtered by the signed-in vendor from the session. Another vendor's order returns the same "not found" as an order that doesn't exist. Portal pages can't be framed and aren't cached.
 
 ## Tests
 

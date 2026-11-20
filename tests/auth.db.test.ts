@@ -1,117 +1,229 @@
 import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
-  CODE_TTL_MS, CODES_PER_EMAIL_PER_HOUR, MAX_ATTEMPTS, SESSION_IDLE_MS, SESSION_MAX_MS,
-  endSession, getIdentity, hashToken, requestCode, verifyCode,
+  LOCK_FAILS, LOCK_WINDOW_MS, RESET_TTL_MS, SESSION_IDLE_MS, SESSION_MAX_MS,
+  checkPassword, endSession, getIdentity, hashPassword, hashToken, passwordProblem,
+  requestPasswordReset, resetPassword, resetTokenValid, signIn, signUp, type SignupInput,
 } from "../app/lib/portal/auth.server";
-import { addVendorUser, enableVendor, removeVendorUser, setVendorStatus } from "../app/lib/vendors/vendors.server";
+import { addVendorUser, approveSignup, enableVendor, rejectSignup, removeVendorUser, setVendorStatus } from "../app/lib/vendors/vendors.server";
 
 const db = new PrismaClient();
 const shop = "seller-panel-auth-test.myshopify.com";
 const ctx = { shop, ip: "10.0.0.1" };
+const PW = "Candles-and-wax-2026";
 afterAll(() => db.$disconnect());
 
-async function reset() {
-  await db.portalSession.deleteMany({ where: { vendorUser: { shop } } });
-  await db.vendorUser.deleteMany({ where: { shop } });
-  await db.vendor.deleteMany({ where: { shop } });
-  await db.loginCode.deleteMany({ where: { shop } });
-  await db.loginCode.deleteMany({ where: { ip: { in: ["10.0.0.1", "10.0.0.9"] } } });
-  await db.auditLog.deleteMany({ where: { shop } });
-}
-
-let vendorId: string;
-beforeEach(async () => {
-  await reset();
-  vendorId = (await enableVendor(db, shop, "Urban Store", "test")).id;
-  expect(await addVendorUser(db, shop, vendorId, "Owner@Urban.example ", "Owner", "test")).toEqual({ ok: true });
+const form = (o: Partial<SignupInput> = {}): SignupInput => ({
+  name: "Nusrat Mirza", email: "nusrat@ashnur.example", password: PW, phone: "+91 98765 43210",
+  brandName: "Ashnur", gstNumber: "08ABCDE1234F1Z5", city: "Jaipur", state: "Rajasthan",
+  productNote: "Handmade candles", description: "Hand-poured soy candles.", policy: "Dispatch in 3 days.", minimumOrderValue: "2,500",
+  ...o,
 });
 
-async function signIn(email = "owner@urban.example", now?: Date) {
-  const r = await requestCode(db, email, { ...ctx, now });
-  if (r.status !== "sent") throw new Error(`expected sent, got ${r.status}`);
-  const v = await verifyCode(db, email, r.code, { ...ctx, now });
-  if (!v.ok) throw new Error("verify failed");
-  return v.token;
+beforeEach(async () => {
+  await db.portalSession.deleteMany({ where: { vendorUser: { shop } } });
+  await db.passwordReset.deleteMany({ where: { vendorUser: { shop } } });
+  await db.vendorUser.deleteMany({ where: { shop } });
+  await db.vendor.deleteMany({ where: { shop } });
+  await db.loginAttempt.deleteMany({ where: { shop } });
+  await db.loginAttempt.deleteMany({ where: { ip: "10.0.0.1" } });
+  await db.auditLog.deleteMany({ where: { shop } });
+});
+
+async function invitedActive(email = "owner@urban.example") {
+  const v = await enableVendor(db, shop, "Urban Store", "test");
+  expect(await addVendorUser(db, shop, v.id, email, "Owner", "test")).toEqual({ ok: true });
+  const r = await signUp(db, form({ email, brandName: "Urban Store" }), ctx);
+  if (!r.ok) throw new Error(JSON.stringify(r.errors));
+  return { vendor: v, ...r };
 }
 
-describe("one-time codes", () => {
-  it("emails are matched case-insensitively and a correct code signs in once", async () => {
-    const r = await requestCode(db, "OWNER@urban.example", ctx);
-    expect(r.status).toBe("sent");
-    if (r.status !== "sent") return;
-    expect(r.code).toMatch(/^\d{6}$/);
-    const v = await verifyCode(db, "owner@urban.example", r.code, ctx);
-    expect(v.ok).toBe(true);
-    expect((await verifyCode(db, "owner@urban.example", r.code, ctx)).ok).toBe(false); // single use
+describe("passwords", () => {
+  it("are hashed with a random salt and checked correctly", async () => {
+    const a = await hashPassword(PW);
+    const b = await hashPassword(PW);
+    expect(a).not.toBe(b);
+    expect(a).not.toContain(PW);
+    expect(a.startsWith("scrypt$")).toBe(true);
+    expect(await checkPassword(PW, a)).toBe(true);
+    expect(await checkPassword(PW + "x", a)).toBe(false);
+    expect(await checkPassword(PW, null)).toBe(false);
+    expect(await checkPassword(PW, "garbage")).toBe(false);
   });
 
-  it("stores only a hash of the code and of the session token", async () => {
-    const r = await requestCode(db, "owner@urban.example", ctx);
-    if (r.status !== "sent") throw new Error();
-    const row = await db.loginCode.findFirst({ where: { shop, email: "owner@urban.example", usedAt: null } });
-    expect(row!.codeHash).not.toContain(r.code);
-    const v = await verifyCode(db, "owner@urban.example", r.code, ctx);
-    if (!v.ok) throw new Error();
-    const s = await db.portalSession.findFirst({ where: { vendorUser: { email: "owner@urban.example" } } });
-    expect(s!.tokenHash).toBe(hashToken(v.token));
-    expect(s!.tokenHash).not.toBe(v.token);
+  it("must be strong enough", () => {
+    expect(passwordProblem("short")).toMatch(/at least/);
+    expect(passwordProblem("1234567890123")).toMatch(/letters/);
+    expect(passwordProblem("aaaaaaaaaaaa")).toMatch(/easy/);
+    expect(passwordProblem("nusratmirza2026!", "nusratmirza@x.com")).toMatch(/email/);
+    expect(passwordProblem(PW)).toBeNull();
+  });
+});
+
+describe("sign-up", () => {
+  it("an invited email becomes active at once and fills the vendor's brand details", async () => {
+    const r = await invitedActive();
+    expect(r.ok && r.status).toBe("active");
+    const me = await getIdentity(db, shop, r.ok ? r.token : null);
+    expect(me?.user.status).toBe("active");
+    expect(me?.vendor?.vendorName).toBe("Urban Store");
+    const v = await db.vendor.findUnique({ where: { id: r.vendor.id } });
+    expect(v).toMatchObject({ city: "Jaipur", gstNumber: "08ABCDE1234F1Z5", policy: "Dispatch in 3 days." });
+    expect(v!.minimumOrderValue!.toFixed(2)).toBe("2500.00");
   });
 
-  it("an unknown email gets the same answer but no usable code", async () => {
-    const r = await requestCode(db, "stranger@example.com", ctx);
-    expect(r).toEqual({ status: "silent", email: "stranger@example.com" });
-    for (const guess of ["000000", "123456", "999999"]) {
-      expect((await verifyCode(db, "stranger@example.com", guess, ctx)).ok).toBe(false);
-    }
+  it("an unknown email becomes pending, with no vendor and no order access", async () => {
+    const r = await signUp(db, form(), ctx);
+    expect(r.ok && r.status).toBe("pending");
+    const me = await getIdentity(db, shop, r.ok ? r.token : null);
+    expect(me?.user.status).toBe("pending");
+    expect(me?.vendor).toBeNull();
+    const u = await db.vendorUser.findFirst({ where: { shop, email: "nusrat@ashnur.example" } });
+    expect(u?.vendorId).toBeNull();
+    expect(u?.application).toMatchObject({ brandName: "Ashnur", minimumOrderValue: "2500" });
   });
 
-  it(`locks the code after ${MAX_ATTEMPTS} wrong tries, even if the right code follows`, async () => {
-    const r = await requestCode(db, "owner@urban.example", ctx);
-    if (r.status !== "sent") throw new Error();
-    const wrong = r.code === "000000" ? "111111" : "000000";
-    for (let i = 0; i < MAX_ATTEMPTS; i++) expect((await verifyCode(db, "owner@urban.example", wrong, ctx)).ok).toBe(false);
-    expect((await verifyCode(db, "owner@urban.example", r.code, ctx)).ok).toBe(false);
+  it("validates every field and reports each problem", async () => {
+    const r = await signUp(db, form({ name: "", email: "x", password: "short", phone: "12", brandName: "", gstNumber: "BAD", city: "", state: "", minimumOrderValue: "abc" }), ctx);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(Object.keys(r.errors).sort()).toEqual(["brandName", "city", "email", "gstNumber", "minimumOrderValue", "name", "password", "phone", "state"]);
   });
 
-  it("an expired code fails", async () => {
+  it("GST, brand description, policy and minimum are optional", async () => {
+    const r = await signUp(db, form({ gstNumber: "", description: "", policy: "", minimumOrderValue: "", productNote: "" }), ctx);
+    expect(r.ok).toBe(true);
+  });
+
+  it("an email that already has an account can't sign up again", async () => {
+    await signUp(db, form(), ctx);
+    const again = await signUp(db, form({ name: "Someone else" }), ctx);
+    expect(again.ok).toBe(false);
+  });
+
+  it("emails are matched without regard to case", async () => {
+    await invitedActive("owner@urban.example");
+    const r = await signIn(db, "OWNER@Urban.Example", PW, ctx);
+    expect(r.ok).toBe(true);
+  });
+});
+
+describe("sign-in", () => {
+  it("works with the right password, fails with a wrong one or unknown email", async () => {
+    await invitedActive();
+    expect((await signIn(db, "owner@urban.example", PW, ctx)).ok).toBe(true);
+    expect(await signIn(db, "owner@urban.example", "Wrong-password-1", ctx)).toEqual({ ok: false, reason: "wrong" });
+    expect(await signIn(db, "nobody@urban.example", PW, ctx)).toEqual({ ok: false, reason: "wrong" });
+  });
+
+  it("an invited person who hasn't set a password can't sign in", async () => {
+    const v = await enableVendor(db, shop, "Urban Store", "test");
+    await addVendorUser(db, shop, v.id, "new@urban.example", null, "test");
+    expect((await signIn(db, "new@urban.example", "", ctx)).ok).toBe(false);
+    expect((await signIn(db, "new@urban.example", PW, ctx)).ok).toBe(false);
+  });
+
+  it(`locks the email after ${LOCK_FAILS} wrong passwords, even for the right one, for 15 minutes`, async () => {
+    await invitedActive();
     const t0 = new Date();
-    const r = await requestCode(db, "owner@urban.example", { ...ctx, now: t0 });
-    if (r.status !== "sent") throw new Error();
-    const later = new Date(t0.getTime() + CODE_TTL_MS + 1000);
-    expect((await verifyCode(db, "owner@urban.example", r.code, { ...ctx, now: later })).ok).toBe(false);
+    for (let i = 0; i < LOCK_FAILS; i++) await signIn(db, "owner@urban.example", `Wrong-pass-${i}x`, { ...ctx, now: t0 });
+    expect(await signIn(db, "owner@urban.example", PW, { ...ctx, now: t0 })).toEqual({ ok: false, reason: "locked" });
+    const later = new Date(t0.getTime() + LOCK_WINDOW_MS + 1000);
+    expect((await signIn(db, "owner@urban.example", PW, { ...ctx, now: later })).ok).toBe(true);
   });
 
-  it("asking again replaces the earlier code", async () => {
-    const a = await requestCode(db, "owner@urban.example", ctx);
-    const b = await requestCode(db, "owner@urban.example", ctx);
+  it("a pending applicant can sign in but only to the 'under review' state", async () => {
+    await signUp(db, form(), ctx);
+    const r = await signIn(db, "nusrat@ashnur.example", PW, ctx);
+    expect(r.ok && r.status).toBe("pending");
+  });
+
+  it("a declined applicant can't sign in", async () => {
+    await signUp(db, form(), ctx);
+    const u = await db.vendorUser.findFirst({ where: { shop, email: "nusrat@ashnur.example" } });
+    await rejectSignup(db, shop, u!.id, "test");
+    expect((await signIn(db, "nusrat@ashnur.example", PW, ctx)).ok).toBe(false);
+  });
+});
+
+describe("team approval", () => {
+  it("links the applicant to the chosen Shopify vendor and makes them active", async () => {
+    const r = await signUp(db, form(), ctx);
+    const u = await db.vendorUser.findFirst({ where: { shop, email: "nusrat@ashnur.example" } });
+    expect(await approveSignup(db, shop, u!.id, "Ashnur", "test")).toEqual({ ok: true });
+    const me = await getIdentity(db, shop, r.ok ? r.token : null); // same session, now active
+    expect(me?.user.status).toBe("active");
+    expect(me?.vendor?.vendorName).toBe("Ashnur");
+    const v = await db.vendor.findFirst({ where: { shop, vendorName: "Ashnur" } });
+    expect(v?.description).toBe("Hand-poured soy candles.");
+  });
+
+  it("declining ends the applicant's session", async () => {
+    const r = await signUp(db, form(), ctx);
+    const u = await db.vendorUser.findFirst({ where: { shop, email: "nusrat@ashnur.example" } });
+    await rejectSignup(db, shop, u!.id, "test");
+    expect(await getIdentity(db, shop, r.ok ? r.token : null)).toBeNull();
+  });
+
+  it("requires a vendor name and only works on pending sign-ups", async () => {
+    await signUp(db, form(), ctx);
+    const u = await db.vendorUser.findFirst({ where: { shop, email: "nusrat@ashnur.example" } });
+    expect((await approveSignup(db, shop, u!.id, "  ", "test")).ok).toBe(false);
+    await approveSignup(db, shop, u!.id, "Ashnur", "test");
+    expect((await approveSignup(db, shop, u!.id, "Urban Store", "test")).ok).toBe(false); // can't be moved to another vendor this way
+  });
+});
+
+describe("password reset", () => {
+  it("a reset link works once, sets the new password, and signs out everywhere", async () => {
+    const s = await invitedActive();
+    const req = await requestPasswordReset(db, "owner@urban.example", ctx);
+    expect(req.status).toBe("sent");
+    if (req.status !== "sent") return;
+    expect(await resetTokenValid(db, shop, req.token)).toBe(true);
+    const stored = await db.passwordReset.findFirst({ where: { vendorUser: { email: "owner@urban.example" } } });
+    expect(stored!.tokenHash).toBe(hashToken(req.token));
+
+    expect(await resetPassword(db, req.token, "Brand-new-password-9", ctx)).toEqual({ ok: true });
+    expect(await getIdentity(db, shop, s.ok ? s.token : null)).toBeNull(); // old session ended
+    expect((await signIn(db, "owner@urban.example", PW, ctx)).ok).toBe(false);
+    expect((await signIn(db, "owner@urban.example", "Brand-new-password-9", ctx)).ok).toBe(true);
+    expect((await resetPassword(db, req.token, "Another-password-77", ctx)).ok).toBe(false); // single use
+  });
+
+  it("expires after 30 minutes", async () => {
+    await invitedActive();
+    const t0 = new Date();
+    const req = await requestPasswordReset(db, "owner@urban.example", { ...ctx, now: t0 });
+    if (req.status !== "sent") throw new Error();
+    const late = new Date(t0.getTime() + RESET_TTL_MS + 1000);
+    expect((await resetPassword(db, req.token, "Brand-new-password-9", { ...ctx, now: late })).ok).toBe(false);
+  });
+
+  it("answers the same for an unknown email and sends nothing", async () => {
+    expect(await requestPasswordReset(db, "nobody@example.com", ctx)).toEqual({ status: "silent" });
+  });
+
+  it("a newer link replaces the older one; weak new passwords are refused", async () => {
+    await invitedActive();
+    const a = await requestPasswordReset(db, "owner@urban.example", ctx);
+    const b = await requestPasswordReset(db, "owner@urban.example", ctx);
     if (a.status !== "sent" || b.status !== "sent") throw new Error();
-    if (a.code !== b.code) expect((await verifyCode(db, "owner@urban.example", a.code, ctx)).ok).toBe(false);
-    expect((await verifyCode(db, "owner@urban.example", b.code, ctx)).ok).toBe(true);
+    expect((await resetPassword(db, a.token, "Brand-new-password-9", ctx)).ok).toBe(false);
+    expect((await resetPassword(db, b.token, "short", ctx)).ok).toBe(false);
+    expect((await resetPassword(db, b.token, "Brand-new-password-9", ctx)).ok).toBe(true);
   });
 
-  it(`rate-limits to ${CODES_PER_EMAIL_PER_HOUR} codes per email per hour`, async () => {
-    for (let i = 0; i < CODES_PER_EMAIL_PER_HOUR; i++) expect((await requestCode(db, "owner@urban.example", ctx)).status).toBe("sent");
-    expect((await requestCode(db, "owner@urban.example", ctx)).status).toBe("silent");
-  });
-
-  it("rejects malformed input without touching the database", async () => {
-    expect((await requestCode(db, "not-an-email", ctx)).status).toBe("invalid");
-    expect((await verifyCode(db, "owner@urban.example", "12ab56", ctx)).ok).toBe(false);
-    expect((await verifyCode(db, "owner@urban.example", "' OR 1=1 --", ctx)).ok).toBe(false);
+  it("forged or other-shop tokens are refused", async () => {
+    expect(await resetTokenValid(db, shop, "x".repeat(43))).toBe(false);
+    expect((await resetPassword(db, "x".repeat(43), "Brand-new-password-9", ctx)).ok).toBe(false);
   });
 });
 
 describe("sessions", () => {
-  it("resolve to the vendor from the database, not from the request", async () => {
-    const token = await signIn();
-    const me = await getIdentity(db, shop, token);
-    expect(me?.vendor.vendorName).toBe("Urban Store");
-    expect(me?.user.email).toBe("owner@urban.example");
-  });
-
   it("reject forged, empty and other-shop tokens", async () => {
-    const token = await signIn();
+    const r = await invitedActive();
+    const token = r.ok ? r.token : "";
     expect(await getIdentity(db, shop, null)).toBeNull();
     expect(await getIdentity(db, shop, "x".repeat(43))).toBeNull();
     expect(await getIdentity(db, shop, token.slice(0, -1) + (token.endsWith("A") ? "B" : "A"))).toBeNull();
@@ -119,53 +231,50 @@ describe("sessions", () => {
   });
 
   it("end after 12 hours idle and after 7 days in any case", async () => {
+    await invitedActive();
     const t0 = new Date();
-    const token = await signIn(undefined, t0);
-    // Activity just inside the idle window keeps the session alive (and resets the idle clock)…
+    const s = await signIn(db, "owner@urban.example", PW, { ...ctx, now: t0 });
+    if (!s.ok) throw new Error();
     const active = new Date(t0.getTime() + SESSION_IDLE_MS - 60_000);
-    expect(await getIdentity(db, shop, token, active)).not.toBeNull();
-    // …12 hours of silence after that last activity ends it.
-    const t1 = new Date(active.getTime() + SESSION_IDLE_MS + 60_000);
-    expect(await getIdentity(db, shop, token, t1)).toBeNull();
+    expect(await getIdentity(db, shop, s.token, active)).not.toBeNull();
+    expect(await getIdentity(db, shop, s.token, new Date(active.getTime() + SESSION_IDLE_MS + 60_000))).toBeNull();
 
-    const token2 = await signIn();
-    const s = await db.portalSession.findFirst({ where: { tokenHash: hashToken(token2) } });
-    const far = new Date(s!.createdAt.getTime() + SESSION_MAX_MS + 1000);
-    await db.portalSession.update({ where: { id: s!.id }, data: { lastSeenAt: far } }); // even if "active"
-    expect(await getIdentity(db, shop, token2, far)).toBeNull();
+    const s2 = await signIn(db, "owner@urban.example", PW, ctx);
+    if (!s2.ok) throw new Error();
+    const row = await db.portalSession.findFirst({ where: { tokenHash: hashToken(s2.token) } });
+    const far = new Date(row!.createdAt.getTime() + SESSION_MAX_MS + 1000);
+    await db.portalSession.update({ where: { id: row!.id }, data: { lastSeenAt: far } });
+    expect(await getIdentity(db, shop, s2.token, far)).toBeNull();
   });
 
-  it("end on sign-out", async () => {
-    const token = await signIn();
-    await endSession(db, token);
-    expect(await getIdentity(db, shop, token)).toBeNull();
-  });
+  it("end on sign-out, on pausing the vendor, and on removing the person", async () => {
+    const r = await invitedActive();
+    const a = await signIn(db, "owner@urban.example", PW, ctx);
+    const b = await signIn(db, "owner@urban.example", PW, ctx);
+    if (!a.ok || !b.ok) throw new Error();
+    await endSession(db, a.token);
+    expect(await getIdentity(db, shop, a.token)).toBeNull();
 
-  it("end when the team pauses the vendor, and no new code is sent while paused", async () => {
-    const token = await signIn();
-    await setVendorStatus(db, shop, vendorId, "paused", "test");
-    expect(await getIdentity(db, shop, token)).toBeNull();
-    expect((await requestCode(db, "owner@urban.example", ctx)).status).toBe("silent");
-    await setVendorStatus(db, shop, vendorId, "active", "test");
-    expect(await getIdentity(db, shop, token)).toBeNull(); // old session stays ended
-  });
+    await setVendorStatus(db, shop, r.vendor.id, "paused", "test");
+    expect(await getIdentity(db, shop, b.token)).toBeNull();
+    expect((await signIn(db, "owner@urban.example", PW, ctx)).ok).toBe(false);
+    await setVendorStatus(db, shop, r.vendor.id, "active", "test");
+    expect(await getIdentity(db, shop, b.token)).toBeNull(); // stays ended
 
-  it("end when the team removes the person", async () => {
-    const token = await signIn();
-    const user = await db.vendorUser.findFirst({ where: { shop, email: "owner@urban.example" } });
-    await removeVendorUser(db, shop, user!.id, "test");
-    expect(await getIdentity(db, shop, token)).toBeNull();
+    const c = await signIn(db, "owner@urban.example", PW, ctx);
+    const u = await db.vendorUser.findFirst({ where: { shop, email: "owner@urban.example" } });
+    await removeVendorUser(db, shop, u!.id, "test");
+    expect(await getIdentity(db, shop, c.ok ? c.token : null)).toBeNull();
   });
 });
 
 describe("vendor records", () => {
-  it("an email can belong to one vendor only", async () => {
+  it("an email can belong to one vendor only, and a pending sign-up can't be invited over", async () => {
+    await invitedActive();
     const other = await enableVendor(db, shop, "Ashnur", "test");
-    const r = await addVendorUser(db, shop, other.id, "owner@urban.example", null, "test");
-    expect(r.ok).toBe(false);
-  });
-
-  it("rejects invalid emails", async () => {
-    expect((await addVendorUser(db, shop, vendorId, "nope", null, "test")).ok).toBe(false);
+    expect((await addVendorUser(db, shop, other.id, "owner@urban.example", null, "test")).ok).toBe(false);
+    await signUp(db, form({ email: "applicant@example.com" }), ctx);
+    const r = await addVendorUser(db, shop, other.id, "applicant@example.com", null, "test");
+    expect(r.ok === false && r.error).toMatch(/Sign-ups/);
   });
 });

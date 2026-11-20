@@ -20,13 +20,13 @@ describe("store guard", () => {
   });
 });
 
-import { showDevCodeOnPage } from "../app/lib/portal/email.server";
+import { showDevEmailsOnPage } from "../app/lib/portal/email.server";
 
-describe("dev code on the login page", () => {
+describe("dev emails shown on the page", () => {
   it("only when explicitly enabled, outside production, without an email provider", () => {
-    expect(showDevCodeOnPage({ PORTAL_DEV_SHOW_CODE: "true", NODE_ENV: "development" })).toBe(true);
-    expect(showDevCodeOnPage({ PORTAL_DEV_SHOW_CODE: "true", NODE_ENV: "production" })).toBe(false);
-    expect(showDevCodeOnPage({ NODE_ENV: "development" })).toBe(false);
-    expect(showDevCodeOnPage({ PORTAL_DEV_SHOW_CODE: "true", NODE_ENV: "development", RESEND_API_KEY: "k", PORTAL_EMAIL_FROM: "a@b.c" })).toBe(false);
+    expect(showDevEmailsOnPage({ PORTAL_DEV_SHOW_EMAILS: "true", NODE_ENV: "development" })).toBe(true);
+    expect(showDevEmailsOnPage({ PORTAL_DEV_SHOW_EMAILS: "true", NODE_ENV: "production" })).toBe(false);
+    expect(showDevEmailsOnPage({ NODE_ENV: "development" })).toBe(false);
+    expect(showDevEmailsOnPage({ PORTAL_DEV_SHOW_EMAILS: "true", NODE_ENV: "development", RESEND_API_KEY: "k", PORTAL_EMAIL_FROM: "a@b.c" })).toBe(false);
   });
 });

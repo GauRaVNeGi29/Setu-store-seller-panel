@@ -1,6 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { requestCode, verifyCode, COOKIE_NAME } from "../app/lib/portal/auth.server";
+import { COOKIE_NAME, signUp } from "../app/lib/portal/auth.server";
 import { saveOrder } from "../app/lib/orders/sync.server";
 import { addVendorUser, enableVendor } from "../app/lib/vendors/vendors.server";
 import type { ShopifyOrder } from "../app/lib/orders/map";
@@ -10,6 +10,8 @@ import * as orderDetail from "../app/routes/portal.orders.$orderId";
 import * as toShip from "../app/routes/portal.ship";
 import * as layout from "../app/routes/portal";
 import * as login from "../app/routes/portal_.login";
+import * as pendingPage from "../app/routes/portal_.pending";
+import * as profile from "../app/routes/portal.profile";
 
 /**
  * Vendor isolation, tested through the real page loaders with real cookies.
@@ -23,6 +25,8 @@ const otherShop = "someone-else.myshopify.com";
 const base = "https://portal.test";
 let ashnurCookie = "";
 let urbanCookie = "";
+let pendingCookie = "";
+const PW = "Strong-test-password-1";
 
 const orders = () => structuredClone(fixture.orders) as ShopifyOrder[];
 const URBAN_MARKERS = ["Urban Store", "urban_store", "Statement Ring", "Armlet"];
@@ -32,18 +36,16 @@ async function cleanup() {
     await db.portalSession.deleteMany({ where: { vendorUser: { shop: s } } });
     await db.vendorUser.deleteMany({ where: { shop: s } });
     await db.vendor.deleteMany({ where: { shop: s } });
-    await db.loginCode.deleteMany({ where: { shop: s } });
+    await db.loginAttempt.deleteMany({ where: { shop: s } });
     await db.vendorOrderLine.deleteMany({ where: { shop: s } });
     await db.auditLog.deleteMany({ where: { shop: s } });
   }
 }
 
-async function cookieFor(email: string) {
-  const r = await requestCode(db, email, { shop });
-  if (r.status !== "sent") throw new Error("code not sent");
-  const v = await verifyCode(db, email, r.code, { shop });
-  if (!v.ok) throw new Error("verify failed");
-  return `${COOKIE_NAME}=${encodeURIComponent(v.token)}`;
+async function cookieFor(email: string, brandName: string) {
+  const r = await signUp(db, { name: "Test", email, password: PW, phone: "+91 98765 43210", brandName, city: "Jaipur", state: "Rajasthan" }, { shop });
+  if (!r.ok) throw new Error(JSON.stringify(r.errors));
+  return `${COOKIE_NAME}=${encodeURIComponent(r.token)}`;
 }
 
 const req = (path: string, cookie?: string, init: RequestInit = {}) =>
@@ -72,8 +74,9 @@ beforeAll(async () => {
   const urban = await enableVendor(db, shop, "Urban Store", "test");
   await addVendorUser(db, shop, ashnur.id, "nusrat@ashnur.example", "Nusrat", "test");
   await addVendorUser(db, shop, urban.id, "owner@urban.example", null, "test");
-  ashnurCookie = await cookieFor("nusrat@ashnur.example");
-  urbanCookie = await cookieFor("owner@urban.example");
+  ashnurCookie = await cookieFor("nusrat@ashnur.example", "Ashnur"); // invited → active
+  urbanCookie = await cookieFor("owner@urban.example", "Urban Store");
+  pendingCookie = await cookieFor("someone@newbrand.example", "Urban Store"); // claims to be Urban Store; not invited → pending
 });
 afterAll(async () => {
   await cleanup();
@@ -86,6 +89,7 @@ describe("signed-out access", () => {
     ["order detail", orderDetail, "/portal/orders/19043720298605"],
     ["what to ship", toShip, "/portal/ship"],
     ["layout", layout, "/portal"],
+    ["my brand", profile, "/portal/profile"],
   ])("%s redirects to login without a cookie or with a forged one", async (_n, mod, path) => {
     for (const cookie of [undefined, `${COOKIE_NAME}=forged-token-value-1234567890abcdefghijk`, `${COOKIE_NAME}=`]) {
       const r = await load(mod, path, cookie, { orderId: "19043720298605" });
@@ -157,35 +161,52 @@ describe("Urban Store sees only Urban Store", () => {
   });
 });
 
+describe("an applicant waiting for approval", () => {
+  it.each([
+    ["my orders", myOrders, "/portal"],
+    ["order detail", orderDetail, "/portal/orders/19043720134765"],
+    ["what to ship", toShip, "/portal/ship"],
+    ["layout", layout, "/portal"],
+    ["my brand", profile, "/portal/profile"],
+  ])("is sent to 'under review' from %s – even claiming a vendor's brand name", async (_n, mod, path) => {
+    const r = await load(mod, path, pendingCookie, { orderId: "19043720134765" });
+    expect(r.status).toBe(302);
+    expect(r.location).toBe("/portal/pending");
+  });
+
+  it("sees the review page, with no order data", async () => {
+    const r = await load(pendingPage, "/portal/pending", pendingCookie);
+    expect(r.status).toBe(200);
+    expect(json(r.data)).not.toMatch(/#100\d|urban_store|ASH-/);
+  });
+
+  it("an approved vendor is sent from the review page to their orders", async () => {
+    const r = await load(pendingPage, "/portal/pending", ashnurCookie);
+    expect(r.location).toBe("/portal");
+  });
+});
+
 describe("login page", () => {
   type Act = (args: { request: Request; params: Record<string, string>; context: unknown }) => Promise<unknown>;
   const post = (fields: Record<string, string>) =>
     (login.action as Act)({ request: req("/portal/login", undefined, { method: "POST", body: new URLSearchParams(fields) }), params: {}, context: {} });
 
-  it("answers the same for an email with access and one without", async () => {
-    const known = await post({ intent: "request", email: "nusrat@ashnur.example" });
-    const unknown = await post({ intent: "request", email: "stranger@example.com" });
-    expect(known).toEqual({ step: "code", email: "nusrat@ashnur.example", resent: false }); // no devCode unless enabled
-    expect(unknown).toEqual({ step: "code", email: "stranger@example.com", resent: false });
+  it("signs in with the right password and sets a secure session cookie", async () => {
+    const r = await post({ email: "nusrat@ashnur.example", password: PW });
+    expect(r).toBeInstanceOf(Response);
+    const res = r as Response;
+    expect(res.headers.get("Location")).toBe("/portal");
+    expect(res.headers.get("Set-Cookie")).toMatch(/^__Host-vp_session=[^;]+; Path=\/; HttpOnly; Secure; SameSite=Lax/);
   });
 
-  it("with PORTAL_DEV_SHOW_CODE in development, the code is shown – and it works", async () => {
-    process.env.PORTAL_DEV_SHOW_CODE = "true";
-    try {
-      const r = (await post({ intent: "request", email: "nusrat@ashnur.example" })) as { devCode?: string };
-      expect(r.devCode).toMatch(/^\d{6}$/);
-      const unknown = (await post({ intent: "request", email: "stranger2@example.com" })) as { devCode?: string };
-      expect(unknown.devCode).toBeUndefined();
-      const v = await post({ intent: "verify", email: "nusrat@ashnur.example", code: r.devCode! });
-      expect(v).toBeInstanceOf(Response);
-      expect((v as Response).headers.get("Set-Cookie")).toContain("__Host-vp_session=");
-    } finally {
-      delete process.env.PORTAL_DEV_SHOW_CODE;
-    }
+  it("gives the same message for a wrong password and an unknown email", async () => {
+    const wrong = await post({ email: "nusrat@ashnur.example", password: "Not-the-password-1" });
+    const unknown = await post({ email: "stranger@example.com", password: PW });
+    expect((wrong as { error: string }).error).toBe((unknown as { error: string }).error);
   });
 
-  it("a wrong code gives a generic error and no cookie", async () => {
-    const r = await post({ intent: "verify", email: "nusrat@ashnur.example", code: "000000" });
-    expect(r).toMatchObject({ step: "code", error: expect.stringContaining("didn't work") });
+  it("sends a pending applicant to the review page", async () => {
+    const r = (await post({ email: "someone@newbrand.example", password: PW })) as Response;
+    expect(r.headers.get("Location")).toBe("/portal/pending");
   });
 });

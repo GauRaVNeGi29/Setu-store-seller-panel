@@ -6,7 +6,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { vendorLines } from "../lib/orders/admin.server";
-import { addVendorUser, enableVendor, getVendorByName, removeVendorUser, setVendorStatus } from "../lib/vendors/vendors.server";
+import { addVendorUser, enableVendor, getVendorByName, getVendorProfile, removeVendorUser, setVendorStatus } from "../lib/vendors/vendors.server";
 
 /**
  * One vendor: portal access (Stage 2) and their order lines (Stage 1).
@@ -16,13 +16,15 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const name = new URL(request.url).searchParams.get("name") ?? "";
   const [lines, vendor] = await Promise.all([vendorLines(db, session.shop, name), getVendorByName(db, session.shop, name)]);
+  const profile = vendor ? await getVendorProfile(db, session.shop, vendor.id) : null;
   return {
     name,
     lines,
+    profile,
     vendor: vendor && {
       id: vendor.id,
       status: vendor.status,
-      users: vendor.users.map((u) => ({ id: u.id, email: u.email, name: u.name, lastLoginAt: u.lastLoginAt?.toISOString() ?? null })),
+      users: vendor.users.map((u) => ({ id: u.id, email: u.email, name: u.name, phone: u.phone, status: u.status, lastLoginAt: u.lastLoginAt?.toISOString() ?? null })),
     },
   };
 };
@@ -60,12 +62,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
 const inr = (v: string) => `₹${Number(v).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const cell = { padding: 6, borderBottom: "1px solid #eee", verticalAlign: "top" } as const;
+const USER_STATUS: Record<string, string> = {
+  invited: "Invited – no password yet", pending: "Waiting for review", active: "Active", rejected: "Declined", disabled: "Removed",
+};
 const STATUS: Record<string, string> = {
   unfulfilled: "To ship", partial: "Partly shipped", fulfilled: "Shipped", refunded: "Refunded", cancelled: "Cancelled",
 };
 
 export default function Vendor() {
-  const { name, lines, vendor } = useLoaderData<typeof loader>();
+  const { name, lines, vendor, profile } = useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
   const shopify = useAppBridge();
   const busy = fetcher.state !== "idle";
@@ -96,7 +101,7 @@ export default function Vendor() {
             <s-paragraph>
               Status: <b>{vendor.status === "active" ? "Active" : "Paused"}</b>.{" "}
               {vendor.status === "active"
-                ? "People below can sign in with a one-time code sent to their email."
+                ? "Invited people create their password at /portal/signup with the same email and get in straight away."
                 : "Nobody from this vendor can sign in."}
             </s-paragraph>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
@@ -104,18 +109,20 @@ export default function Vendor() {
                 <tr style={{ textAlign: "left" }}>
                   <th style={cell}>Email</th>
                   <th style={cell}>Name</th>
+                  <th style={cell}>Status</th>
                   <th style={cell}>Last sign-in</th>
                   <th style={cell} />
                 </tr>
               </thead>
               <tbody>
                 {vendor.users.length === 0 && (
-                  <tr><td style={cell} colSpan={4}>No one added yet.</td></tr>
+                  <tr><td style={cell} colSpan={5}>No one added yet.</td></tr>
                 )}
                 {vendor.users.map((u) => (
                   <tr key={u.id}>
                     <td style={cell}>{u.email}</td>
-                    <td style={cell}>{u.name ?? ""}</td>
+                    <td style={cell}>{u.name ?? ""}{u.phone ? <><br /><small>{u.phone}</small></> : null}</td>
+                    <td style={cell}>{USER_STATUS[u.status] ?? u.status}</td>
                     <td style={cell}>{u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) : "never"}</td>
                     <td style={cell}>
                       <s-button variant="tertiary" tone="critical" onClick={() => submit({ intent: "remove_user", userId: u.id })} {...(busy ? { disabled: true } : {})}>Remove</s-button>
@@ -141,6 +148,29 @@ export default function Vendor() {
           </>
         )}
       </s-section>
+
+      {profile && (
+        <s-section heading="Brand details">
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <tbody>
+              {([
+                ["Phone", profile.phone], ["GST", profile.gstNumber], ["City / state", [profile.city, profile.state].filter(Boolean).join(", ")],
+                ["Minimum order (from vendor)", profile.minimumOrderValue ? inr(profile.minimumOrderValue) : null],
+                ["Sells", profile.productNote], ["Description", profile.description], ["Policy", profile.policy],
+              ] as [string, string | null][]).map(([k, v]) => (
+                <tr key={k}>
+                  <td style={{ ...cell, color: "#666", width: 200 }}>{k}</td>
+                  <td style={{ ...cell, whiteSpace: "pre-wrap" }}>{v || "–"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <s-paragraph>
+            Filled in from the vendor&apos;s sign-up. The minimum order value here is not yet used by the cart; the cart still uses the
+            &ldquo;Marketplace seller&rdquo; entries in Shopify.
+          </s-paragraph>
+        </s-section>
+      )}
 
       <s-section heading={`Order lines (${lines.length})`}>
         {lines.length === 0 ? (
