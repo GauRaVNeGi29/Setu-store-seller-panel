@@ -25,6 +25,7 @@ export default function PortalLayout() {
         <nav className="vp-nav" aria-label="Portal">
           <NavLink to="/portal" end>My orders</NavLink>
           <NavLink to="/portal/ship">What to ship</NavLink>
+          <NavLink to="/portal/profile">My brand</NavLink>
         </nav>
         <div className="vp-user">
           <span>{email}</span>

@@ -115,63 +115,104 @@ model AuditLog {
 }
 
 // ---------------------------------------------------------------------------
-// Stage 2: vendor records (managed by the team in Shopify admin)
+// Vendors and the people who sign in for them
 // ---------------------------------------------------------------------------
 
 enum VendorStatus {
-  active // users can sign in
+  active // its users can sign in and see orders
   paused // nobody from this vendor can sign in; existing sessions end
 }
 
-/// A vendor the team has set up for the portal. Linked to the Shopify product
-/// Vendor value; a vendor user only ever sees order lines with that exact vendorName.
+/// A vendor on the portal, tied to one Shopify product Vendor value. A vendor
+/// user only ever sees order lines with that exact vendorName.
 model Vendor {
   id          String       @id @default(cuid())
   shop        String
   vendorName  String // must equal the Shopify product Vendor, e.g. "Urban Store"
   displayName String
   status      VendorStatus @default(active)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  users       VendorUser[]
+
+  // Brand details (from sign-up; editable by the team)
+  phone             String?
+  gstNumber         String?
+  city              String?
+  state             String?
+  description       String?
+  policy            String?
+  productNote       String?
+  minimumOrderValue Decimal? @db.Decimal(12, 2) // INR, as given by the vendor; not yet applied to the cart
+
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  users     VendorUser[]
 
   @@unique([shop, vendorName])
 }
 
-/// A person who can sign in for a vendor. An email belongs to one vendor only.
+enum UserStatus {
+  invited // team added the email; the person hasn't created a password yet
+  pending // signed up on their own; waiting for the team to approve and link a vendor
+  active // can sign in and see their vendor's orders
+  rejected // sign-up declined by the team
+  disabled // access removed by the team
+}
+
+/// A person who signs in. An email is unique per shop. vendorId is set by the
+/// team (invite or approval), never by the person.
 model VendorUser {
-  id          String          @id @default(cuid())
-  shop        String
-  vendorId    String
-  vendor      Vendor          @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  email       String // stored lower-case
-  name        String?
-  active      Boolean         @default(true)
-  lastLoginAt DateTime?
-  createdAt   DateTime        @default(now())
-  sessions    PortalSession[]
+  id           String     @id @default(cuid())
+  shop         String
+  vendorId     String?
+  vendor       Vendor?    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  email        String // lower-case
+  name         String?
+  phone        String?
+  status       UserStatus @default(invited)
+  passwordHash String? // scrypt; null until the person sets a password
+  /// What a self sign-up submitted (brand name, GST, description, policy, MOV, …), kept for the team's review.
+  application  Json?
+  reviewedAt   DateTime?
+  reviewedBy   String?
+  lastLoginAt  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  sessions PortalSession[]
+  resets   PasswordReset[]
 
   @@unique([shop, email])
+  @@index([shop, status])
 }
 
 // ---------------------------------------------------------------------------
-// Stage 3: vendor sign-in (email one-time code) and sessions
+// Sign-in security
 // ---------------------------------------------------------------------------
 
-/// One-time sign-in code. Only a keyed hash of the code is stored.
-model LoginCode {
-  id        String    @id @default(cuid())
+/// Every sign-in try, for lockouts and rate limits. Kept for 30 days.
+model LoginAttempt {
+  id        BigInt   @id @default(autoincrement())
   shop      String
-  email     String // lower-case; stored even for unknown emails so rate limits apply equally
-  codeHash  String
+  email     String
   ip        String?
-  attempts  Int       @default(0)
-  expiresAt DateTime
-  usedAt    DateTime?
-  createdAt DateTime  @default(now())
+  success   Boolean
+  createdAt DateTime @default(now())
 
   @@index([shop, email, createdAt])
   @@index([ip, createdAt])
+}
+
+/// "Forgot password" link. Only the token's hash is stored.
+model PasswordReset {
+  id           String     @id @default(cuid())
+  tokenHash    String     @unique
+  vendorUserId String
+  vendorUser   VendorUser @relation(fields: [vendorUserId], references: [id], onDelete: Cascade)
+  ip           String?
+  expiresAt    DateTime
+  usedAt       DateTime?
+  createdAt    DateTime   @default(now())
+
+  @@index([vendorUserId])
 }
 
 /// Server-side session. The cookie holds a random token; only its hash is stored.
