@@ -8,7 +8,7 @@ import { AuthLayout, Field, portalLinks } from "../lib/portal/ui";
 /** /portal/login – email + password. One generic error for every failure. */
 
 export const links: LinksFunction = portalLinks;
-export const meta: MetaFunction = () => [{ title: "Sign in · Setu vendor portal" }, { name: "robots", content: "noindex" }];
+export const meta: MetaFunction = () => [{ title: "Sign in · Setu Store vendor portal" }, { name: "robots", content: "noindex" }];
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const me = await getIdentity(db, portalShop(), readSessionToken(request));
@@ -50,7 +50,7 @@ export default function Login() {
         <button className="vp-btn vp-btn--block" type="submit" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
       </Form>
       <p className="vp-auth-alt">
-        New to Setu Store, or invited by the Setu team? <Link to="/portal/signup">Create your account</Link>
+        New to Setu Store, or invited by the Setu Store team? <Link to="/portal/signup">Create your account</Link>
       </p>
     </AuthLayout>
   );

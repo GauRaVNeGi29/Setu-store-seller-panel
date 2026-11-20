@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import styles from "../../styles/portal.css?url";
 import { BridgeArch, IconCheck } from "./icons";
 
-/** Fonts and stylesheet for every portal page: Setu's storefront faces. */
+/** Fonts and stylesheet for every portal page: Setu Store's storefront faces. */
 export const portalLinks = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
   { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" as const },
@@ -21,7 +21,7 @@ export const Wordmark = ({ sub, to = "/portal" }: { sub?: string; to?: string })
   </Link>
 );
 
-/** Split screen for sign in, sign up and password pages: Setu green on the left, the form on the right. */
+/** Split screen for sign in, sign up and password pages: Setu Store green on the left, the form on the right. */
 export function AuthLayout({ title, lead, wide, children }: { title: string; lead?: ReactNode; wide?: boolean; children: ReactNode }) {
   return (
     <div className="vp-auth">

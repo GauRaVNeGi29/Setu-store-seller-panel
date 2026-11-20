@@ -13,7 +13,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   return { profile, me: { name: me.user.name, email: me.user.email } };
 };
 
-export const meta: MetaFunction = () => [{ title: "My brand · Setu vendor portal" }];
+export const meta: MetaFunction = () => [{ title: "My brand · Setu Store vendor portal" }];
 
 function Rows({ rows }: { rows: [string, string | null][] }) {
   return (
@@ -35,7 +35,7 @@ export default function Profile() {
       <div className="vp-pagehead">
         <div>
           <h1 className="vp-h1">{p.displayName}</h1>
-          <p className="vp-lead">The details Setu Store holds for your brand. To change any of them, contact the Setu team.</p>
+          <p className="vp-lead">The details Setu Store holds for your brand. To change any of them, contact the Setu Store team.</p>
         </div>
       </div>
 

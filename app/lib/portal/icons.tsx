@@ -27,7 +27,7 @@ export const IconCheck = ({ title }: P) => (
   <svg {...base(title)}>{title && <title>{title}</title>}<circle cx="12" cy="12" r="9" /><path d="m8 12.5 2.5 2.5L16 9.5" /></svg>
 );
 
-/** A single bridge arch – Setu means "bridge". Used once, large and faint, on the sign-in panel. */
+/** A single bridge arch – the Hindi word setu means "bridge". Used once, large and faint, on the sign-in panel. */
 export const BridgeArch = ({ className }: { className?: string }) => (
   <svg className={className} viewBox="0 0 600 220" fill="none" stroke="currentColor" strokeWidth="10" aria-hidden="true">
     <path d="M0 200 Q300 -40 600 200" />

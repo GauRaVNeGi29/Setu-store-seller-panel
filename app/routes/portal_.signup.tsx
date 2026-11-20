@@ -9,13 +9,13 @@ import { AuthLayout, Field, portalLinks } from "../lib/portal/ui";
 
 /**
  * /portal/signup – create an account in three steps.
- * Invited email (added by the Setu team) → straight into the portal.
+ * Invited email (added by the Setu Store team) → straight into the portal.
  * Any other email → "under review" until the team approves it.
  * Without JavaScript all three steps show on one page and still submit.
  */
 
 export const links: LinksFunction = portalLinks;
-export const meta: MetaFunction = () => [{ title: "Create your account · Setu vendor portal" }, { name: "robots", content: "noindex" }];
+export const meta: MetaFunction = () => [{ title: "Create your account · Setu Store vendor portal" }, { name: "robots", content: "noindex" }];
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const me = await getIdentity(db, portalShop(), readSessionToken(request));
@@ -39,7 +39,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
 const STEPS = [
   { title: "About you", note: "The person who will sign in for your brand.", fields: ["name", "email", "phone", "password", "confirm"] },
-  { title: "Your business", note: "So the Setu team can match you to your products.", fields: ["brandName", "gstNumber", "city", "state", "productNote"] },
+  { title: "Your business", note: "So the Setu Store team can match you to your products.", fields: ["brandName", "gstNumber", "city", "state", "productNote"] },
   { title: "Your brand", note: "Shown to retailers on Setu Store. You can leave these for later.", fields: ["description", "policy", "minimumOrderValue"] },
 ];
 
@@ -91,7 +91,7 @@ export default function Signup() {
     <AuthLayout
       wide
       title="Create your account"
-      lead="If the Setu team invited your email, you'll go straight to your orders. Otherwise the team will review your details first."
+      lead="If the Setu Store team invited your email, you'll go straight to your orders. Otherwise the team will review your details first."
     >
       {js && (
         <ol className="vp-steps" aria-label="Steps">

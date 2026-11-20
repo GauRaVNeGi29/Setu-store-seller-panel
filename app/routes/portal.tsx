@@ -12,7 +12,7 @@ import { portalLinks, Wordmark } from "../lib/portal/ui";
  */
 
 export const links: LinksFunction = portalLinks;
-export const meta: MetaFunction = () => [{ title: "Setu vendor portal" }, { name: "robots", content: "noindex" }];
+export const meta: MetaFunction = () => [{ title: "Setu Store vendor portal" }, { name: "robots", content: "noindex" }];
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const me = await requireVendor(request);

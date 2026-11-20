@@ -15,7 +15,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   return { order, vendor: me.vendor.displayName };
 };
 
-export const meta: MetaFunction<typeof loader> = ({ data }) => [{ title: data ? `Order ${data.order.orderName} · Setu vendor portal` : "Order not found" }];
+export const meta: MetaFunction<typeof loader> = ({ data }) => [{ title: data ? `Order ${data.order.orderName} · Setu Store vendor portal` : "Order not found" }];
 
 export default function OrderDetail() {
   const { order: o, vendor } = useLoaderData<typeof loader>();

@@ -5,10 +5,10 @@ import { requireUser } from "../lib/portal/context.server";
 import { day } from "../lib/portal/format";
 import { AuthLayout, portalLinks } from "../lib/portal/ui";
 
-/** /portal/pending – a self sign-up waiting for the Setu team. No order data here. */
+/** /portal/pending – a self sign-up waiting for the Setu Store team. No order data here. */
 
 export const links: LinksFunction = portalLinks;
-export const meta: MetaFunction = () => [{ title: "Account under review · Setu vendor portal" }, { name: "robots", content: "noindex" }];
+export const meta: MetaFunction = () => [{ title: "Account under review · Setu Store vendor portal" }, { name: "robots", content: "noindex" }];
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const me = await requireUser(request);
@@ -25,7 +25,7 @@ export default function Pending() {
       title={d.name ? `Thanks, ${d.name.split(" ")[0]}. We're reviewing your account.` : "We're reviewing your account."}
       lead={
         <>
-          The Setu team is checking the details you sent{d.brandName ? <> for <b>{d.brandName}</b></> : null}. Once they approve your
+          The Setu Store team is checking the details you sent{d.brandName ? <> for <b>{d.brandName}</b></> : null}. Once they approve your
           account and link it to your products, your orders will appear here.
         </>
       }
@@ -37,7 +37,7 @@ export default function Pending() {
           <div><dt>Status</dt><dd><span className="vp-status vp-status--to_ship">Under review</span></dd></div>
         </dl>
       </div>
-      <p className="vp-small">You don&apos;t need to do anything else. Questions? Contact the Setu team.</p>
+      <p className="vp-small">You don&apos;t need to do anything else. Questions? Contact the Setu Store team.</p>
       <Form method="post" action="/portal/logout" className="vp-auth-alt">
         <button className="vp-btn vp-btn--quiet" type="submit">Sign out</button>
       </Form>

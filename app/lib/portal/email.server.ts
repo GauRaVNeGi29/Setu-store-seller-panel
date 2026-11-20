@@ -44,5 +44,5 @@ export function sendPasswordReset(to: string, name: string | null, link: string,
     "",
     "If you didn't ask for this, you can ignore this email; your password stays the same.",
   ].join("\n");
-  return send(to, "Reset your Setu vendor portal password", text, link, env);
+  return send(to, "Reset your Setu Store vendor portal password", text, link, env);
 }

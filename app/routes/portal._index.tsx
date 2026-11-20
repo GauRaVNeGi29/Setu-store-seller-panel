@@ -132,7 +132,7 @@ export default function MyOrders() {
         )}
       </section>
       <p className="vp-small" style={{ marginTop: 14 }}>
-        Your sales are your items&apos; value after discounts and refunds, before Setu&apos;s commission.
+        Your sales are your items&apos; value after discounts and refunds, before Setu Store&apos;s commission.
       </p>
     </>
   );

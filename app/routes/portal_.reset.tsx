@@ -9,7 +9,7 @@ import { AuthLayout, Field, portalLinks } from "../lib/portal/ui";
 /** /portal/reset?token=… – choose a new password. Ends every session of that person. */
 
 export const links: LinksFunction = portalLinks;
-export const meta: MetaFunction = () => [{ title: "Choose a new password · Setu vendor portal" }, { name: "robots", content: "noindex" }];
+export const meta: MetaFunction = () => [{ title: "Choose a new password · Setu Store vendor portal" }, { name: "robots", content: "noindex" }];
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const token = new URL(request.url).searchParams.get("token") ?? "";

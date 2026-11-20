@@ -21,7 +21,7 @@ export default function App() {
   return (
     <div className={styles.index}>
       <div className={styles.content}>
-        <h1 className={styles.heading}>Setu Vendor Portal</h1>
+        <h1 className={styles.heading}>Setu Store Vendor Portal</h1>
         <p className={styles.text}>
           Internal app for Setu Store. Vendor sign-in is not available yet.
         </p>

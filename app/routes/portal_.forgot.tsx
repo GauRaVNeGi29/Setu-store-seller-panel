@@ -9,7 +9,7 @@ import { AuthLayout, DevEmailPreview, Field, portalLinks } from "../lib/portal/u
 /** /portal/forgot – emails a reset link. Same answer whether or not the email has an account. */
 
 export const links: LinksFunction = portalLinks;
-export const meta: MetaFunction = () => [{ title: "Reset password · Setu vendor portal" }, { name: "robots", content: "noindex" }];
+export const meta: MetaFunction = () => [{ title: "Reset password · Setu Store vendor portal" }, { name: "robots", content: "noindex" }];
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   const shop = portalShop();

@@ -13,7 +13,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   return { ...(await listToShip(db, { shop: me.shop, vendorName: me.vendor.vendorName })), vendor: me.vendor.displayName };
 };
 
-export const meta: MetaFunction = () => [{ title: "What to ship · Setu vendor portal" }];
+export const meta: MetaFunction = () => [{ title: "What to ship · Setu Store vendor portal" }];
 
 export default function WhatToShip() {
   const d = useLoaderData<typeof loader>();
