@@ -61,31 +61,31 @@ model VendorOrderLine {
   orderId    BigInt
   orderName  String // "#1003"
 
-  vendorName String // "" when the product had no vendor
-  productId  BigInt?
-  variantId  BigInt?
-  title      String
+  vendorName   String // "" when the product had no vendor
+  productId    BigInt?
+  variantId    BigInt?
+  title        String
   variantTitle String?
-  sku        String?
+  sku          String?
 
   quantity          Int // as ordered
   currentQuantity   Int // after refunds, removals and cancellation
   refundedQuantity  Int @default(0)
   fulfilledQuantity Int @default(0)
 
-  currency         String  @default("INR")
-  unitPrice        Decimal @db.Decimal(14, 2) // before discounts
-  lineTotal        Decimal @db.Decimal(14, 2) // after line + order discounts, before refunds
-  refundedAmount   Decimal @default(0) @db.Decimal(14, 2)
-  netAmount        Decimal @db.Decimal(14, 2) // lineTotal − refundedAmount
+  currency       String  @default("INR")
+  unitPrice      Decimal @db.Decimal(14, 2) // before discounts
+  lineTotal      Decimal @db.Decimal(14, 2) // after line + order discounts, before refunds
+  refundedAmount Decimal @default(0) @db.Decimal(14, 2)
+  netAmount      Decimal @db.Decimal(14, 2) // lineTotal − refundedAmount
 
   status            LineStatus
-  orderCancelled    Boolean   @default(false)
+  orderCancelled    Boolean    @default(false)
   financialStatus   String // Shopify's display financial status of the whole order
   fulfillmentStatus String // Shopify's display fulfilment status of the whole order
   orderCreatedAt    DateTime
   orderUpdatedAt    DateTime // Shopify's updatedAt at the time we read it
-  syncedAt          DateTime  @default(now()) @updatedAt
+  syncedAt          DateTime   @default(now()) @updatedAt
 
   @@id([shop, lineItemId])
   @@index([shop, vendorName, orderCreatedAt])
@@ -103,13 +103,89 @@ model SyncState {
 
 /// Every write the app makes to its own data, for tracing problems.
 model AuditLog {
-  id        BigInt   @id @default(autoincrement())
-  shop      String
-  at        DateTime @default(now())
-  actor     String // "webhook:orders/updated", "admin:email", "backfill"
-  action    String // "order.synced", "order.removed", "sync.full"
-  target    String? // "order:19043720364141"
-  detail    Json?
+  id     BigInt   @id @default(autoincrement())
+  shop   String
+  at     DateTime @default(now())
+  actor  String // "webhook:orders/updated", "admin:email", "backfill"
+  action String // "order.synced", "order.removed", "sync.full"
+  target String? // "order:19043720364141"
+  detail Json?
 
   @@index([shop, at])
+}
+
+// ---------------------------------------------------------------------------
+// Stage 2: vendor records (managed by the team in Shopify admin)
+// ---------------------------------------------------------------------------
+
+enum VendorStatus {
+  active // users can sign in
+  paused // nobody from this vendor can sign in; existing sessions end
+}
+
+/// A vendor the team has set up for the portal. Linked to the Shopify product
+/// Vendor value; a vendor user only ever sees order lines with that exact vendorName.
+model Vendor {
+  id          String       @id @default(cuid())
+  shop        String
+  vendorName  String // must equal the Shopify product Vendor, e.g. "Urban Store"
+  displayName String
+  status      VendorStatus @default(active)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  users       VendorUser[]
+
+  @@unique([shop, vendorName])
+}
+
+/// A person who can sign in for a vendor. An email belongs to one vendor only.
+model VendorUser {
+  id          String          @id @default(cuid())
+  shop        String
+  vendorId    String
+  vendor      Vendor          @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  email       String // stored lower-case
+  name        String?
+  active      Boolean         @default(true)
+  lastLoginAt DateTime?
+  createdAt   DateTime        @default(now())
+  sessions    PortalSession[]
+
+  @@unique([shop, email])
+}
+
+// ---------------------------------------------------------------------------
+// Stage 3: vendor sign-in (email one-time code) and sessions
+// ---------------------------------------------------------------------------
+
+/// One-time sign-in code. Only a keyed hash of the code is stored.
+model LoginCode {
+  id        String    @id @default(cuid())
+  shop      String
+  email     String // lower-case; stored even for unknown emails so rate limits apply equally
+  codeHash  String
+  ip        String?
+  attempts  Int       @default(0)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([shop, email, createdAt])
+  @@index([ip, createdAt])
+}
+
+/// Server-side session. The cookie holds a random token; only its hash is stored.
+model PortalSession {
+  id           String     @id @default(cuid())
+  tokenHash    String     @unique
+  vendorUserId String
+  vendorUser   VendorUser @relation(fields: [vendorUserId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now())
+  lastSeenAt   DateTime   @default(now())
+  expiresAt    DateTime // absolute limit
+  revokedAt    DateTime?
+  ip           String?
+  userAgent    String?
+
+  @@index([vendorUserId])
 }

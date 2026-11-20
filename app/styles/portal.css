@@ -1,0 +1,65 @@
+/* Setu vendor portal – plain, readable, works on phones. */
+:root {
+  --ink: #1f2421;
+  --muted: #5d655f;
+  --line: #e2e4e0;
+  --bg: #f7f6f2;
+  --card: #ffffff;
+  --accent: #4b7054;
+  --accent-ink: #ffffff;
+  --warn: #8a5a00;
+  --warn-bg: #fff4dc;
+  --bad: #9b2c2c;
+  --bad-bg: #fdecec;
+  --ok-bg: #e7f2ea;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+}
+body { margin: 0; }
+a { color: var(--accent); }
+.vp-shell { max-width: 1040px; margin: 0 auto; padding: 0 16px 48px; }
+.vp-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 0; border-bottom: 1px solid var(--line); margin-bottom: 24px; flex-wrap: wrap; }
+.vp-brand { font-weight: 700; font-size: 18px; }
+.vp-brand small { display: block; font-weight: 400; color: var(--muted); font-size: 13px; }
+.vp-nav { display: flex; gap: 6px; flex-wrap: wrap; }
+.vp-nav a { padding: 8px 12px; border-radius: 8px; text-decoration: none; color: var(--ink); }
+.vp-nav a[aria-current="page"] { background: var(--card); box-shadow: inset 0 0 0 1px var(--line); font-weight: 600; }
+.vp-user { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 14px; }
+h1 { font-size: 24px; margin: 0 0 6px; }
+.vp-sub { color: var(--muted); margin: 0 0 20px; }
+.vp-card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+.vp-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.vp-stat { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+.vp-stat b { display: block; font-size: 22px; }
+.vp-stat span { color: var(--muted); font-size: 13px; }
+table.vp-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.vp-table th { text-align: left; font-weight: 600; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.vp-table td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.vp-table td.num, .vp-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.vp-scroll { overflow-x: auto; }
+.vp-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--line); }
+.vp-badge.to_ship, .vp-badge.unfulfilled { background: var(--warn-bg); color: var(--warn); }
+.vp-badge.partly_shipped, .vp-badge.partial { background: var(--warn-bg); color: var(--warn); }
+.vp-badge.shipped, .vp-badge.fulfilled { background: var(--ok-bg); color: var(--accent); }
+.vp-badge.cancelled, .vp-badge.refunded { background: var(--bad-bg); color: var(--bad); }
+.vp-filters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.vp-filters a { padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line); text-decoration: none; color: var(--ink); font-size: 13px; background: var(--card); }
+.vp-filters a[aria-current="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
+.vp-btn { display: inline-block; border: 0; border-radius: 8px; padding: 10px 16px; font: inherit; font-weight: 600; cursor: pointer; background: var(--accent); color: var(--accent-ink); text-decoration: none; }
+.vp-btn.secondary { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
+.vp-btn:disabled { opacity: .6; cursor: default; }
+.vp-login { max-width: 420px; margin: 10vh auto 0; }
+.vp-login label { display: block; font-weight: 600; margin: 14px 0 6px; }
+.vp-login input { width: 100%; box-sizing: border-box; font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.vp-login input.code { letter-spacing: .3em; font-size: 22px; text-align: center; }
+.vp-login .vp-btn { width: 100%; margin-top: 16px; }
+.vp-note { color: var(--muted); font-size: 13px; }
+.vp-error { background: var(--bad-bg); color: var(--bad); border-radius: 8px; padding: 10px 12px; margin: 12px 0; }
+.vp-info { background: var(--ok-bg); border-radius: 8px; padding: 10px 12px; margin: 12px 0; }
+.vp-pager { display: flex; gap: 12px; align-items: center; margin-top: 12px; }
+@media print {
+  .vp-top, .vp-filters, .vp-noprint { display: none !important; }
+  .vp-card { border: 0; padding: 0; }
+  :root { background: #fff; }
+}

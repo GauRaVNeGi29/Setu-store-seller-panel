@@ -2,7 +2,12 @@
 
 Custom Shopify app that will give Setu Store's vendors a secure place to see their own orders, shipments and earnings, replacing the vendor side of Webkul step by step.
 
-**Status: Stage 1 – development only.** No vendor login yet. The app copies every order line into its own database, filed by vendor, and shows the team a vendor overview inside Shopify admin so the data can be checked against Shopify.
+**Status: Stages 1–4 – development only (dev store).**
+
+- **Stage 1:** the app copies every order line into its own database, filed by vendor, kept current by order webhooks.
+- **Stage 2:** the team sets up vendors and the emails allowed to sign in (Shopify admin → the app → a vendor → *Vendor portal access*).
+- **Stage 3:** vendors sign in at `/portal/login` with a one-time code sent to their email. No passwords.
+- **Stage 4:** vendors see *My orders*, each order's detail (their items only) and *What to ship*.
 
 ## Safety rules
 
@@ -11,7 +16,7 @@ Custom Shopify app that will give Setu Store's vendors a secure place to see the
 - Read-only Shopify access: `read_orders, read_products, read_metaobjects, read_merchant_managed_fulfillment_orders`. No theme or write scopes.
 - Never run `shopify app config link` or `deploy` against the live store until a production stage is explicitly approved.
 
-## What Stage 1 contains
+## What the app contains
 
 | Part | File |
 | --- | --- |
@@ -22,7 +27,10 @@ Custom Shopify app that will give Setu Store's vendors a secure place to see the
 | Team screens: vendor overview, one vendor's lines | `app/routes/app._index.tsx`, `app/routes/app.vendor.tsx` |
 | Store guard | `app/lib/guard.server.ts` |
 | Database | `prisma/schema.prisma` (VendorOrderLine, SyncState, AuditLog) |
-| Tests (21) built from the dev store's test orders #1001–#1005 | `tests/` |
+| Vendor records and access (team) | `app/lib/vendors/vendors.server.ts`, `app/routes/app.vendor.tsx` |
+| Vendor sign-in and sessions | `app/lib/portal/auth.server.ts`, `app/routes/portal_.login.tsx`, `app/routes/portal_.logout.tsx` |
+| Vendor portal pages | `app/routes/portal*.tsx`, `app/lib/portal/data.server.ts` |
+| Tests (57): order mapping, sync, sign-in, sessions, vendor isolation through the real pages | `tests/` |
 
 ## First-time setup on your PC
 
@@ -48,6 +56,31 @@ Custom Shopify app that will give Setu Store's vendors a secure place to see the
    | Urban Store | 5 | 51 | ₹3,550 | ₹75 | ₹3,475 | 33 |
 
 6. **Check live updates.** In the dev store, fulfil the Ashnur candle on #1004. Within a few seconds Ashnur's "Units to ship" drops from 10 to 7.
+
+## Trying the vendor portal (dev store)
+
+1. Add to your `.env`:
+   ```
+   PORTAL_SHOP=seller-panel-dev.myshopify.com
+   PORTAL_SECRET=<random 64 characters>
+   ```
+   Generate the secret with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
+   Leave `RESEND_API_KEY` empty: sign-in codes are then printed in the `npm run dev` terminal.
+2. Run `npm run dev` and open the app in the dev store admin.
+3. Click a vendor (e.g. **Ashnur**) → **Set up portal access** → add an email (any address you like for testing).
+4. Open the portal in a new browser window: the tunnel address printed by `npm run dev` (the `https://….trycloudflare.com` one) + `/portal/login`.
+5. Enter that email. Look in the terminal for `DEV ONLY – sign-in code for …` and type the 6 digits.
+6. You are in as that vendor: *My orders*, an order's detail, *What to ship*.
+
+What vendors never see: other vendors' items, an order's grand total, the buyer's name, email, phone or address.
+
+### Security rules (enforced on the server, covered by tests)
+
+- Invite-only; the login page answers the same whether or not an email has access.
+- Codes: 6 digits, 10 minutes, single use, 5 wrong tries, 5 per email and 20 per IP per hour; only a keyed hash is stored.
+- Sessions: random token in an `HttpOnly; Secure; SameSite=Lax` cookie, only its hash stored; end after 12 h idle, 7 days, sign-out, or when the team pauses the vendor or removes the person.
+- Every portal query is filtered by the signed-in vendor's name from the session. Another vendor's order returns the same "not found" as an order that doesn't exist. Vendor or shop names in the URL are ignored.
+- Portal pages can't be framed and aren't cached.
 
 ## Tests
 

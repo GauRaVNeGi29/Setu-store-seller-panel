@@ -1,9 +1,9 @@
 # DEVELOPMENT app – installed only on the dev store seller-panel-dev.myshopify.com.
 # Never link or deploy this file to the live store (q0zr1f-0m.myshopify.com).
-# Run `npm run config:link` once to fill in client_id from the Dev Dashboard.
+# Dev Dashboard app "Setu Store Seller Panel" (DEV).
 
-client_id = "REPLACE_WITH_DEV_APP_CLIENT_ID"
-name = "Setu Vendor Portal – DEV"
+client_id = "185145b192ded387f20a25d50419653a"
+name = "Setu Store Seller Panel"
 embedded = true
 application_url = "https://shopify.dev/apps/default-app-home"
 

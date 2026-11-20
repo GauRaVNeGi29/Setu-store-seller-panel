@@ -7,6 +7,7 @@ import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { recentActivity, vendorOverview } from "../lib/orders/admin.server";
 import { fullSync } from "../lib/orders/sync.server";
+import { portalStatusByVendor } from "../lib/vendors/vendors.server";
 
 /**
  * Stage 1 home: every vendor that appears on an order, with totals worked out
@@ -15,8 +16,16 @@ import { fullSync } from "../lib/orders/sync.server";
  */
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
-  const [overview, activity] = await Promise.all([vendorOverview(db, session.shop), recentActivity(db, session.shop)]);
-  return { ...overview, activity };
+  const [overview, activity, portal] = await Promise.all([
+    vendorOverview(db, session.shop),
+    recentActivity(db, session.shop),
+    portalStatusByVendor(db, session.shop),
+  ]);
+  const vendors = overview.vendors.map((v) => {
+    const p = portal.get(v.vendorName);
+    return { ...v, portal: p ? `${p.status === "active" ? "Active" : "Paused"} · ${p.users} ${p.users === 1 ? "person" : "people"}` : "Not set up" };
+  });
+  return { ...overview, vendors, activity };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -76,6 +85,7 @@ export default function Index() {
                 <th style={cell}>Net (₹)</th>
                 <th style={cell}>Units to ship</th>
                 <th style={cell}>Open orders</th>
+                <th style={cell}>Portal access</th>
               </tr>
             </thead>
             <tbody>
@@ -91,6 +101,7 @@ export default function Index() {
                   <td style={cell}>{inr(v.net)}</td>
                   <td style={cell}>{v.unitsToShip}</td>
                   <td style={cell}>{v.openOrders}</td>
+                  <td style={cell}>{v.portal}</td>
                 </tr>
               ))}
             </tbody>

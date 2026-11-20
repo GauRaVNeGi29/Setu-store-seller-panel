@@ -15,6 +15,14 @@ export default async function handleRequest(
   reactRouterContext: EntryContext
 ) {
   addDocumentResponseHeaders(request, responseHeaders);
+  if (new URL(request.url).pathname.startsWith("/portal")) {
+    // Vendor portal: never framed, no referrer leaks, never cached by shared caches.
+    responseHeaders.set("X-Frame-Options", "DENY");
+    responseHeaders.set("Content-Security-Policy", "frame-ancestors 'none'");
+    responseHeaders.set("Referrer-Policy", "no-referrer");
+    responseHeaders.set("Cache-Control", "private, no-store");
+    responseHeaders.set("X-Content-Type-Options", "nosniff");
+  }
   const userAgent = request.headers.get("user-agent");
   const callbackName = isbot(userAgent ?? '')
     ? "onAllReady"
