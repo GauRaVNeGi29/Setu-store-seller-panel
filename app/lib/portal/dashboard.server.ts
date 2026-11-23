@@ -22,10 +22,10 @@ export { RANGES, isRange, type RangeKey } from "./ranges";
 const IST_MS = 5.5 * 60 * 60 * 1000;
 const DAY = 24 * 60 * 60 * 1000;
 /** Calendar day in India as "YYYY-MM-DD". */
-const istDay = (d: Date) => new Date(d.getTime() + IST_MS).toISOString().slice(0, 10);
+export const istDay = (d: Date) => new Date(d.getTime() + IST_MS).toISOString().slice(0, 10);
 /** Midnight India time at the start of the given IST day, as a Date. */
 const istMidnight = (day: string) => new Date(Date.parse(`${day}T00:00:00Z`) - IST_MS);
-const addDays = (day: string, n: number) => new Date(Date.parse(`${day}T00:00:00Z`) + n * DAY).toISOString().slice(0, 10);
+export const addDays = (day: string, n: number) => new Date(Date.parse(`${day}T00:00:00Z`) + n * DAY).toISOString().slice(0, 10);
 const mondayOf = (day: string) => {
   const dow = (new Date(`${day}T00:00:00Z`).getUTCDay() + 6) % 7; // Monday = 0
   return addDays(day, -dow);
@@ -34,13 +34,14 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 const short = (day: string) => `${Number(day.slice(8, 10))} ${MONTHS[Number(day.slice(5, 7)) - 1]}`;
 
 type Line = Awaited<ReturnType<PrismaClient["vendorOrderLine"]["findMany"]>>[number];
-type OrderAgg = {
+export type OrderAgg = {
   orderId: string; orderName: string; createdAt: Date; day: string;
   status: "open" | "shipped" | "cancelled"; detail: "to_ship" | "partly_shipped" | "shipped" | "refunded" | "cancelled";
   net: Decimal; refunded: Decimal; units: number; toShip: number;
 };
 
-function aggregate(lines: Line[]): OrderAgg[] {
+/** One entry per order, from this vendor's lines. Shared with the earnings page so the numbers always agree. */
+export function aggregate(lines: Line[]): OrderAgg[] {
   const byOrder = new Map<string, Line[]>();
   for (const l of lines) byOrder.set(l.orderId.toString(), [...(byOrder.get(l.orderId.toString()) ?? []), l]);
   return [...byOrder.values()].map((ls) => {

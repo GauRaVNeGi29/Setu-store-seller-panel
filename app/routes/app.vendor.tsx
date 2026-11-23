@@ -12,6 +12,7 @@ import {
 } from "../lib/vendors/team.server";
 import { BUSINESS_FIELDS, BUSINESS_FILES, FIELD_LABEL } from "../lib/vendors/fields";
 import { createTeamHandoff } from "../lib/portal/auth.server";
+import { commissionHistory, setCommissionRate } from "../lib/commission/commission.server";
 import { portalBaseUrl } from "../lib/portal/context.server";
 
 /**
@@ -26,11 +27,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const name = new URL(request.url).searchParams.get("name") ?? "";
   const [lines, vendor] = await Promise.all([vendorLines(db, session.shop, name), getVendorByName(db, session.shop, name)]);
-  const [profile, people, change] = vendor
-    ? await Promise.all([vendorDetails(db, session.shop, vendor.id), listPeople(db, session.shop, vendor.id), changeRequestState(db, session.shop, vendor.id)])
-    : [null, [], null];
+  const [profile, people, change, commission] = vendor
+    ? await Promise.all([
+      vendorDetails(db, session.shop, vendor.id), listPeople(db, session.shop, vendor.id), changeRequestState(db, session.shop, vendor.id),
+      commissionHistory(db, session.shop, vendor.id),
+    ])
+    : [null, [], null, []];
   return {
-    name, lines, profile, people, change, vendor: vendor && { id: vendor.id, status: vendor.status },
+    name, lines, profile, people, change, commission: [...commission].reverse(), vendor: vendor && { id: vendor.id, status: vendor.status },
     portalUrl: portalBaseUrl(request),
   };
 };
@@ -75,6 +79,10 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<{ ok: boo
       );
     case "details":
       return done(await adminUpdateDetails(db, shop, vendor.id, Object.fromEntries(form), actor), "Details saved");
+    case "commission": {
+      const r = await setCommissionRate(db, shop, vendor.id, f("rate"), actor);
+      return r.ok ? { ok: true, message: `Commission set to ${Number(r.rate)}%` } : r;
+    }
     case "team_view": {
       const r = await createTeamHandoff(db, shop, vendor.id, actor);
       return r.ok ? { ok: true, viewUrl: `${portalBaseUrl(request)}/portal/view?token=${encodeURIComponent(r.token)}` } : r;
@@ -172,6 +180,54 @@ function PortalAccess({ name, portalUrl, canView, why }: { name: string; portalU
   );
 }
 
+type RateRow = { rate: string; effectiveFrom: string; setBy: string; createdAt: string; fromStart: boolean };
+
+function CommissionSection({ name, history }: { name: string; history: RateRow[] }) {
+  const fetcher = useFetcher<typeof action>();
+  const busy = fetcher.state !== "idle";
+  const current = history[0] ?? null;
+  const when = (iso: string) => new Date(iso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" });
+  return (
+    <s-section heading="Commission">
+      <s-paragraph>
+        {current
+          ? <>Setu Store takes <b>{Number(current.rate)}%</b> of {name}&apos;s sales after discounts and refunds. {name} sees this on their Earnings page.</>
+          : <><b>No commission rate set.</b> {name} sees &ldquo;Commission rate not set yet&rdquo; on their Earnings page.</>}
+      </s-paragraph>
+      {fetcher.data && !fetcher.data.ok && fetcher.data.error && <s-banner tone="critical">{fetcher.data.error}</s-banner>}
+      <fetcher.Form method="post" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <input type="hidden" name="name" value={name} />
+        <input type="hidden" name="intent" value="commission" />
+        <label htmlFor="rate" style={{ fontSize: 13 }}>{current ? "Change rate to" : "Set rate"}</label>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+          <input id="rate" name="rate" inputMode="decimal" required placeholder={current ? String(Number(current.rate)) : "e.g. 15"}
+            style={{ padding: 6, border: "1px solid #ccc", borderRadius: 6, width: 90, font: "inherit" }} />%
+        </span>
+        <s-button type="submit" {...(busy ? { loading: true } : {})}>{current ? "Change rate" : "Set rate"}</s-button>
+      </fetcher.Form>
+      <s-paragraph>
+        {current
+          ? "A new rate applies to orders placed from the moment you change it. Orders already placed keep the rate they were placed under."
+          : "The first rate applies to all of their orders, including ones already placed. Later changes apply only to new orders."}
+      </s-paragraph>
+      {history.length > 0 && (
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead><tr style={{ textAlign: "left" }}><th style={cell}>Rate</th><th style={cell}>Applies to orders placed</th><th style={cell}>Set by</th></tr></thead>
+          <tbody>
+            {history.map((h, i) => (
+              <tr key={h.createdAt + h.rate}>
+                <td style={cell}><b>{Number(h.rate)}%</b>{i === 0 ? " (current)" : ""}</td>
+                <td style={cell}>{h.fromStart ? "From the start" : `From ${when(h.effectiveFrom)}`}{i > 0 ? ` until ${when(history[i - 1].effectiveFrom)}` : ""}</td>
+                <td style={cell}>{h.setBy}<br /><small style={{ color: "#666" }}>{when(h.createdAt)}</small></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </s-section>
+  );
+}
+
 type Person = { id: string; email: string; name: string | null; status: string; role: string; access: string; lastLoginAt: string | null };
 
 function PersonRow({ p, name }: { p: Person; name: string }) {
@@ -219,7 +275,7 @@ function PersonRow({ p, name }: { p: Person; name: string }) {
 }
 
 export default function Vendor() {
-  const { name, lines, vendor, profile, people, change, portalUrl } = useLoaderData<typeof loader>();
+  const { name, lines, vendor, profile, people, change, portalUrl, commission } = useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
   const shopify = useAppBridge();
   const busy = fetcher.state !== "idle";
@@ -252,6 +308,8 @@ export default function Vendor() {
             canView={vendor.status === "active" && people.some((p) => p.status === "active")}
             why={vendor.status !== "active" ? "This vendor is paused, so its portal can't be opened." : "No one from this vendor has an active account yet, so there's no portal to view."}
           />
+
+          <CommissionSection name={profile?.displayName ?? name} history={commission} />
 
           {pending && (
             <s-section heading="Business change waiting for approval">

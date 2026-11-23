@@ -4,7 +4,7 @@ import { Form, Link, redirect, useActionData, useLoaderData, useNavigation } fro
 import db from "../db.server";
 import { requireVendor } from "../lib/portal/context.server";
 import {
-  canEdit, changeRequestState, requestBusinessChange, updateBrand, updateSellerDetails, vendorDetails, withdrawBusinessChange,
+  canEdit, canManagePeople, changeRequestState, requestBusinessChange, updateBrand, updateSellerDetails, vendorDetails, withdrawBusinessChange,
 } from "../lib/vendors/team.server";
 import { MAX_REQUEST_BYTES } from "../lib/files/files.server";
 import { FILE_RULES } from "../lib/files/rules";
@@ -33,7 +33,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const want = url.searchParams.get("edit");
   const edit = (want === "seller" && !me.teamViewer) || (editable && (want === "business" || want === "brand")) ? want : null;
   return {
-    details, change, editable, edit, saved: url.searchParams.get("saved"), teamView: !!me.teamViewer,
+    details, change, editable, edit, saved: url.searchParams.get("saved"), teamView: !!me.teamViewer, manageTeam: canManagePeople(me),
     me: { ...person, role: me.user.role, access: me.user.access },
   };
 };
@@ -107,7 +107,7 @@ const DOCS = [
 ] as const;
 
 export default function Profile() {
-  const { details: d, change, editable, edit, saved, me, teamView } = useLoaderData<typeof loader>();
+  const { details: d, change, editable, edit, saved, me, teamView, manageTeam } = useLoaderData<typeof loader>();
   const data = useActionData<typeof action>();
   const nav = useNavigation();
   const busy = nav.state !== "idle";
@@ -138,6 +138,7 @@ export default function Profile() {
               : "You have view-only access to the business and brand details. Ask your account owner if something needs changing."}
           </p>
         </div>
+        {manageTeam && <Link className="vp-btn vp-btn--quiet vp-teamlink" to="/portal/team">Manage your team</Link>}
       </div>
 
       {saved && SAVED[saved] && <p className="vp-msg vp-msg--ok" role="status">{SAVED[saved]}</p>}

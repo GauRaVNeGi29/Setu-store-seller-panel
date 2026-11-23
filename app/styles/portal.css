@@ -429,6 +429,26 @@ textarea.vp-input { min-height: 96px; resize: vertical; }
 @media (max-width: 700px) { .vp-brandpreview-logo { width: 56px; height: 56px; left: 12px; bottom: -18px; } }
 .vp-signup-note { margin: 16px 0 0; }
 
+/* ---------------------------------------------------------------- Earnings */
+.vp-rate-line { margin: 8px 0 0; font-size: 16px; }
+.vp-rate-line b { font-size: 20px; }
+.vp-rate-history { margin: 10px 0 0; padding: 0 0 0 18px; font-size: 14px; color: var(--ink-2); }
+.vp-earn-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.vp-tile--earn { border-color: var(--green); background: var(--green-wash); }
+.vp-tile--earn .vp-tile-value { color: var(--green-deep); }
+.vp-earnline { margin: 12px 0 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.vp-earnline > div { display: flex; flex-direction: column; gap: 2px; }
+.vp-earnline dt { font-size: 13px; color: var(--ink-2); }
+.vp-earnline dd { margin: 0; font-size: 22px; font-weight: 600; }
+.vp-earnline-total dd { color: var(--green-deep); }
+.vp-teamlink { align-self: flex-start; }
+@media (max-width: 700px) {
+  .vp-earn-tiles, .vp-earnline { grid-template-columns: 1fr; }
+  .vp-earnline > div { flex-direction: row; justify-content: space-between; align-items: baseline; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+  .vp-earnline > div:last-child { border-bottom: 0; }
+  .vp-earnline dd { font-size: 18px; }
+}
+
 /* ---------------------------------------------------------------- Team view banner */
 .vp-teamview { display: flex; align-items: center; justify-content: space-between; gap: 12px 18px; flex-wrap: wrap; margin: 0 0 22px;
   padding: 12px 16px; border-radius: var(--r-md); background: var(--ink); color: #fff; }

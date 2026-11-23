@@ -4,6 +4,7 @@ import fixture from "../fixtures/dev-orders-2026-11-20.json";
 import { saveOrder } from "../../app/lib/orders/sync.server";
 import { enableVendor, addVendorUser, approveSignup } from "../../app/lib/vendors/vendors.server";
 import { reviewBusinessChange } from "../../app/lib/vendors/team.server";
+import { setCommissionRate } from "../../app/lib/commission/commission.server";
 import { signUp, signIn, createTeamHandoff } from "../../app/lib/portal/auth.server";
 const db = new PrismaClient(); const shop = "seller-panel-dev.myshopify.com";
 const [cmd, a, b] = process.argv.slice(2);
@@ -31,6 +32,9 @@ if (cmd === "seed") {
 } else if (cmd === "teamview") {
   const v = await db.vendor.findFirstOrThrow({ where: { shop, vendorName: a } });
   console.log(JSON.stringify(await createTeamHandoff(db, shop, v.id, "admin:team@setustore.test")));
+} else if (cmd === "commission") {
+  const v = await db.vendor.findFirstOrThrow({ where: { shop, vendorName: a } });
+  console.log(JSON.stringify(await setCommissionRate(db, shop, v.id, b, "admin:team@setustore.test")));
 } else if (cmd === "clear-logins") {
   await db.loginAttempt.deleteMany({});
 } else if (cmd === "user") {

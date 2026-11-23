@@ -206,14 +206,41 @@ async def main():
         check("Dashboard", "orders by status: 1 shipped, 3 to ship, 1 cancelled",
               [await x.inner_text() for x in await owner.locator(".vp-segbar-part").all()] == ["1", "3", "1"])
         bar = owner.locator(".vp-chart-hit[aria-label*='Nov 2026: ₹3,475.00']")
-        await bar.focus(); await owner.wait_for_timeout(150)
+        await owner.mouse.move(5, 5)  # keep the pointer off the chart, so the tooltip follows keyboard focus
+        await bar.focus()
+        try:
+            await owner.wait_for_selector(".vp-tip", timeout=3000)
+        except Exception:
+            pass
         tip = owner.locator(".vp-tip")
-        check("Dashboard", "sales chart: focusing the November bar shows ₹3,475.00", await tip.count() == 1 and "₹3,475.00" in await tip.inner_text())
+        tip_n = await tip.count(); tip_t = await tip.inner_text() if tip_n else ""
+        dbg = await owner.evaluate("() => [document.activeElement && document.activeElement.getAttribute('aria-label'), location.search, document.querySelectorAll('.vp-chart-hit').length]")
+        check("Dashboard", "sales chart: focusing the November bar shows ₹3,475.00", tip_n == 1 and "₹3,475.00" in tip_t, f"{tip_n} {tip_t!r} {dbg} matches={await bar.count()}")
         await owner.click(".vp-tableview summary")
         check("Dashboard", "sales chart has a table view with every value", "₹3,475.00" in await owner.inner_text(".vp-tableview table"))
         await owner.click(".vp-dash-range a:has-text('Last 7 days')"); await owner.wait_for_url("**range=7"); await settle(owner)
         check("Dashboard", "Last 7 days shows 7 daily bars", await owner.locator(".vp-chart-hit").count() == 7)
         await owner.screenshot(path=f"{SHOTS}/dashboard.png", full_page=True)
+
+        # ------------------------------------------------------------ earnings
+        await go(owner, "/portal/earnings")
+        check("Earnings", "before a rate is set, the seller is told it isn't set yet", "hasn't been set yet" in await text(owner))
+        admin("commission", "Urban Store", "15")
+        await go(owner, "/portal/earnings?range=all")
+        body = await text(owner)
+        check("Earnings", "shows the 15% rate and, for all time, ₹3,475.00 − ₹521.25 = ₹2,953.75",
+              "Setu Store takes 15%" in body and all(x in body for x in ["₹3,475.00", "₹521.25", "₹2,953.75"]))
+        row_text = await owner.locator("table.vp-table--orders tbody tr", has_text="#1002").inner_text()
+        check("Earnings", "per order: #1002 ₹1,025.00 at 15% = ₹153.75 commission, ₹871.25 earned",
+              all(x in row_text for x in ["₹1,025.00", "15%", "₹153.75", "₹871.25"]))
+        admin("commission", "Urban Store", "20")
+        await go(owner, "/portal/earnings?range=all")
+        body = await text(owner)
+        check("Earnings", "after a change to 20%, the rate shows 20% but earlier orders keep 15%",
+              "Setu Store takes 20%" in body and "₹521.25" in body and "15% on orders placed before" in body)
+        await go(owner, "/portal?range=all")
+        card = await owner.inner_text(".vp-earncard")
+        check("Earnings", "the dashboard shows the earnings summary", all(x in card for x in ["₹521.25", "₹2,953.75", "20%"]))
 
         # ------------------------------------------------------------ orders
         await go(owner, "/portal/orders")
@@ -470,16 +497,19 @@ async def main():
         tabs = m.locator("nav.vp-tabs a")
         n = await tabs.count()
         boxes = [await tabs.nth(i).bounding_box() for i in range(n)]
-        check("Mobile", "owner sees 5 bottom tabs (Home first), all on one row", n == 5 and len({round(b["y"]) for b in boxes}) == 1 and (await tabs.first.inner_text()).strip() == "Home")
+        check("Mobile", "5 bottom tabs on one row: Home, Orders, To ship, Earnings, My brand",
+              n == 5 and len({round(b["y"]) for b in boxes}) == 1 and [t.split("\n")[0].strip().rstrip("0123456789") for t in await tabs.all_inner_texts()] == ["Home", "Orders", "To ship", "Earnings", "My brand"])
+        await go(m, "/portal/profile")
+        check("Mobile", "owners reach Team from My brand", await m.locator("a.vp-teamlink[href='/portal/team']").is_visible())
         sw = await m.evaluate("document.documentElement.scrollWidth")
         check("Mobile", "no sideways scrolling on My orders", sw <= 390, f"scrollWidth {sw}")
-        for path in ["/portal?range=all", "/portal/orders", "/portal/profile", "/portal/team", "/portal/ship", "/portal/orders/19043720298605"]:
+        for path in ["/portal?range=all", "/portal/orders", "/portal/earnings?range=all", "/portal/profile", "/portal/team", "/portal/ship", "/portal/orders/19043720298605"]:
             await go(m, path)
             sw = await m.evaluate("document.documentElement.scrollWidth")
             if sw > 390:
                 check("Mobile", f"no sideways scrolling on {path}", False, f"scrollWidth {sw}")
         else:
-            check("Mobile", "no sideways scrolling on Dashboard, My orders, My brand, Team, What to ship, order detail", True)
+            check("Mobile", "no sideways scrolling on Dashboard, My orders, Earnings, My brand, Team, What to ship, order detail", True)
         await m.screenshot(path=f"{SHOTS}/mobile-order.png", full_page=True)
         await mc.close()
 

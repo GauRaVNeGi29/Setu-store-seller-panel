@@ -390,6 +390,7 @@ export async function listAllVendors(db: PrismaClient, shop: string) {
     include: {
       users: { select: { status: true, role: true, email: true, name: true } },
       changeRequests: { where: { status: "pending" }, select: { id: true } },
+      commissions: { orderBy: [{ effectiveFrom: "desc" }, { createdAt: "desc" }], take: 1, select: { ratePercent: true } },
     },
   });
   return vendors.map((v) => {
@@ -401,6 +402,7 @@ export async function listAllVendors(db: PrismaClient, shop: string) {
       people: v.users.length, staff: v.users.length - owners.length,
       active: count("active"), deactivated: count("disabled"), needsApproval: count("pending"), invited: count("invited"),
       pendingChange: v.changeRequests.length > 0,
+      commission: v.commissions[0]?.ratePercent.toFixed(2) ?? null,
       missing: missingDetails({ ...v, minimumOrderValue: v.minimumOrderValue?.toFixed(2) ?? null }),
       city: [v.city, v.state].filter(Boolean).join(", "),
     };

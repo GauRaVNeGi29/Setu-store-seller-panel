@@ -17,6 +17,9 @@ export const IconStore = ({ title }: P) => (
 export const IconHome = ({ title }: P) => (
   <svg {...base(title)}>{title && <title>{title}</title>}<rect x="4" y="4" width="7" height="8" rx="1.5" /><rect x="13" y="4" width="7" height="5" rx="1.5" /><rect x="4" y="14" width="7" height="6" rx="1.5" /><rect x="13" y="11" width="7" height="9" rx="1.5" /></svg>
 );
+export const IconRupee = ({ title }: P) => (
+  <svg {...base(title)}>{title && <title>{title}</title>}<path d="M7 5h10M7 9.5h10" /><path d="M10 5c3.2 0 5 1.6 5 4.3 0 2.7-2 4.2-5 4.2H7l7.5 6.5" /></svg>
+);
 export const IconTeam = ({ title }: P) => (
   <svg {...base(title)}>{title && <title>{title}</title>}<circle cx="9" cy="8" r="3.2" /><path d="M3 19.5c.6-3.4 3-5.2 6-5.2s5.4 1.8 6 5.2" /><path d="M15.5 5.2a3 3 0 0 1 0 5.6M17.5 14.6c1.7.7 2.9 2.3 3.3 4.9" /></svg>
 );

@@ -5,6 +5,7 @@ import { requireVendor } from "../lib/portal/context.server";
 import { sellerDashboard } from "../lib/portal/dashboard.server";
 import { RANGES, isRange, type RangeKey } from "../lib/portal/ranges";
 import { canManagePeople, changeRequestState, vendorDetails } from "../lib/vendors/team.server";
+import { vendorEarnings } from "../lib/commission/commission.server";
 import { CHART_GREEN, CHART_MADDER, CHART_TURMERIC, RankedBars, SalesChart, StatusBar } from "../lib/portal/charts";
 import { day, inr } from "../lib/portal/format";
 import { IconBox } from "../lib/portal/icons";
@@ -23,8 +24,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const want = new URL(request.url).searchParams.get("range");
   const range: RangeKey = isRange(want) ? want : "30";
   const owner = canManagePeople(me);
-  const [dash, details, change, people] = await Promise.all([
+  const [dash, earnings, details, change, people] = await Promise.all([
     sellerDashboard(db, { shop: me.shop, vendorName: me.vendor.vendorName }, range),
+    vendorEarnings(db, { shop: me.shop, vendorName: me.vendor.vendorName, vendorId: me.vendor.id }, range),
     vendorDetails(db, me.shop, me.vendor.id),
     changeRequestState(db, me.shop, me.vendor.id),
     owner ? db.vendorUser.count({ where: { shop: me.shop, vendorId: me.vendor.id, status: { in: ["active", "invited"] } } }) : Promise.resolve(null),
@@ -32,6 +34,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const hour = Number(new Date().toLocaleString("en-GB", { hour: "2-digit", hour12: false, timeZone: "Asia/Kolkata" }));
   return {
     dash,
+    earn: { rate: earnings.rate, ...earnings.totals },
     greeting: hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening",
     firstName: (me.user.name ?? "").split(" ")[0] || null,
     teamView: !!me.teamViewer,
@@ -76,7 +79,7 @@ function Tile({ label, value, children }: { label: string; value: string; childr
 }
 
 export default function Dashboard() {
-  const { dash: d, greeting, firstName, brand, change, people, teamView } = useLoaderData<typeof loader>();
+  const { dash: d, earn, greeting, firstName, brand, change, people, teamView } = useLoaderData<typeof loader>();
   const loading = useNavigation().state === "loading";
   const period = d.range === "all" ? "" : `${d.range} days`;
   const k = d.kpis;
@@ -201,6 +204,22 @@ export default function Dashboard() {
           </Tile>
         </div>
         </div>
+
+        <section className="vp-panel vp-panel-body vp-earncard" aria-labelledby="earn-title">
+          <div className="vp-now-head">
+            <h2 className="vp-h2" id="earn-title">Earnings</h2>
+            <Link to={d.range === "30" ? "/portal/earnings" : `/portal/earnings?range=${d.range}`}>See by order</Link>
+          </div>
+          {earn.rate === null ? (
+            <p className="vp-now-line">Your commission rate hasn&apos;t been set yet. Your earnings will show here once the Setu Store team sets it.</p>
+          ) : (
+            <dl className="vp-earnline">
+              <div><dt>Sales after refunds</dt><dd>{inr(earn.net)}</dd></div>
+              <div><dt>Setu Store commission ({Number(earn.rate)}%)</dt><dd>− {inr(earn.commission)}</dd></div>
+              <div className="vp-earnline-total"><dt>You earn</dt><dd>{inr(earn.earnings)}</dd></div>
+            </dl>
+          )}
+        </section>
 
         <section className="vp-panel vp-panel-body" aria-labelledby="chart-title">
           <h2 className="vp-h2" id="chart-title">Sales by {d.bucket}</h2>

@@ -20,6 +20,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       vendors: vendors.length,
       changes: vendors.filter((v) => v.pendingChange).length,
       approvals: vendors.reduce((n, v) => n + v.needsApproval, 0),
+      noCommission: vendors.filter((v) => v.commission === null).length,
     },
   };
 };
@@ -30,10 +31,11 @@ export default function AllVendors() {
   const { vendors, totals, portalUrl } = useLoaderData<typeof loader>();
   return (
     <s-page heading="All vendors">
-      {(totals.changes > 0 || totals.approvals > 0) && (
+      {(totals.changes > 0 || totals.approvals > 0 || totals.noCommission > 0) && (
         <s-banner tone="warning">
           {totals.changes > 0 && <>{totals.changes} {totals.changes === 1 ? "vendor has" : "vendors have"} business changes waiting for approval. </>}
           {totals.approvals > 0 && <>{totals.approvals} {totals.approvals === 1 ? "person requires" : "people require"} approval. </>}
+          {totals.noCommission > 0 && <>{totals.noCommission} {totals.noCommission === 1 ? "vendor has" : "vendors have"} no commission rate. </>}
           Open the vendor to review.
         </s-banner>
       )}
@@ -53,6 +55,7 @@ export default function AllVendors() {
                 <th style={cell}>Vendor</th>
                 <th style={cell}>Owner</th>
                 <th style={cell}>People</th>
+                <th style={cell}>Commission</th>
                 <th style={cell}>Status</th>
                 <th style={cell}>Needs attention</th>
               </tr>
@@ -63,6 +66,7 @@ export default function AllVendors() {
                   v.pendingChange && "Business change to review",
                   v.needsApproval > 0 && `${v.needsApproval} requires approval`,
                   v.invited > 0 && `${v.invited} invited, no password yet`,
+                  v.commission === null && "Commission not set",
                 ].filter(Boolean) as string[];
                 return (
                   <tr key={v.id}>
@@ -77,6 +81,7 @@ export default function AllVendors() {
                       {v.people} ({v.people - v.staff} owner{v.people - v.staff === 1 ? "" : "s"}, {v.staff} staff)
                       <br /><small style={{ color: "#666" }}>{v.active} active{v.deactivated ? ` · ${v.deactivated} deactivated` : ""}</small>
                     </td>
+                    <td style={cell}>{v.commission !== null ? `${Number(v.commission)}%` : <span style={{ color: "#8a5a12" }}>Not set</span>}</td>
                     <td style={cell}>{v.status === "active" ? "Active" : <b>Paused</b>}</td>
                     <td style={cell}>{flags.length ? flags.map((f) => <div key={f}><s-badge tone="warning">{f}</s-badge></div>) : <span style={{ color: "#666" }}>–</span>}</td>
                   </tr>

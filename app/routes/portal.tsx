@@ -3,7 +3,7 @@ import { Form, NavLink, Outlet, useLoaderData } from "react-router";
 import db from "../db.server";
 import { requireVendor } from "../lib/portal/context.server";
 import { listToShip } from "../lib/portal/data.server";
-import { IconBox, IconHome, IconOrders, IconOut, IconStore, IconTeam } from "../lib/portal/icons";
+import { IconBox, IconHome, IconOrders, IconOut, IconRupee, IconStore, IconTeam } from "../lib/portal/icons";
 import { portalLinks, Wordmark } from "../lib/portal/ui";
 import { canManagePeople } from "../lib/vendors/team.server";
 
@@ -28,8 +28,10 @@ const NAV = [
   { to: "/portal", label: "Home", long: "Dashboard", Icon: IconHome, end: true },
   { to: "/portal/orders", label: "Orders", long: "My orders", Icon: IconOrders, end: false },
   { to: "/portal/ship", label: "To ship", long: "What to ship", Icon: IconBox, end: false },
+  { to: "/portal/earnings", label: "Earnings", long: "Earnings", Icon: IconRupee, end: false },
   { to: "/portal/profile", label: "My brand", long: "My brand", Icon: IconStore, end: false },
-  { to: "/portal/team", label: "Team", long: "Team", Icon: IconTeam, end: false, ownerOnly: true },
+  // Team stays in the sidebar; on phones it's a link on My brand (five tabs fit, six don't).
+  { to: "/portal/team", label: "Team", long: "Team", Icon: IconTeam, end: false, ownerOnly: true, noTab: true },
 ];
 
 export default function PortalLayout() {
@@ -91,7 +93,7 @@ export default function PortalLayout() {
       </main>
 
       <nav className="vp-tabs" aria-label="Main">
-        {nav.map(({ to, label, Icon, end }) => (
+        {nav.filter((n) => !("noTab" in n)).map(({ to, label, Icon, end }) => (
           <NavLink key={to} to={to} end={end}>
             <Icon />
             {label}

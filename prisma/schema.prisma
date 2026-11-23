@@ -160,6 +160,7 @@ model Vendor {
   users          VendorUser[]
   changeRequests VendorChangeRequest[]
   files          VendorFile[]
+  commissions    VendorCommission[]
 
   @@unique([shop, vendorName])
 }
@@ -344,4 +345,24 @@ model VendorFile {
   createdAt    DateTime @default(now())
 
   @@index([vendorId, kind])
+}
+
+// ---------------------------------------------------------------------------
+// Commission
+// ---------------------------------------------------------------------------
+
+/// A vendor's commission rate from `effectiveFrom` on. Rows are never edited:
+/// a change adds a row, so an order always uses the rate in force when it was
+/// placed. The first rate a vendor gets starts at the beginning of time.
+model VendorCommission {
+  id            String   @id @default(cuid())
+  shop          String
+  vendorId      String
+  vendor        Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  ratePercent   Decimal  @db.Decimal(5, 2) // 0.00 – 100.00, of the vendor's sales after discounts and refunds
+  effectiveFrom DateTime
+  setBy         String // "admin:<team member>"
+  createdAt     DateTime @default(now())
+
+  @@index([vendorId, effectiveFrom])
 }

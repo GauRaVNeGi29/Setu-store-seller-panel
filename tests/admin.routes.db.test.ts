@@ -57,6 +57,7 @@ async function cleanup() {
   await db.vendorChangeRequest.deleteMany({ where: { shop } });
   await db.vendorFile.deleteMany({ where: { shop } });
   await db.portalHandoff.deleteMany({ where: { vendorUser: { shop } } });
+  await db.vendorCommission.deleteMany({ where: { shop } });
   await db.vendorUser.deleteMany({ where: { shop } });
   await db.vendor.deleteMany({ where: { shop } });
   await db.loginAttempt.deleteMany({ where: { shop } });
@@ -264,6 +265,21 @@ describe("All vendors and the vendor page", () => {
     expect(await db.auditLog.count({ where: { shop, action: "portal.team_view_opened", actor: "admin:team@setustore.test" } })).toBe(1);
     expect((await call(home.loader, "/app")).portalUrl).toBe("https://app.test");
     expect((await call(allVendors.loader, "/app/vendors")).portalUrl).toBe("https://app.test");
+  });
+
+  it("the team sets and changes commission on the vendor page; All vendors shows it", async () => {
+    let list = (await call(allVendors.loader, "/app/vendors")).vendors;
+    expect(list.find((v: { vendorName: string }) => v.vendorName === "Urban Store").commission).toBeNull();
+    expect(await vendorPost({ intent: "commission", rate: "abc" })).toMatchObject({ ok: false });
+    expect(await vendorPost({ intent: "commission", rate: "15" })).toMatchObject({ ok: true, message: "Commission set to 15%" });
+    expect(await vendorPost({ intent: "commission", rate: "15" })).toMatchObject({ ok: false });
+    expect(await vendorPost({ intent: "commission", rate: "17.5%" })).toMatchObject({ ok: true });
+    const page = await call(vendorPage.loader, "/app/vendor?name=Urban%20Store");
+    expect(page.commission.map((h: { rate: string; fromStart: boolean; setBy: string }) => [h.rate, h.fromStart, h.setBy])).toEqual([
+      ["17.50", false, "team@setustore.test"], ["15.00", true, "team@setustore.test"],
+    ]);
+    list = (await call(allVendors.loader, "/app/vendors")).vendors;
+    expect(list.find((v: { vendorName: string }) => v.vendorName === "Urban Store").commission).toBe("17.50");
   });
 
   it("removing a person ends their access", async () => {
