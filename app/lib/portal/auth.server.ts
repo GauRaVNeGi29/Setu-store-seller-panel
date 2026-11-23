@@ -1,7 +1,7 @@
 import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import type { PrismaClient, Prisma } from "@prisma/client";
-import { fillVendorProfile, normaliseEmail, isValidEmail } from "../vendors/vendors.server";
+import { normaliseEmail, isValidEmail } from "../vendors/vendors.server";
 
 /**
  * Vendor sign-in (email + password), sign-up, password reset and sessions.
@@ -10,7 +10,7 @@ import { fillVendorProfile, normaliseEmail, isValidEmail } from "../vendors/vend
  *   only "scrypt$N$r$p$salt$hash" is stored. At least 10 characters.
  * Lockout: 5 wrong passwords for an email in 15 minutes locks that email for
  *   15 minutes; 30 failed tries from one IP per hour blocks that IP.
- * Sign-up: an email the team invited becomes active straight away; any other
+ * Sign-up: name, email, phone, password only. An email the team invited becomes active straight away; any other
  *   email becomes "pending" and sees no order data until the team approves it
  *   and links it to a Shopify vendor.
  * Reset: link with a random token (only its hash stored), single use, 30 minutes.
@@ -80,19 +80,12 @@ type Ctx = { shop: string; ip?: string | null; userAgent?: string | null; now?: 
 // Sign-up
 // ---------------------------------------------------------------------------
 
+/** Sign-up asks only for the seller's own details; business and brand details come later, on My brand. */
 export type SignupInput = {
   name: string;
   email: string;
   password: string;
   phone: string;
-  brandName: string;
-  gstNumber?: string;
-  city: string;
-  state: string;
-  productNote?: string;
-  description?: string;
-  policy?: string;
-  minimumOrderValue?: string;
 };
 
 export type SignupResult =
@@ -108,26 +101,13 @@ export function validateSignup(raw: SignupInput) {
     name: clip(raw.name, 120),
     email: normaliseEmail(clip(raw.email, 254)),
     phone: clip(raw.phone, 20),
-    brandName: clip(raw.brandName, 120),
-    gstNumber: clip(raw.gstNumber, 15).toUpperCase(),
-    city: clip(raw.city, 80),
-    state: clip(raw.state, 80),
-    productNote: clip(raw.productNote, 1000),
-    description: clip(raw.description, 3000),
-    policy: clip(raw.policy, 3000),
-    minimumOrderValue: clip(raw.minimumOrderValue, 12).replace(/[,₹\s]/g, ""),
   };
   const errors: Record<string, string> = {};
   if (!v.name) errors.name = "Enter your name.";
   if (!isValidEmail(v.email)) errors.email = "Enter a valid email address.";
+  if (!PHONE.test(v.phone)) errors.phone = "Enter a phone number with at least 8 digits.";
   const pw = passwordProblem(raw.password ?? "", v.email);
   if (pw) errors.password = pw;
-  if (!PHONE.test(v.phone)) errors.phone = "Enter a phone number with at least 8 digits.";
-  if (!v.brandName) errors.brandName = "Enter your business or brand name.";
-  if (v.gstNumber && !GST.test(v.gstNumber)) errors.gstNumber = "That doesn't look like a 15-character GSTIN.";
-  if (!v.city) errors.city = "Enter your city.";
-  if (!v.state) errors.state = "Enter your state.";
-  if (v.minimumOrderValue && !(/^\d{1,9}(\.\d{1,2})?$/.test(v.minimumOrderValue))) errors.minimumOrderValue = "Enter an amount in rupees, e.g. 5000.";
   return { v, errors };
 }
 
@@ -151,11 +131,7 @@ export async function signUp(db: PrismaClient, raw: SignupInput, ctx: Ctx): Prom
     return { ok: false, errors: { email: "An account with this email already exists. Sign in, or use “Forgot password”." } };
   }
 
-  const application: Prisma.InputJsonValue = {
-    brandName: v.brandName, gstNumber: v.gstNumber || null, city: v.city, state: v.state,
-    productNote: v.productNote || null, description: v.description || null, policy: v.policy || null,
-    minimumOrderValue: v.minimumOrderValue || null, submittedAt: now.toISOString(),
-  };
+  const application: Prisma.InputJsonValue = { submittedAt: now.toISOString() };
   const passwordHash = await hashPassword(raw.password);
 
   let user;
@@ -165,7 +141,6 @@ export async function signUp(db: PrismaClient, raw: SignupInput, ctx: Ctx): Prom
       where: { id: existing.id },
       data: { name: v.name, phone: v.phone, passwordHash, application, status: existing.vendorId ? "active" : "pending" },
     });
-    if (existing.vendor) await fillVendorProfile(db, existing.vendor.id, application as Record<string, string | null>, v.phone);
   } else {
     user = await db.vendorUser.create({
       data: { shop: ctx.shop, email: v.email, name: v.name, phone: v.phone, passwordHash, application, status: "pending" },

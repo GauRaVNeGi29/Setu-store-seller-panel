@@ -35,6 +35,6 @@ if (cmd === "seed") {
   console.log(JSON.stringify(u && { status: u.status, role: u.role, access: u.access }));
 } else if (cmd === "vendor") {
   const v = await db.vendor.findFirstOrThrow({ where: { shop, vendorName: a } });
-  console.log(JSON.stringify({ displayName: v.displayName, city: v.city, description: v.description }));
+  console.log(JSON.stringify({ displayName: v.displayName, companyName: v.companyName, city: v.city, description: v.description }));
 }
 await db.$disconnect();

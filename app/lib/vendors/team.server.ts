@@ -1,5 +1,5 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
-import { GST, PHONE } from "../portal/auth.server";
+import { PHONE } from "../portal/auth.server";
 import { isValidEmail, normaliseEmail } from "./vendors.server";
 
 /**
@@ -35,83 +35,149 @@ const DENIED = { ok: false as const, error: "Your access doesn't allow this. Ask
 // Fields
 // ---------------------------------------------------------------------------
 
-import { BRAND_FIELDS, BUSINESS_FIELDS, FIELD_LABEL, type BrandField, type BusinessField } from "./fields";
+import {
+  BRAND_FIELDS, BRAND_FILES, BRAND_TEXT, BUSINESS_FIELDS, BUSINESS_FILES, BUSINESS_TEXT, FIELD_LABEL, FILE_FIELD_KIND, SHORT_DESCRIPTION_MAX,
+  fileInputName, missingDetails, type BrandField, type BusinessField, type FileField,
+} from "./fields";
+import { checkUpload, deleteFilesIfUnused, fileInfo, isFilePicked, storeFile, type FileCheck, type FileInfo } from "../files/files.server";
 export { BRAND_FIELDS, BUSINESS_FIELDS, FIELD_LABEL, type BrandField, type BusinessField };
 
-const clip = (v: FormDataEntryValue | string | null | undefined, n: number) => String(v ?? "").trim().slice(0, n);
+/** Reads a field from a submitted form or a plain object (tests, the team's form). */
+type Input = FormData | Record<string, unknown>;
+const get = (raw: Input, k: string) => (raw instanceof FormData ? raw.get(k) : (raw[k] as FormDataEntryValue | undefined));
+const clip = (v: unknown, n: number) => (typeof v === "string" ? v : v == null ? "" : typeof v === "object" ? "" : String(v)).trim().slice(0, n);
 
-export function cleanBrand(raw: Record<string, unknown>) {
+const PIN = /^[1-9][0-9]{5}$/;
+const MONEY = /^\d{1,9}(\.\d{1,2})?$/;
+
+/** Brand text. `requireAll` is off for the team's direct edits. */
+export function cleanBrand(raw: Input, requireAll = true) {
   const v = {
-    description: clip(raw.description as string, 3000),
-    policy: clip(raw.policy as string, 3000),
-    productNote: clip(raw.productNote as string, 1000),
-    minimumOrderValue: clip(raw.minimumOrderValue as string, 12).replace(/[,₹\s]/g, ""),
+    description: clip(get(raw, "description"), 3000),
+    shortDescription: clip(get(raw, "shortDescription"), SHORT_DESCRIPTION_MAX + 40),
+    minimumOrderValue: clip(get(raw, "minimumOrderValue"), 14).replace(/[,₹\s]/g, ""),
   };
   const errors: Record<string, string> = {};
-  if (v.minimumOrderValue && !/^\d{1,9}(\.\d{1,2})?$/.test(v.minimumOrderValue)) errors.minimumOrderValue = "Enter an amount in rupees, e.g. 5000.";
+  if (v.shortDescription.length > SHORT_DESCRIPTION_MAX) errors.shortDescription = `Keep it to ${SHORT_DESCRIPTION_MAX} characters.`;
+  if (!v.minimumOrderValue && requireAll) errors.minimumOrderValue = "Enter your minimum order value in rupees.";
+  else if (v.minimumOrderValue && !MONEY.test(v.minimumOrderValue)) errors.minimumOrderValue = "Enter an amount in rupees, e.g. 5000.";
   return { v, errors };
 }
 
-export function cleanBusiness(raw: Record<string, unknown>) {
+/** Business text. */
+export function cleanBusiness(raw: Input, requireAll = true) {
   const v = {
-    displayName: clip(raw.displayName as string, 120),
-    gstNumber: clip(raw.gstNumber as string, 15).toUpperCase(),
-    phone: clip(raw.phone as string, 20),
-    city: clip(raw.city as string, 80),
-    state: clip(raw.state as string, 80),
+    companyName: clip(get(raw, "companyName"), 160),
+    addressLine: clip(get(raw, "addressLine"), 300),
+    city: clip(get(raw, "city"), 80),
+    state: clip(get(raw, "state"), 80),
+    postalCode: clip(get(raw, "postalCode"), 10).replace(/\s/g, ""),
   };
   const errors: Record<string, string> = {};
-  if (!v.displayName) errors.displayName = "Enter your business name.";
-  if (v.gstNumber && !GST.test(v.gstNumber)) errors.gstNumber = "That doesn't look like a 15-character GSTIN.";
-  if (v.phone && !PHONE.test(v.phone)) errors.phone = "Enter a phone number with at least 8 digits.";
-  if (!v.city) errors.city = "Enter your city.";
-  if (!v.state) errors.state = "Enter your state.";
+  if (requireAll) {
+    if (!v.companyName) errors.companyName = "Enter your registered company name.";
+    if (!v.addressLine) errors.addressLine = "Enter your street address.";
+    if (!v.city) errors.city = "Enter your city.";
+    if (!v.state) errors.state = "Enter your state.";
+    if (!v.postalCode) errors.postalCode = "Enter your PIN code.";
+  }
+  if (v.postalCode && !PIN.test(v.postalCode)) errors.postalCode = "A PIN code has 6 digits, e.g. 141001.";
   return { v, errors };
 }
 
-const brandData = (v: ReturnType<typeof cleanBrand>["v"]) => ({
-  description: v.description || null, policy: v.policy || null, productNote: v.productNote || null,
-  minimumOrderValue: v.minimumOrderValue || null,
-});
-const businessData = (v: ReturnType<typeof cleanBusiness>["v"]) => ({
-  displayName: v.displayName, gstNumber: v.gstNumber || null, phone: v.phone || null, city: v.city || null, state: v.state || null,
-});
-
+const textOrNull = (s: string) => s || null;
 const asText = (x: unknown) => (x === null || x === undefined || x === "" ? null : typeof x === "object" && "toFixed" in (x as object) ? (x as { toFixed: (n: number) => string }).toFixed(2) : String(x));
+
+/** Checks every picked file before anything is stored, so a bad file stores nothing. */
+async function checkFiles(raw: Input, fields: readonly FileField[]) {
+  const checked: Partial<Record<FileField, Extract<FileCheck, { ok: true }>>> = {};
+  const errors: Record<string, string> = {};
+  for (const f of fields) {
+    const v = get(raw, fileInputName(f));
+    if (!isFilePicked(v ?? null)) continue;
+    const c = await checkUpload(FILE_FIELD_KIND[f], v as File);
+    if (c.ok) checked[f] = c;
+    else errors[fileInputName(f)] = c.error;
+  }
+  return { checked, errors };
+}
 
 // ---------------------------------------------------------------------------
 // Vendor side
 // ---------------------------------------------------------------------------
 
-export async function updateBrand(db: PrismaClient, me: Me, raw: Record<string, unknown>): Promise<Result> {
+/** Each signed-in person keeps their own name and phone up to date. Email is fixed. */
+export async function updateSellerDetails(db: PrismaClient, me: Me, raw: Input): Promise<Result> {
+  const name = clip(get(raw, "name"), 120);
+  const phone = clip(get(raw, "phone"), 20);
+  const errors: Record<string, string> = {};
+  if (!name) errors.name = "Enter your name.";
+  if (!PHONE.test(phone)) errors.phone = "Enter a phone number with at least 8 digits.";
+  if (Object.keys(errors).length) return { ok: false, error: "Check the highlighted fields.", errors };
+  await db.vendorUser.update({ where: { id: me.user.id }, data: { name, phone } });
+  await db.auditLog.create({ data: { shop: me.shop, actor: `portal:${me.user.email}`, action: "vendor_user.details_updated", target: `vendor:${me.vendor.id}` } });
+  return { ok: true };
+}
+
+export async function updateBrand(db: PrismaClient, me: Me, raw: Input): Promise<Result> {
   if (!canEdit(me)) return DENIED;
   const { v, errors } = cleanBrand(raw);
+  const files = await checkFiles(raw, BRAND_FILES);
+  Object.assign(errors, files.errors);
   if (Object.keys(errors).length) return { ok: false, error: "Check the highlighted fields.", errors };
-  await db.vendor.update({ where: { id: me.vendor.id }, data: brandData(v) });
-  await db.auditLog.create({ data: { shop: me.shop, actor: `portal:${me.user.email}`, action: "vendor.brand_updated", target: `vendor:${me.vendor.id}` } });
+
+  const current = await db.vendor.findUniqueOrThrow({ where: { id: me.vendor.id }, select: { logoFileId: true, bannerFileId: true } });
+  const data: Record<string, string | null> = {
+    description: textOrNull(v.description), shortDescription: textOrNull(v.shortDescription), minimumOrderValue: textOrNull(v.minimumOrderValue),
+  };
+  for (const f of BRAND_FILES) {
+    const c = files.checked[f];
+    if (c) data[f] = await storeFile(db, { shop: me.shop, vendorId: me.vendor.id, kind: FILE_FIELD_KIND[f], checked: c, uploadedById: me.user.id });
+    else if (get(raw, `remove_${fileInputName(f)}`) === "1") data[f] = null;
+  }
+  await db.vendor.update({ where: { id: me.vendor.id }, data });
+  await deleteFilesIfUnused(db, me.vendor.id, BRAND_FILES.filter((f) => f in data).map((f) => current[f]));
+  await db.auditLog.create({ data: { shop: me.shop, actor: `portal:${me.user.email}`, action: "vendor.brand_updated", target: `vendor:${me.vendor.id}`, detail: { files: BRAND_FILES.filter((f) => files.checked[f]) } } });
   return { ok: true };
 }
 
 export type Changes = Partial<Record<BusinessField, { from: string | null; to: string | null }>>;
 
-/** Records the differences as a pending request (replacing any earlier pending one). */
-export async function requestBusinessChange(db: PrismaClient, me: Me, raw: Record<string, unknown>): Promise<Result> {
+/**
+ * Records the differences as a pending request. Sending again replaces the
+ * waiting request: its text comes from the form, and files uploaded with the
+ * earlier request are kept unless a new file replaces them.
+ */
+export async function requestBusinessChange(db: PrismaClient, me: Me, raw: Input): Promise<Result> {
   if (!canEdit(me)) return DENIED;
   const { v, errors } = cleanBusiness(raw);
+  const files = await checkFiles(raw, BUSINESS_FILES);
+  Object.assign(errors, files.errors);
   if (Object.keys(errors).length) return { ok: false, error: "Check the highlighted fields.", errors };
+
   const current = await db.vendor.findUniqueOrThrow({ where: { id: me.vendor.id } });
-  const next = businessData(v);
+  const pending = await db.vendorChangeRequest.findFirst({ where: { vendorId: me.vendor.id, status: "pending" } });
+  const earlier = (pending?.changes ?? {}) as Changes;
+
   const changes: Changes = {};
-  for (const f of BUSINESS_FIELDS) {
+  for (const f of BUSINESS_TEXT) {
     const from = asText(current[f]);
-    const to = asText(next[f]);
+    const to = textOrNull(v[f]);
     if (from !== to) changes[f] = { from, to };
   }
-  if (!Object.keys(changes).length) return { ok: false, error: "Nothing has changed from your current details." };
+  const keptFromEarlier: string[] = [];
+  for (const f of BUSINESS_FILES) {
+    if (!files.checked[f] && earlier[f]?.to) { changes[f] = { from: current[f], to: earlier[f]!.to }; keptFromEarlier.push(earlier[f]!.to!); }
+  }
+  if (!Object.keys(changes).length && !Object.keys(files.checked).length) return { ok: false, error: "Nothing has changed from your current details." };
+  for (const f of BUSINESS_FILES) {
+    const c = files.checked[f];
+    if (c) changes[f] = { from: current[f], to: await storeFile(db, { shop: me.shop, vendorId: me.vendor.id, kind: FILE_FIELD_KIND[f], checked: c, uploadedById: me.user.id }) };
+  }
 
-  const pending = await db.vendorChangeRequest.findFirst({ where: { vendorId: me.vendor.id, status: "pending" } });
   if (pending) {
     await db.vendorChangeRequest.update({ where: { id: pending.id }, data: { changes: changes as Prisma.InputJsonValue, requestedById: me.user.id } });
+    await deleteFilesIfUnused(db, me.vendor.id, BUSINESS_FILES.map((f) => earlier[f]?.to));
   } else {
     await db.vendorChangeRequest.create({ data: { shop: me.shop, vendorId: me.vendor.id, requestedById: me.user.id, changes: changes as Prisma.InputJsonValue } });
   }
@@ -121,18 +187,22 @@ export async function requestBusinessChange(db: PrismaClient, me: Me, raw: Recor
 
 export async function withdrawBusinessChange(db: PrismaClient, me: Me): Promise<Result> {
   if (!canEdit(me)) return DENIED;
-  const r = await db.vendorChangeRequest.updateMany({ where: { vendorId: me.vendor.id, status: "pending" }, data: { status: "withdrawn" } });
-  if (!r.count) return { ok: false, error: "There's no change waiting for approval." };
+  const pending = await db.vendorChangeRequest.findFirst({ where: { vendorId: me.vendor.id, status: "pending" } });
+  if (!pending) return { ok: false, error: "There's no change waiting for approval." };
+  await db.vendorChangeRequest.update({ where: { id: pending.id }, data: { status: "withdrawn" } });
+  await deleteFilesIfUnused(db, me.vendor.id, BUSINESS_FILES.map((f) => ((pending.changes ?? {}) as Changes)[f]?.to));
   await db.auditLog.create({ data: { shop: me.shop, actor: `portal:${me.user.email}`, action: "vendor.business_change_withdrawn", target: `vendor:${me.vendor.id}` } });
   return { ok: true };
 }
 
-/** The pending request, and the most recent decided one (to tell the vendor what happened). */
+/** The pending request, and the most recent decided one (to tell the vendor what happened), with file names. */
 export async function changeRequestState(db: PrismaClient, shop: string, vendorId: string) {
   const [pending, last] = await Promise.all([
     db.vendorChangeRequest.findFirst({ where: { shop, vendorId, status: "pending" }, include: { requestedBy: { select: { email: true, name: true } } } }),
     db.vendorChangeRequest.findFirst({ where: { shop, vendorId, status: { in: ["approved", "rejected"] } }, orderBy: { reviewedAt: "desc" } }),
   ]);
+  const pc = (pending?.changes ?? {}) as Changes;
+  const files = await fileInfo(db, vendorId, BUSINESS_FILES.flatMap((f) => [pc[f]?.from, pc[f]?.to]));
   const shape = (r: NonNullable<typeof last>) => ({
     id: r.id, status: r.status, changes: r.changes as Changes, note: r.note,
     createdAt: r.createdAt.toISOString(), reviewedAt: r.reviewedAt?.toISOString() ?? null,
@@ -140,7 +210,25 @@ export async function changeRequestState(db: PrismaClient, shop: string, vendorI
   return {
     pending: pending && { ...shape(pending), by: pending.requestedBy?.name || pending.requestedBy?.email || null },
     last: last && shape(last),
+    files,
   };
+}
+
+/** Everything the My brand page and the team's vendor page show, with file names (never file contents). */
+export async function vendorDetails(db: PrismaClient, shop: string, vendorId: string) {
+  const v = await db.vendor.findFirst({ where: { id: vendorId, shop } });
+  if (!v) return null;
+  const files: Record<string, FileInfo> = await fileInfo(db, v.id, [v.gstFileId, v.iecFileId, v.adCodeFileId, v.logoFileId, v.bannerFileId]);
+  const file = (id: string | null) => (id && files[id]) || null;
+  const d = {
+    vendorName: v.vendorName, displayName: v.displayName,
+    companyName: v.companyName, addressLine: v.addressLine, city: v.city, state: v.state, postalCode: v.postalCode,
+    gstFile: file(v.gstFileId), iecFile: file(v.iecFileId), adCodeFile: file(v.adCodeFileId),
+    description: v.description, shortDescription: v.shortDescription,
+    minimumOrderValue: v.minimumOrderValue ? v.minimumOrderValue.toFixed(2) : null,
+    logoFile: file(v.logoFileId), bannerFile: file(v.bannerFileId),
+  };
+  return { ...d, missing: missingDetails(d) };
 }
 
 // ---------------------------------------------------------------------------
@@ -254,31 +342,39 @@ export async function reviewBusinessChange(
   if (!r) return { ok: false, error: "That change is no longer waiting for approval." };
   const now = new Date();
   const reviewed = { reviewedAt: now, reviewedBy: actor, note: clip(note, 500) || null };
+  const changes = (r.changes ?? {}) as Changes;
   if (decision === "reject") {
     await db.vendorChangeRequest.update({ where: { id: r.id }, data: { status: "rejected", ...reviewed } });
+    await deleteFilesIfUnused(db, r.vendorId, BUSINESS_FILES.map((f) => changes[f]?.to));
   } else {
-    const changes = r.changes as Changes;
+    const current = await db.vendor.findUniqueOrThrow({ where: { id: r.vendorId } });
     const data: Record<string, string | null> = {};
-    for (const f of BUSINESS_FIELDS) if (changes[f]) data[f] = changes[f]!.to;
-    if (data.displayName === null) delete data.displayName; // a business name is required
+    for (const f of BUSINESS_FIELDS) if (changes[f]) data[f] = changes[f]!.to; // older requests' other keys are ignored
     await db.$transaction([
       db.vendor.update({ where: { id: r.vendorId }, data }),
       db.vendorChangeRequest.update({ where: { id: r.id }, data: { status: "approved", ...reviewed } }),
     ]);
+    // Replaced documents are removed; the audit log keeps the record of the change.
+    await deleteFilesIfUnused(db, r.vendorId, BUSINESS_FILES.filter((f) => changes[f]).map((f) => current[f]));
   }
   await db.auditLog.create({ data: { shop, actor, action: `vendor.business_change_${decision === "approve" ? "approved" : "rejected"}`, target: `vendor:${r.vendorId}` } });
   return { ok: true };
 }
 
-/** The team edits brand and business details directly (no approval step). */
-export async function adminUpdateDetails(db: PrismaClient, shop: string, vendorId: string, raw: Record<string, unknown>, actor: string): Promise<Result> {
+/** The team edits the brand name and the text details directly (no approval step). Files come from the vendor. */
+export async function adminUpdateDetails(db: PrismaClient, shop: string, vendorId: string, raw: Input, actor: string): Promise<Result> {
   const vendor = await db.vendor.findFirst({ where: { id: vendorId, shop } });
   if (!vendor) return { ok: false, error: "Vendor not found" };
-  const b = cleanBrand(raw);
-  const s = cleanBusiness(raw);
-  const errors = { ...b.errors, ...s.errors };
+  const displayName = clip(get(raw, "displayName"), 120);
+  const b = cleanBrand(raw, false);
+  const s = cleanBusiness(raw, false);
+  const errors: Record<string, string> = { ...b.errors, ...s.errors };
+  if (!displayName) errors.displayName = "Enter the brand name.";
   if (Object.keys(errors).length) return { ok: false, error: Object.values(errors).join(" "), errors };
-  await db.vendor.update({ where: { id: vendor.id }, data: { ...brandData(b.v), ...businessData(s.v) } });
+  const data: Record<string, string | null> = { displayName };
+  for (const f of BRAND_TEXT) data[f] = textOrNull(b.v[f]);
+  for (const f of BUSINESS_TEXT) data[f] = textOrNull(s.v[f]);
+  await db.vendor.update({ where: { id: vendor.id }, data });
   await db.auditLog.create({ data: { shop, actor, action: "vendor.details_updated_by_team", target: `vendor:${vendor.id}` } });
   return { ok: true };
 }
@@ -302,6 +398,7 @@ export async function listAllVendors(db: PrismaClient, shop: string) {
       people: v.users.length, staff: v.users.length - owners.length,
       active: count("active"), deactivated: count("disabled"), needsApproval: count("pending"), invited: count("invited"),
       pendingChange: v.changeRequests.length > 0,
+      missing: missingDetails({ ...v, minimumOrderValue: v.minimumOrderValue?.toFixed(2) ?? null }),
       city: [v.city, v.state].filter(Boolean).join(", "),
     };
   });

@@ -140,17 +140,7 @@ export async function rejectSignup(db: PrismaClient, shop: string, userId: strin
   return { ok: true };
 }
 
-export async function getVendorProfile(db: PrismaClient, shop: string, vendorId: string) {
-  const v = await db.vendor.findFirst({ where: { id: vendorId, shop } });
-  if (!v) return null;
-  return {
-    displayName: v.displayName, vendorName: v.vendorName, phone: v.phone, gstNumber: v.gstNumber, city: v.city, state: v.state,
-    description: v.description, policy: v.policy, productNote: v.productNote,
-    minimumOrderValue: v.minimumOrderValue ? v.minimumOrderValue.toFixed(2) : null,
-  };
-}
-
-/** Copies sign-up brand details onto the vendor where the team hasn't filled them in. */
+/** Copies brand details from an older-style sign-up (before sign-up became seller details only) onto empty vendor fields. */
 export async function fillVendorProfile(db: PrismaClient, vendorId: string, a: Record<string, string | null>, phone?: string | null) {
   const vendor = await db.vendor.findUnique({ where: { id: vendorId } });
   if (!vendor) return;

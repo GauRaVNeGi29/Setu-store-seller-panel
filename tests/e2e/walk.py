@@ -18,6 +18,19 @@ from playwright.async_api import async_playwright
 B = "http://localhost:3999"
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 ENV = {**os.environ, "DATABASE_URL": os.environ.get("E2E_DATABASE_URL", "postgresql://postgres:ci@localhost:5432/vp_e2e")}
+PDF = b"%PDF-1.4\n1 0 obj << >> endobj\ntrailer << >>\n%%EOF\n"
+SVG = b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'
+
+
+def png(w, h, rgb):
+    import struct, zlib
+    raw = b"".join(b"\x00" + bytes(rgb) * w for _ in range(h))
+    chunk = lambda t, d: struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xffffffff)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b"")
+
+
+PNG_LOGO = png(64, 64, (63, 107, 78))
+PNG_BANNER = png(320, 100, (183, 121, 31))
 CONT = "fieldset.vp-step:not([hidden]) button:has-text('Continue')"
 PW, PW2 = "Demo-password-2026", "Brand-new-password-77"
 SHOTS = os.path.join(REPO, ".cache", "e2e-shots")
@@ -127,33 +140,26 @@ async def main():
         check("Sign-in", "signed-out visitor to /portal is sent to sign-in", p.url.endswith("/portal/login"))
         await c.close()
 
-        # ------------------------------------------------------------ sign-up of a new brand (pending)
+        # ------------------------------------------------------------ sign-up of a new seller (pending)
         c = await browser.new_context(**desk); p = await c.new_page(); watch(p, "signup-new")
         await go(p, "/portal/signup")
-        check("Sign-up", "starts on step 1 of 3 with steps 2–3 hidden", await p.locator("fieldset.vp-step:not([hidden])").count() == 1)
-        await p.click(CONT)
-        still_one = await p.locator("fieldset.vp-step").first.is_visible()
-        invalid = await p.evaluate("!document.querySelector('#name').checkValidity()")
-        check("Sign-up", "Continue with an empty step 1 stays on step 1 and flags the missing field", still_one and invalid)
-        await p.fill("#name", "Meera"); await p.fill("#email", "m@x.example"); await p.fill("#phone", "+91 99887 76655")
-        await p.fill("#password", PW); await p.fill("#confirm", PW + "x"); await p.click(CONT)
-        check("Sign-up", "mismatched passwords stop at step 1", await p.locator("fieldset.vp-step").first.is_visible())
-        await p.fill("#name", "Meera Joshi"); await p.fill("#email", "meera@newbrand.example"); await p.fill("#phone", "+91 99887 76655")
-        await p.fill("#password", PW); await p.fill("#confirm", PW)
-        await p.click(CONT)
-        await p.fill("#brandName", "Neel Pottery"); await p.fill("#gstNumber", "27ABCDE1234F1Z5"); await p.fill("#city", "Pune"); await p.fill("#state", "Maharashtra")
-        await p.fill("#productNote", "Hand-thrown blue pottery")
-        await p.click(CONT)
-        await p.fill("#description", "Small-batch pottery from Pune."); await p.fill("#minimumOrderValue", "3000")
+        ids = await p.eval_on_selector_all("form input:not([type=hidden])", "els => els.map(e => e.id)")
+        check("Sign-up", "asks only for name, email, phone and password", ids == ["name", "email", "phone", "password"], str(ids))
         await submit(p, "button:has-text('Create account')")
-        body = await text(p)
-        check("Sign-up", "a new brand lands on the 'under review' page", p.url.endswith("/portal/pending") and "Neel Pottery" in body, p.url)
+        errs = await p.locator("[aria-invalid='true']").count()
+        check("Sign-up", "sending it empty flags all four fields", errs == 4 and p.url.endswith("/portal/signup"), f"{errs} flagged")
+        await p.fill("#name", "Meera Joshi"); await p.fill("#email", "meera@newbrand.example"); await p.fill("#phone", "+91 99887 76655")
+        await p.fill("#password", PW)
+        await p.click("button:has-text('Show')")
+        check("Sign-up", "Show reveals the password while typing", await p.get_attribute("#password", "type") == "text")
+        await submit(p, "button:has-text('Create account')")
+        check("Sign-up", "a new seller lands on the 'under review' page", p.url.endswith("/portal/pending") and "reviewing your account" in await text(p), p.url)
         for path in ["/portal", "/portal/ship", "/portal/profile", "/portal/team", "/portal/orders/19043720134765"]:
             await go(p, path)
             if not p.url.endswith("/portal/pending"):
                 check("Sign-up", f"applicant under review can't open {path}", False, p.url); break
         else:
-            check("Sign-up", "applicant under review is kept away from every order page", True)
+            check("Sign-up", "applicant under review is kept away from every order and brand page", True)
         await go(p, "/portal/signup")
         check("Sign-up", "a signed-in applicant visiting sign-up goes to the review page", p.url.endswith("/portal/pending"))
         await c.close()
@@ -161,12 +167,12 @@ async def main():
         # duplicate email + no-JS sign-up
         c = await browser.new_context(**desk, java_script_enabled=False); p = await c.new_page()
         await go(p, "/portal/signup")
-        check("Sign-up", "without JavaScript all 3 steps show on one page", await p.locator("fieldset.vp-step").count() == 3 and await p.locator("#description").is_visible())
-        for k, v in {"name": "Dup", "email": "MEERA@newbrand.example", "phone": "+91 99887 76655", "password": PW, "confirm": PW, "brandName": "X", "city": "Pune", "state": "MH"}.items():
+        for k, v in {"name": "Dup", "email": "MEERA@newbrand.example", "phone": "+91 99887 76655", "password": PW}.items():
             await p.fill(f"#{k}", v)
         await submit(p, "button[type=submit]:has-text('Create account')")
-        check("Sign-up", "an email that already has an account (any capitals) is refused", "already exists" in await text(p))
+        check("Sign-up", "without JavaScript the form still works; an email already in use (any capitals) is refused", "already exists" in await text(p))
         await go(p, "/portal/login")
+        check("Sign-in", "sign-in page asks only for email and password", await p.eval_on_selector_all("form input:not([type=hidden])", "els => els.map(e => e.id)") == ["email", "password"])
         await p.fill("#email", "meera@newbrand.example"); await p.fill("#password", PW)
         await submit(p, "button[type=submit]")
         check("Sign-in", "signing in works before/without JavaScript (slow phones)", p.url.endswith("/portal/pending"), p.url)
@@ -179,9 +185,7 @@ async def main():
         c = await browser.new_context(**desk); owner = await c.new_page(); watch(owner, "owner")
         await go(owner, "/portal/signup")
         await owner.fill("#name", "Harpreet Singh"); await owner.fill("#email", "owner@urban.example"); await owner.fill("#phone", "+91 98140 12345")
-        await owner.fill("#password", PW); await owner.fill("#confirm", PW); await owner.click(CONT)
-        await owner.fill("#brandName", "Urban Store"); await owner.fill("#gstNumber", "03ABCDE1234F1Z5"); await owner.fill("#city", "Ludhiana"); await owner.fill("#state", "Punjab"); await owner.click(CONT)
-        await owner.fill("#description", "Sunglasses and watches since 2017."); await owner.fill("#policy", "Dispatch in 3 days."); await owner.fill("#minimumOrderValue", "1000")
+        await owner.fill("#password", PW)
         await submit(owner, "button:has-text('Create account')")
         check("Sign-up", "an email the team invited goes straight to its orders", owner.url.endswith("/portal"), owner.url)
         cookies = {x["name"]: x for x in await c.cookies()}
@@ -212,49 +216,98 @@ async def main():
             check("What to ship", "ticking an item as packed works", await boxes.first.is_checked())
         check("What to ship", "has a Print pick list button", await owner.locator("button:has-text('Print pick list')").count() == 1)
 
-        # ------------------------------------------------------------ my brand: brand details
+        # ------------------------------------------------------------ orders page reminder
+        await go(owner, "/portal")
+        check("My brand", "orders page reminds a new vendor to complete their profile",
+              "Complete your profile" in await text(owner) and "company name, business address and minimum order value" in await text(owner))
+
+        # ------------------------------------------------------------ my brand: three sections
         await go(owner, "/portal/profile")
-        check("My brand", "shows details from sign-up", "Sunglasses and watches since 2017." in await text(owner))
-        await owner.click("a:has-text('Edit')"); await owner.wait_for_url("**/portal/profile?edit=brand"); await owner.wait_for_selector("#description")
-        await owner.fill("#minimumOrderValue", "lots"); await submit(owner, "button:has-text('Save brand details')")
-        check("My brand", "a bad minimum order value is refused with a message", "Enter an amount in rupees" in await text(owner))
-        await owner.fill("#minimumOrderValue", "1500"); await owner.fill("#description", "Sunglasses, watches and jewellery since 2017.")
+        heads = await owner.eval_on_selector_all("section.vp-panel h2", "els => els.map(e => e.textContent)")
+        check("My brand", "has Seller details, Business details and Brand details", heads == ["Seller details", "Business details", "Brand details"], str(heads))
+        body = await text(owner)
+        check("My brand", "required details not yet added are marked", body.count("Required – not added yet") == 3)
+
+        # seller details
+        await owner.click("a[href$='?edit=seller']"); await owner.wait_for_url("**edit=seller"); await owner.wait_for_selector("#phone")
+        check("Seller details", "email is shown but can't be edited", await owner.locator("input#email").count() == 0 and "can't be changed" in await text(owner))
+        await owner.fill("#phone", "12"); await submit(owner, "button:has-text('Save')")
+        check("Seller details", "a bad phone number is refused", "at least 8 digits" in await text(owner))
+        await owner.fill("#phone", "+91 98140 00000"); await owner.fill("#name", "Harpreet S."); await submit(owner, "button:has-text('Save')")
+        body = await text(owner)
+        check("Seller details", "name and phone save at once", "Your details are saved." in body and "Harpreet S." in body and "+91 98140 00000" in body)
+        check("Seller details", "password row links to Change password", await owner.locator("a[href='/portal/forgot']").count() == 1)
+
+        # brand details with logo + banner
+        await owner.click("a[href$='?edit=brand']"); await owner.wait_for_url("**edit=brand"); await owner.wait_for_selector("#minimumOrderValue")
+        await owner.fill("#minimumOrderValue", ""); await owner.click("button:has-text('Save brand details')")
+        check("Brand details", "minimum order value is required (stopped before sending)", await owner.evaluate("!document.querySelector('#minimumOrderValue').checkValidity()"))
+        await owner.set_input_files("#logoFile", files=[{"name": "logo.svg", "mimeType": "image/svg+xml", "buffer": SVG}])
+        await owner.fill("#minimumOrderValue", "1500")
+        await submit(owner, "button:has-text('Save brand details')")
+        check("Brand details", "an SVG logo is refused with a clear message", "PNG, JPG or WebP" in await text(owner))
+        await owner.fill("#shortDescription", "Sunglasses and watches since 2017.")
+        await owner.fill("#description", "Urban Store designs sunglasses, watches and statement jewellery in Ludhiana.")
+        await owner.fill("#minimumOrderValue", "1500")
+        await owner.set_input_files("#logoFile", files=[{"name": "logo.png", "mimeType": "image/png", "buffer": PNG_LOGO}])
+        await owner.set_input_files("#bannerFile", files=[{"name": "banner.png", "mimeType": "image/png", "buffer": PNG_BANNER}])
         await submit(owner, "button:has-text('Save brand details')")
         body = await text(owner)
-        check("My brand", "brand details save at once", "Brand details saved." in body and "jewellery since 2017" in body and "1,500" in body)
+        check("Brand details", "description, short description and minimum save at once", "Brand details saved." in body and "1,500" in body and "since 2017" in body)
+        imgs = await owner.eval_on_selector_all(".vp-brandpreview img", "els => els.map(e => e.naturalWidth)")
+        check("Brand details", "logo and banner upload and show as a preview", len(imgs) == 2 and all(w > 0 for w in imgs), str(imgs))
+        await owner.screenshot(path=f"{SHOTS}/brand.png", full_page=True)
 
-        # business change
-        await owner.click("a:has-text('Request a change')"); await owner.wait_for_url("**/portal/profile?edit=business"); await owner.wait_for_selector("#city")
+        # business details with documents
+        await owner.click("a[href$='?edit=business']"); await owner.wait_for_url("**edit=business"); await owner.wait_for_selector("#companyName")
+        await owner.click("button:has-text('Send for approval')")
+        bad = await owner.evaluate("['companyName','addressLine','city','state','postalCode'].filter(id => !document.getElementById(id).checkValidity())")
+        check("Business details", "company name and full address are required (stopped before sending)", bad == ["companyName", "addressLine", "city", "state", "postalCode"], str(bad))
+        await owner.fill("#companyName", "Urban Store Pvt Ltd"); await owner.fill("#addressLine", "5 Mall Road")
+        await owner.fill("#city", "Ludhiana"); await owner.fill("#state", "Punjab"); await owner.fill("#postalCode", "14100")
         await submit(owner, "button:has-text('Send for approval')")
-        check("Business change", "sending with nothing changed is refused", "Nothing has changed" in await text(owner))
-        await owner.fill("#gstNumber", "BAD"); await owner.fill("#city", "Chandigarh")
+        check("Business details", "a 5-digit PIN code is refused", "6 digits" in await text(owner))
+        await owner.fill("#postalCode", "141001")
+        await owner.set_input_files("#gstFile", files=[{"name": "gst.pdf", "mimeType": "application/pdf", "buffer": b"<html>not a pdf</html>"}])
         await submit(owner, "button:has-text('Send for approval')")
-        check("Business change", "a bad GST number is refused", "15-character GSTIN" in await text(owner))
-        await owner.fill("#gstNumber", "03ABCDE1234F1Z5")
+        check("Business details", "an HTML file named .pdf is refused", "must be a PDF, JPG or PNG" in await text(owner))
+        await owner.set_input_files("#gstFile", files=[{"name": "GST certificate.pdf", "mimeType": "application/pdf", "buffer": PDF}])
+        await owner.set_input_files("#iecFile", files=[{"name": "IEC.pdf", "mimeType": "application/pdf", "buffer": PDF}])
         await submit(owner, "button:has-text('Send for approval')")
         body = await text(owner)
-        check("Business change", "request shows 'Waiting for approval' with old and new city", "Waiting for approval" in body and "Chandigarh" in body)
-        check("Business change", "current details are unchanged until approved", admin("vendor", "Urban Store")["city"] == "Ludhiana")
+        check("Business details", "request shows 'Waiting for approval' with the documents", "Waiting for approval" in body and "GST certificate.pdf" in body and "IEC.pdf" in body)
+        check("Business details", "nothing changes until approved", admin("vendor", "Urban Store").get("companyName") is None)
+        href = await owner.locator(".vp-change a.vp-filelink").first.get_attribute("href")
+        st = await owner.evaluate("async (h) => { const r = await fetch(h); return [r.status, r.headers.get('content-type')]; }", href)
+        check("Business details", "the vendor can open their own uploaded document", st == [200, "application/pdf"], str(st))
         await submit(owner, "button:has-text('Withdraw request')")
-        check("Business change", "withdrawing removes the request", "withdrawn" in await text(owner) and "Waiting for approval" not in await text(owner))
-        await owner.click("a:has-text('Request a change')"); await owner.wait_for_url("**/portal/profile?edit=business"); await owner.wait_for_selector("#city")
-        await owner.fill("#city", "Mohali"); await submit(owner, "button:has-text('Send for approval')")
+        check("Business details", "withdrawing removes the request", "withdrawn" in await text(owner) and "Waiting for approval" not in await text(owner))
+
+        await owner.click("a[href$='?edit=business']"); await owner.wait_for_url("**edit=business"); await owner.wait_for_selector("#companyName")
+        await owner.fill("#companyName", "Urban Store Pvt Ltd"); await owner.fill("#addressLine", "5 Mall Road")
+        await owner.fill("#city", "Ludhiana"); await owner.fill("#state", "Punjab"); await owner.fill("#postalCode", "141001")
+        await owner.set_input_files("#gstFile", files=[{"name": "GST certificate.pdf", "mimeType": "application/pdf", "buffer": PDF}])
+        await submit(owner, "button:has-text('Send for approval')")
         admin("review-change", "Urban Store", "reject")
         await go(owner, "/portal/profile")
         body = await text(owner)
-        check("Business change", "declined change shows the team's reason; details unchanged", "proof of the new address" in body and "Ludhiana" in body)
-        await owner.click("a:has-text('Request a change')"); await owner.wait_for_url("**/portal/profile?edit=business"); await owner.wait_for_selector("#city")
-        await owner.fill("#city", "Chandigarh"); await owner.fill("#displayName", "Urban Store Pvt Ltd")
+        check("Business details", "a declined request shows the team's reason; details unchanged", "proof of the new address" in body and admin("vendor", "Urban Store").get("companyName") is None)
+        await owner.click("a[href$='?edit=business']"); await owner.wait_for_url("**edit=business"); await owner.wait_for_selector("#companyName")
+        await owner.fill("#companyName", "Urban Store Pvt Ltd"); await owner.fill("#addressLine", "5 Mall Road")
+        await owner.fill("#city", "Ludhiana"); await owner.fill("#state", "Punjab"); await owner.fill("#postalCode", "141001")
+        await owner.set_input_files("#gstFile", files=[{"name": "GST certificate.pdf", "mimeType": "application/pdf", "buffer": PDF}])
+        await owner.set_input_files("#adCodeFile", files=[{"name": "AD code.png", "mimeType": "image/png", "buffer": PNG_LOGO}])
         await submit(owner, "button:has-text('Send for approval')")
         admin("review-change", "Urban Store", "approve")
         await go(owner, "/portal/profile")
         body = await text(owner)
-        check("Business change", "approved change updates business name and city", "Urban Store Pvt Ltd" in body and "Chandigarh, Punjab" in body)
-        check("My brand", "email shown as fixed; Change password goes to the reset page", "can't be changed" in body and await owner.locator("a[href='/portal/forgot']").count() == 1)
+        check("Business details", "after approval the company name, address and documents show", all(x in body for x in ["Urban Store Pvt Ltd", "5 Mall Road", "141001", "GST certificate.pdf", "AD code.png"]))
+        check("My brand", "profile complete: no reminder, nothing marked required", "complete your profile" not in body.lower() and "Required – not added yet" not in body)
+        doc_href = await owner.locator("dl a.vp-filelink").first.get_attribute("href")
 
         # ------------------------------------------------------------ team
         await go(owner, "/portal/team")
-        check("Team", "owner sees the Team page with themselves as Owner", "Harpreet Singh" in await text(owner) and "Full access" in await text(owner))
+        check("Team", "owner sees the Team page with themselves as Owner", "Harpreet S." in await text(owner) and "Full access" in await text(owner))
         await owner.fill("#email", "not-an-email"); await owner.click("button:has-text('Add and send invite')")
         check("Team", "a badly typed email is stopped before sending", await owner.evaluate("!document.querySelector('#email').checkValidity()"))
         await owner.fill("#name", "Ravi"); await owner.fill("#email", "ravi@urban.example"); await owner.check("#access-view")
@@ -280,10 +333,14 @@ async def main():
         check("View-only staff", "opening /portal/team sends them back to orders", staff.url.endswith("/portal"))
         await go(staff, "/portal/profile")
         body = await text(staff)
-        check("View-only staff", "My brand is read-only (no Edit / Request buttons)", "view-only access" in body and await staff.locator("a:has-text('Edit')").count() == 0 and await staff.locator("a:has-text('Request a change')").count() == 0)
+        check("View-only staff", "business and brand are read-only (only their own seller details are editable)",
+              "view-only access" in body and await staff.locator("a[href$='?edit=brand']").count() == 0 and await staff.locator("a[href$='?edit=business']").count() == 0
+              and await staff.locator("a[href$='?edit=seller']").count() == 1)
+        st = await staff.evaluate("async (h) => (await fetch(h)).status", doc_href)
+        check("View-only staff", "can open their vendor's documents", st == 200, str(st))
         await go(staff, "/portal/profile?edit=brand")
         check("View-only staff", "?edit=brand in the address doesn't open the form", await staff.locator("#description").count() == 0)
-        st = await staff.evaluate("""async () => { const r = await fetch('/portal/profile?_data=routes%2Fportal.profile', {method:'POST', body:new URLSearchParams({intent:'brand', description:'hacked'})}); return r.status }""")
+        st = await staff.evaluate("""async () => { const r = await fetch('/portal/profile?_data=routes%2Fportal.profile', {method:'POST', body:new URLSearchParams({intent:'brand', description:'hacked', minimumOrderValue:'1'})}); return r.status }""")
         check("View-only staff", "a forged save request doesn't change anything", "hacked" not in json.dumps(admin("vendor", "Urban Store")), f"status {st}")
 
         # owner upgrades to edit
@@ -292,7 +349,8 @@ async def main():
         await row.locator("select[name=access]").select_option("edit"); await submit(owner, row.locator("button:has-text('Save')"))
         check("Team", "owner changes staff access to View and edit", admin("user", "ravi@urban.example")["access"] == "edit")
         await go(staff, "/portal/profile")
-        check("Edit staff", "after the change, staff see Edit buttons (no sign-in needed)", await staff.locator("a:has-text('Edit')").count() >= 1)
+        check("Edit staff", "after the change, staff can edit brand and business (no sign-in needed)",
+              await staff.locator("a[href$='?edit=brand']").count() == 1 and await staff.locator("a[href$='?edit=business']").count() == 1)
         check("Edit staff", "still no Team tab", await staff.locator("nav a[href='/portal/team']").count() == 0)
 
         # deactivate
@@ -325,6 +383,8 @@ async def main():
         check("Isolation", "Ashnur opening Urban Store's order #1001 gets 'not found'", r.status == 404)
         await go(ash, "/portal/orders/19043720298605")
         check("Isolation", "on the shared order #1003, Ashnur sees only candles", "Candle" in await text(ash) and "Sunglass" not in await text(ash))
+        st = await ash.evaluate("async (h) => (await fetch(h)).status", doc_href)
+        check("Isolation", "Ashnur can't open Urban Store's GST document (not found)", st == 404, str(st))
         await ac.close()
 
         # ------------------------------------------------------------ forgot / reset, lockout, sign-out

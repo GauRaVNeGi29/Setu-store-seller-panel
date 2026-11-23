@@ -1,154 +1,188 @@
+import type { ReactNode } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "react-router";
 import { Form, Link, redirect, useActionData, useLoaderData, useNavigation } from "react-router";
 import db from "../db.server";
 import { requireVendor } from "../lib/portal/context.server";
-import { getVendorProfile } from "../lib/vendors/vendors.server";
-import { canEdit, changeRequestState, requestBusinessChange, updateBrand, withdrawBusinessChange } from "../lib/vendors/team.server";
-import { BUSINESS_FIELDS, FIELD_LABEL, type BusinessField } from "../lib/vendors/fields";
+import {
+  canEdit, changeRequestState, requestBusinessChange, updateBrand, updateSellerDetails, vendorDetails, withdrawBusinessChange,
+} from "../lib/vendors/team.server";
+import { MAX_REQUEST_BYTES } from "../lib/files/files.server";
+import { FILE_RULES } from "../lib/files/rules";
+import { BUSINESS_FIELDS, BUSINESS_FILES, FIELD_LABEL, SHORT_DESCRIPTION_MAX, fileInputName, type BusinessField } from "../lib/vendors/fields";
 import { inr } from "../lib/portal/format";
-import { Field } from "../lib/portal/ui";
+import { Field, FileField, FileLink, type PortalFile } from "../lib/portal/ui";
 
 /**
- * My brand.
- *  - Brand details: saved at once (owners and "view and edit" staff).
- *  - Business details: sent to the Setu Store team; the current ones stay until approved.
- *  - Sign-in: email fixed; password through "Forgot password".
- * Editing opens with ?edit=brand or ?edit=business, so it works without JavaScript.
+ * My brand, in three parts:
+ *  - Seller details: the signed-in person's own name and phone (saved at once); email fixed; password by email link.
+ *  - Business details: company name, address, GST / IEC / AD code documents. Sent to the Setu Store team;
+ *    the current details stay until they approve.
+ *  - Brand details: description, short description, minimum order value, logo, banner. Saved at once.
+ * Business and brand need an owner or "view and edit" staff. Editing opens with ?edit=…, so it works without JavaScript.
  */
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const me = await requireVendor(request);
-  const [profile, change] = await Promise.all([getVendorProfile(db, me.shop, me.vendor.id), changeRequestState(db, me.shop, me.vendor.id)]);
-  if (!profile) throw new Response("Not found", { status: 404 });
+  const [details, change, person] = await Promise.all([
+    vendorDetails(db, me.shop, me.vendor.id),
+    changeRequestState(db, me.shop, me.vendor.id),
+    db.vendorUser.findUnique({ where: { id: me.user.id }, select: { name: true, email: true, phone: true } }),
+  ]);
+  if (!details || !person) throw new Response("Not found", { status: 404 });
   const url = new URL(request.url);
   const editable = canEdit(me);
-  const edit = editable ? url.searchParams.get("edit") : null;
+  const want = url.searchParams.get("edit");
+  const edit = want === "seller" || (editable && (want === "business" || want === "brand")) ? want : null;
   return {
-    profile, change, editable,
-    edit: edit === "brand" || edit === "business" ? edit : null,
-    saved: url.searchParams.get("saved"),
-    me: { name: me.user.name, email: me.user.email, role: me.user.role, access: me.user.access },
+    details, change, editable, edit, saved: url.searchParams.get("saved"),
+    me: { ...person, role: me.user.role, access: me.user.access },
   };
 };
 
-export const action = async ({ request }: ActionFunctionArgs) => {
+type ActionResult = { ok: false; intent: string; error: string; errors?: Record<string, string>; values?: Record<string, string> };
+
+export const action = async ({ request }: ActionFunctionArgs): Promise<ActionResult> => {
   const me = await requireVendor(request);
-  const form = Object.fromEntries(await request.formData());
-  const intent = String(form.intent ?? "");
-  if (intent === "brand") {
-    const r = await updateBrand(db, me, form);
-    if (r.ok) throw redirect("/portal/profile?saved=brand");
-    return { ...r, intent, values: form };
+  if (Number(request.headers.get("content-length") ?? 0) > MAX_REQUEST_BYTES) {
+    return { ok: false, intent: "", error: `Those files are too large together – keep the total under ${MAX_REQUEST_BYTES / 1024 / 1024} MB.` };
   }
-  if (intent === "business") {
-    const r = await requestBusinessChange(db, me, form);
-    if (r.ok) throw redirect("/portal/profile?saved=business");
-    return { ...r, intent, values: form };
-  }
-  if (intent === "withdraw") {
-    const r = await withdrawBusinessChange(db, me);
-    if (r.ok) throw redirect("/portal/profile?saved=withdrawn");
-    return { ...r, intent };
-  }
-  return { ok: false as const, error: "Unknown action", intent };
+  const form = await request.formData();
+  const intent = String(form.get("intent") ?? "");
+  // Only text goes back to the page (a file can't be put back into a file picker).
+  const values = Object.fromEntries([...form.entries()].filter(([, v]) => typeof v === "string")) as Record<string, string>;
+  const run = {
+    seller: () => updateSellerDetails(db, me, form),
+    brand: () => updateBrand(db, me, form),
+    business: () => requestBusinessChange(db, me, form),
+    withdraw: () => withdrawBusinessChange(db, me),
+  }[intent];
+  if (!run) return { ok: false, intent, error: "Unknown action" };
+  const r = await run();
+  if (r.ok) throw redirect(`/portal/profile?saved=${intent === "withdraw" ? "withdrawn" : intent}`);
+  return { ok: false, intent, error: r.error, errors: r.errors, values };
 };
 
 export const meta: MetaFunction = () => [{ title: "My brand · Setu Store vendor portal" }];
 
 const SAVED: Record<string, string> = {
+  seller: "Your details are saved.",
   brand: "Brand details saved.",
   business: "Sent to the Setu Store team. Your current details stay in place until they approve the change.",
   withdrawn: "Change request withdrawn. Your details are as before.",
 };
 
-function Rows({ rows }: { rows: [string, string | null][] }) {
+type Row = [string, ReactNode, boolean?];
+function Rows({ rows }: { rows: Row[] }) {
   return (
     <dl className="vp-dl">
-      {rows.map(([k, v]) => (
+      {rows.map(([k, v, required]) => (
         <div key={k}>
           <dt>{k}</dt>
-          <dd>{v ? v : <span className="vp-none">Not added yet</span>}</dd>
+          <dd>{v || <span className={required ? "vp-none vp-none--required" : "vp-none"}>{required ? "Required – not added yet" : "Not added yet"}</span>}</dd>
         </div>
       ))}
     </dl>
   );
 }
 
-const show = (v: string | null) => (v ? v : "–");
 const when = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" });
+const address = (d: { addressLine: string | null; city: string | null; state: string | null; postalCode: string | null }) =>
+  d.addressLine || d.city ? [d.addressLine, [d.city, d.state].filter(Boolean).join(", "), d.postalCode].filter(Boolean).join("\n") : null;
+
+function SectionHead({ id, title, note, action }: { id: string; title: string; note: string; action?: ReactNode }) {
+  return (
+    <div className="vp-panel-head">
+      <div>
+        <h2 className="vp-h2" id={id}>{title}</h2>
+        <p className="vp-small vp-panel-note">{note}</p>
+      </div>
+      {action}
+    </div>
+  );
+}
+
+const DOCS = [
+  { field: "gstFileId", kind: "gst", current: "gstFile" },
+  { field: "iecFileId", kind: "iec", current: "iecFile" },
+  { field: "adCodeFileId", kind: "ad_code", current: "adCodeFile" },
+] as const;
 
 export default function Profile() {
-  const { profile: p, change, editable, edit, saved, me } = useLoaderData<typeof loader>();
+  const { details: d, change, editable, edit, saved, me } = useLoaderData<typeof loader>();
   const data = useActionData<typeof action>();
-  const busy = useNavigation().state !== "idle";
-  const err = (data && !data.ok && "errors" in data ? data.errors : undefined) ?? {};
-  const back = (data && "values" in data ? data.values : undefined) as Record<string, string> | undefined;
-  const editing = (edit ?? (data && !data.ok ? data.intent : null)) as string | null;
+  const nav = useNavigation();
+  const busy = nav.state !== "idle";
+  const failed = data && !data.ok ? data : null;
+  const editing = edit ?? (failed?.intent || null);
+  const err = failed?.errors ?? {};
+  const back = failed?.values;
   const pending = change.pending;
-  // When a request is waiting, editing starts from the requested values.
-  const proposed = (f: BusinessField) => back?.[f] ?? (pending?.changes[f] ? pending.changes[f]!.to ?? "" : (p[f] as string | null) ?? "");
+  const files = change.files as Record<string, NonNullable<PortalFile>>;
+  const val = (k: string, fallback: string | null | undefined) => back?.[k] ?? fallback ?? "";
+  // When a business request is waiting, editing starts from the requested values.
+  const requested = (f: BusinessField, now: string | null) => val(f, pending?.changes[f] ? pending.changes[f]!.to : now);
+  const busyFor = (intent: string) => busy && nav.formData?.get("intent") === intent;
+  const isFile = (f: BusinessField) => (BUSINESS_FILES as readonly string[]).includes(f);
+  const cell = (f: BusinessField, v: string | null) =>
+    isFile(f) ? (v && files[v] ? <FileLink file={files[v]} /> : "–") : v || "–";
 
   return (
     <>
       <div className="vp-pagehead">
         <div>
-          <h1 className="vp-h1">{p.displayName}</h1>
+          <h1 className="vp-h1">{d.displayName}</h1>
           <p className="vp-lead">
             {editable
-              ? "Keep your brand details up to date. Business details are checked by the Setu Store team before they change."
-              : "You have view-only access. Ask your account owner if you need to change anything."}
+              ? "Your seller, business and brand details. Business details are checked by the Setu Store team before they change."
+              : "You have view-only access to the business and brand details. Ask your account owner if something needs changing."}
           </p>
         </div>
       </div>
 
       {saved && SAVED[saved] && <p className="vp-msg vp-msg--ok" role="status">{SAVED[saved]}</p>}
-      {data && !data.ok && !("errors" in data && data.errors) && <p className="vp-msg vp-msg--error" role="alert">{data.error}</p>}
+      {failed && !failed.errors && <p className="vp-msg vp-msg--error" role="alert">{failed.error}</p>}
+      {d.missing.length > 0 && (
+        <p className="vp-msg vp-msg--todo" role="status">
+          To complete your profile, add your {d.missing.join(", ").replace(/, ([^,]*)$/, " and $1")}.
+          {pending && " (Details waiting for approval count once they're approved.)"}
+        </p>
+      )}
 
-      {/* ---------------- Brand ---------------- */}
-      <section className="vp-panel" aria-labelledby="b1">
-        <div className="vp-panel-head">
-          <div>
-            <h2 className="vp-h2" id="b1">Your brand on Setu Store</h2>
-            <p className="vp-small vp-panel-note">Changes show straight away.</p>
-          </div>
-          {editable && editing !== "brand" && <Link className="vp-btn vp-btn--quiet" to="?edit=brand">Edit</Link>}
-        </div>
-        {editing === "brand" ? (
+      {/* ---------------- 1. Seller details ---------------- */}
+      <section className="vp-panel" aria-labelledby="s1">
+        <SectionHead id="s1" title="Seller details" note="Your own details. Everyone on your team has their own."
+          action={editing !== "seller" && <Link className="vp-btn vp-btn--quiet" to="?edit=seller">Edit</Link>} />
+        {editing === "seller" ? (
           <Form method="post" className="vp-panel-body vp-form">
-            <input type="hidden" name="intent" value="brand" />
-            <Field name="description" label="Brand description" multiline defaultValue={back?.description ?? p.description ?? ""} error={err.description}
-              hint="A few sentences retailers will read on your brand page." />
-            <Field name="productNote" label="What you sell" multiline defaultValue={back?.productNote ?? p.productNote ?? ""} error={err.productNote}
-              hint="A line or two, e.g. hand-poured soy candles and wax sachets." />
-            <Field name="policy" label="Short policy" multiline defaultValue={back?.policy ?? p.policy ?? ""} error={err.policy}
-              hint="For example dispatch time, returns and damaged goods." />
-            <Field name="minimumOrderValue" label="Minimum order value (₹)" inputMode="decimal" defaultValue={back?.minimumOrderValue ?? p.minimumOrderValue ?? ""}
-              error={err.minimumOrderValue} hint="The smallest order a retailer can place with you. Leave empty for no minimum." />
+            <input type="hidden" name="intent" value="seller" />
+            <Field name="name" label="Name" required autoComplete="name" defaultValue={val("name", me.name)} error={err.name} />
+            <div className="vp-field">
+              <span className="vp-label">Email</span>
+              <p className="vp-readonly">{me.email}<span className="vp-small"> · can&apos;t be changed</span></p>
+            </div>
+            <Field name="phone" label="Phone" type="tel" required inputMode="tel" autoComplete="tel" defaultValue={val("phone", me.phone)} error={err.phone}
+              hint="Add the country code if you're outside India, e.g. +91 98765 43210." />
             <div className="vp-form-actions">
-              <button className="vp-btn" type="submit" disabled={busy}>{busy ? "Saving…" : "Save brand details"}</button>
+              <button className="vp-btn" type="submit" disabled={busy}>{busyFor("seller") ? "Saving…" : "Save"}</button>
               <Link className="vp-btn vp-btn--quiet" to="/portal/profile">Cancel</Link>
             </div>
           </Form>
         ) : (
           <Rows rows={[
-            ["Brand description", p.description],
-            ["What you sell", p.productNote],
-            ["Short policy", p.policy],
-            ["Minimum order value", p.minimumOrderValue ? inr(p.minimumOrderValue) : null],
+            ["Name", me.name, true],
+            ["Email", me.email],
+            ["Phone", me.phone, true],
+            ["Password", <span key="pw" className="vp-pwrow">••••••••••<Link to="/portal/forgot">Change password</Link></span>],
+            ["Role", me.role === "owner" ? "Owner – full access" : me.access === "edit" ? "Staff – view and edit" : "Staff – view only"],
           ]} />
         )}
       </section>
 
-      {/* ---------------- Business ---------------- */}
-      <section className="vp-panel" aria-labelledby="b2">
-        <div className="vp-panel-head">
-          <div>
-            <h2 className="vp-h2" id="b2">Business details</h2>
-            <p className="vp-small vp-panel-note">Changes need approval from the Setu Store team.</p>
-          </div>
-          {editable && editing !== "business" && (
-            <Link className="vp-btn vp-btn--quiet" to="?edit=business">{pending ? "Edit request" : "Request a change"}</Link>
-          )}
-        </div>
+      {/* ---------------- 2. Business details ---------------- */}
+      <section className="vp-panel" aria-labelledby="s2">
+        <SectionHead id="s2" title="Business details" note="Changes need approval from the Setu Store team."
+          action={editable && editing !== "business" && (
+            <Link className="vp-btn vp-btn--quiet" to="?edit=business">{pending ? "Edit request" : d.companyName ? "Request a change" : "Add details"}</Link>
+          )} />
 
         {pending && editing !== "business" && (
           <div className="vp-change" role="status">
@@ -162,8 +196,8 @@ export default function Profile() {
                 {BUSINESS_FIELDS.filter((f) => pending.changes[f]).map((f) => (
                   <tr key={f}>
                     <th scope="row">{FIELD_LABEL[f]}</th>
-                    <td>{show(pending.changes[f]!.from)}</td>
-                    <td><b>{show(pending.changes[f]!.to)}</b></td>
+                    <td>{cell(f, pending.changes[f]!.from)}</td>
+                    <td><b>{cell(f, pending.changes[f]!.to)}</b></td>
                   </tr>
                 ))}
               </tbody>
@@ -187,50 +221,89 @@ export default function Profile() {
         )}
 
         {editing === "business" ? (
-          <Form method="post" className="vp-panel-body vp-form">
+          <Form method="post" encType="multipart/form-data" className="vp-panel-body vp-form">
             <input type="hidden" name="intent" value="business" />
             <p className="vp-small" style={{ marginTop: 0 }}>
-              Your current details stay in place until the Setu Store team approves. {pending ? "Sending this replaces your earlier request." : ""}
+              Your current details stay in place until the Setu Store team approves.
+              {pending ? " Sending this replaces your earlier request; files you sent with it are kept unless you choose new ones." : ""}
             </p>
-            <Field name="displayName" label="Business name" required autoComplete="organization" defaultValue={proposed("displayName")} error={err.displayName} />
-            <Field name="gstNumber" label="GST number (GSTIN)" maxLength={15} defaultValue={proposed("gstNumber")} error={err.gstNumber} hint="15 characters, e.g. 08ABCDE1234F1Z5." />
-            <Field name="phone" label="Business phone" type="tel" inputMode="tel" autoComplete="tel" defaultValue={proposed("phone")} error={err.phone} />
-            <div className="vp-row">
-              <Field name="city" label="City" required autoComplete="address-level2" defaultValue={proposed("city")} error={err.city} />
-              <Field name="state" label="State" required autoComplete="address-level1" defaultValue={proposed("state")} error={err.state} />
-            </div>
+            <Field name="companyName" label="Company name" required autoComplete="organization" defaultValue={requested("companyName", d.companyName)}
+              error={err.companyName} hint="Your registered company name, as on your GST certificate." />
+            <fieldset className="vp-group">
+              <legend>Address</legend>
+              <Field name="addressLine" label="Street address" required autoComplete="street-address" defaultValue={requested("addressLine", d.addressLine)} error={err.addressLine} />
+              <div className="vp-row3">
+                <Field name="city" label="City" required autoComplete="address-level2" defaultValue={requested("city", d.city)} error={err.city} />
+                <Field name="state" label="State" required autoComplete="address-level1" defaultValue={requested("state", d.state)} error={err.state} />
+                <Field name="postalCode" label="PIN code" required inputMode="numeric" autoComplete="postal-code" maxLength={6}
+                  defaultValue={requested("postalCode", d.postalCode)} error={err.postalCode} />
+              </div>
+            </fieldset>
+            {DOCS.map(({ field, kind, current }) => {
+              const rule = FILE_RULES[kind];
+              const waiting = pending?.changes[field]?.to;
+              return (
+                <FileField key={field} name={fileInputName(field)} label={rule.label} accept={rule.accept} hint={rule.hint}
+                  current={(waiting && files[waiting]) || d[current]} error={err[fileInputName(field)]} />
+              );
+            })}
             <div className="vp-form-actions">
-              <button className="vp-btn" type="submit" disabled={busy}>{busy ? "Sending…" : "Send for approval"}</button>
+              <button className="vp-btn" type="submit" disabled={busy}>{busyFor("business") ? "Sending…" : "Send for approval"}</button>
               <Link className="vp-btn vp-btn--quiet" to="/portal/profile">Cancel</Link>
             </div>
           </Form>
         ) : (
           <Rows rows={[
-            ["Business name", p.displayName],
-            ["GST number", p.gstNumber],
-            ["Business phone", p.phone],
-            ["City and state", [p.city, p.state].filter(Boolean).join(", ") || null],
+            ["Company name", d.companyName, true],
+            ["Address", address(d), true],
+            ["GST certificate", d.gstFile && <FileLink file={d.gstFile} />],
+            ["IEC certificate", d.iecFile && <FileLink file={d.iecFile} />],
+            ["AD code letter", d.adCodeFile && <FileLink file={d.adCodeFile} />],
           ]} />
         )}
       </section>
 
-      {/* ---------------- Sign-in ---------------- */}
-      <section className="vp-panel" aria-labelledby="b3">
-        <div className="vp-panel-head">
-          <div>
-            <h2 className="vp-h2" id="b3">Your sign-in</h2>
-            <p className="vp-small vp-panel-note">Your email can&apos;t be changed.</p>
-          </div>
-        </div>
-        <Rows rows={[
-          ["Name", me.name],
-          ["Email", me.email],
-          ["Role", me.role === "owner" ? "Owner – full access" : me.access === "edit" ? "Staff – view and edit" : "Staff – view only"],
-        ]} />
-        <div className="vp-panel-foot">
-          <span className="vp-small">To change your password, we&apos;ll email you a link.</span>
-          <Link className="vp-btn vp-btn--quiet" to="/portal/forgot">Change password</Link>
-        </div>
+      {/* ---------------- 3. Brand details ---------------- */}
+      <section className="vp-panel" aria-labelledby="s3">
+        <SectionHead id="s3" title="Brand details" note="How retailers see your brand on Setu Store. Changes show straight away."
+          action={editable && editing !== "brand" && <Link className="vp-btn vp-btn--quiet" to="?edit=brand">Edit</Link>} />
+        {editing === "brand" ? (
+          <Form method="post" encType="multipart/form-data" className="vp-panel-body vp-form">
+            <input type="hidden" name="intent" value="brand" />
+            <Field name="shortDescription" label="Short description" maxLength={SHORT_DESCRIPTION_MAX} defaultValue={val("shortDescription", d.shortDescription)}
+              error={err.shortDescription} hint={`One line about your brand, up to ${SHORT_DESCRIPTION_MAX} characters.`} />
+            <Field name="description" label="Description" multiline defaultValue={val("description", d.description)} error={err.description}
+              hint="A few sentences: what you make, how, and what makes it yours." />
+            <Field name="minimumOrderValue" label="Minimum order value (₹)" required inputMode="decimal" defaultValue={val("minimumOrderValue", d.minimumOrderValue)}
+              error={err.minimumOrderValue} hint="The smallest order a retailer can place with you, in rupees." />
+            <FileField name="logoFile" label="Brand logo" current={d.logoFile} accept={FILE_RULES.logo.accept} hint={FILE_RULES.logo.hint}
+              error={err.logoFile} removable image />
+            <FileField name="bannerFile" label="Brand banner" current={d.bannerFile} accept={FILE_RULES.banner.accept} hint={FILE_RULES.banner.hint}
+              error={err.bannerFile} removable image />
+            <div className="vp-form-actions">
+              <button className="vp-btn" type="submit" disabled={busy}>{busyFor("brand") ? "Saving…" : "Save brand details"}</button>
+              <Link className="vp-btn vp-btn--quiet" to="/portal/profile">Cancel</Link>
+            </div>
+          </Form>
+        ) : (
+          <>
+            {(d.bannerFile || d.logoFile) && (
+              <div className="vp-brandpreview">
+                {d.bannerFile
+                  ? <img className="vp-brandpreview-banner" src={`/portal/files/${d.bannerFile.id}`} alt={`${d.displayName} banner`} />
+                  : <div className="vp-brandpreview-banner vp-brandpreview-banner--empty" />}
+                {d.logoFile && <img className="vp-brandpreview-logo" src={`/portal/files/${d.logoFile.id}`} alt={`${d.displayName} logo`} />}
+              </div>
+            )}
+            <Rows rows={[
+              ["Short description", d.shortDescription],
+              ["Description", d.description],
+              ["Minimum order value", d.minimumOrderValue ? inr(d.minimumOrderValue) : null, true],
+              ["Brand logo", d.logoFile && <FileLink file={d.logoFile} />],
+              ["Brand banner", d.bannerFile && <FileLink file={d.bannerFile} />],
+            ]} />
+          </>
+        )}
       </section>
     </>
   );

@@ -397,6 +397,38 @@ textarea.vp-input { min-height: 96px; resize: vertical; }
 .vp-choice label > span { display: flex; flex-direction: column; gap: 2px; font-weight: 600; }
 .vp-choice small { font-size: 13px; font-weight: 400; color: var(--ink-2); }
 
+/* ---------------------------------------------------------------- My brand: files, address, previews */
+.vp-msg--todo { background: var(--turmeric-wash); color: #6b4510; border-left: 3px solid var(--turmeric); }
+.vp-msg--todo a { color: inherit; font-weight: 700; }
+.vp-dl .vp-none--required { color: #8a5a12; font-style: normal; font-weight: 600; }
+.vp-label { display: block; font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+.vp-readonly { margin: 0; padding: 10px 12px; border-radius: var(--r-md); background: var(--stone); overflow-wrap: anywhere; }
+.vp-pwrow { display: inline-flex; gap: 14px; align-items: baseline; flex-wrap: wrap; letter-spacing: .08em; }
+.vp-pwrow a { letter-spacing: normal; font-weight: 600; }
+.vp-group { border: 0; padding: 0; margin: 4px 0 8px; min-width: 0; }
+.vp-group > legend { font-family: var(--serif); font-size: 18px; padding: 0; margin-bottom: 10px; }
+.vp-row3 { display: grid; grid-template-columns: 1fr 1fr 140px; gap: 0 14px; }
+@media (max-width: 620px) { .vp-row3 { grid-template-columns: 1fr 1fr; } .vp-row3 > :last-child { grid-column: 1 / -1; } }
+.vp-file { padding: 9px 10px; cursor: pointer; background: var(--paper); }
+.vp-file::file-selector-button { font: inherit; font-weight: 600; border: 1px solid var(--line-2); background: var(--stone); color: var(--ink); border-radius: var(--r-sm); padding: 6px 12px; margin-right: 12px; cursor: pointer; }
+.vp-file:hover::file-selector-button { background: var(--stone-2); }
+.vp-filecurrent { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; font-size: 14px; }
+.vp-filelink { font-weight: 600; overflow-wrap: anywhere; text-decoration: none; }
+.vp-filelink .vp-filename { text-decoration: underline; text-underline-offset: 3px; }
+.vp-filelink .vp-small { font-weight: 400; }
+.vp-thumb { width: 56px; height: 56px; object-fit: contain; border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--stone); }
+.vp-thumb--bannerFile { width: 140px; object-fit: cover; }
+.vp-remove { display: inline-flex; gap: 6px; align-items: center; font-weight: 500 !important; margin: 0 !important; color: var(--madder); cursor: pointer; }
+.vp-remove input { accent-color: var(--madder); }
+.vp-brandpreview { position: relative; margin: 20px 20px 8px; }
+.vp-brandpreview-banner { display: block; width: 100%; aspect-ratio: 16 / 5; max-height: 240px; object-fit: cover; border-radius: var(--r-md); background: var(--stone); }
+.vp-brandpreview-banner--empty { background: linear-gradient(135deg, var(--green-wash), var(--stone)); }
+.vp-brandpreview-logo { position: absolute; left: 20px; bottom: -22px; width: 76px; height: 76px; object-fit: contain; background: var(--paper);
+  border-radius: var(--r-md); border: 3px solid var(--paper); box-shadow: 0 1px 3px rgba(46, 43, 40, .18); }
+.vp-brandpreview:has(.vp-brandpreview-logo) { margin-bottom: 34px; }
+@media (max-width: 700px) { .vp-brandpreview-logo { width: 56px; height: 56px; left: 12px; bottom: -18px; } }
+.vp-signup-note { margin: 16px 0 0; }
+
 /* ---------------------------------------------------------------- Print */
 @media print {
   :root { background: #fff; font-size: 12px; }

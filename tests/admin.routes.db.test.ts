@@ -29,6 +29,7 @@ const allVendors = await import("../app/routes/app.vendors");
 const vendorPage = await import("../app/routes/app.vendor");
 const signups = await import("../app/routes/app.signups");
 const webhook = await import("../app/routes/webhooks.orders");
+const fileRoute = await import("../app/routes/app.files.$fileId");
 
 const db = new PrismaClient();
 const shop = "seller-panel-dev.myshopify.com";
@@ -39,8 +40,9 @@ afterAll(() => db.$disconnect());
 type Fn = (a: { request: Request; params: Record<string, string>; context: unknown }) => Promise<unknown>;
 async function call(fn: unknown, path: string, fields?: Record<string, string>) {
   const request = new Request("https://app.test" + path, fields ? { method: "POST", body: new URLSearchParams(fields) } : {});
+  const fileId = path.match(/^\/app\/files\/([^/?]+)/)?.[1];
   try {
-    return (await (fn as Fn)({ request, params: {}, context: {} })) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+    return (await (fn as Fn)({ request, params: fileId ? { fileId } : {}, context: {} })) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
   } catch (e) {
     if (e instanceof Response) return { thrown: e.status };
     throw e;
@@ -53,6 +55,7 @@ async function cleanup() {
   await db.portalSession.deleteMany({ where: { vendorUser: { shop } } });
   await db.passwordReset.deleteMany({ where: { vendorUser: { shop } } });
   await db.vendorChangeRequest.deleteMany({ where: { shop } });
+  await db.vendorFile.deleteMany({ where: { shop } });
   await db.vendorUser.deleteMany({ where: { shop } });
   await db.vendor.deleteMany({ where: { shop } });
   await db.loginAttempt.deleteMany({ where: { shop } });
@@ -113,8 +116,8 @@ describe("Order webhooks", () => {
 
 describe("Sign-ups page", () => {
   it("lists waiting sign-ups with the store's vendor names, approves one and declines another", async () => {
-    await signUp(db, { name: "Harpreet", email: "owner@urban.example", password: PW, phone: "+91 98140 12345", brandName: "Urban Store", city: "Ludhiana", state: "Punjab", description: "Sunglasses and watches" }, { shop });
-    await signUp(db, { name: "Spam", email: "spam@nowhere.example", password: PW, phone: "+91 90000 00000", brandName: "Nope", city: "X", state: "Y" }, { shop });
+    await signUp(db, { name: "Harpreet", email: "owner@urban.example", password: PW, phone: "+91 98140 12345" }, { shop });
+    await signUp(db, { name: "Spam", email: "spam@nowhere.example", password: PW, phone: "+91 90000 00000" }, { shop });
     const page = await call(signups.loader, "/app/signups");
     expect(page.pending.map((s: { email: string }) => s.email).sort()).toEqual(["owner@urban.example", "spam@nowhere.example"]);
     expect(page.shopifyVendors).toEqual(["Ashnur", "Urban Store"]);
@@ -124,7 +127,7 @@ describe("Sign-ups page", () => {
     expect(await call(signups.action, "/app/signups", { intent: "reject", userId: await userId("spam@nowhere.example") })).toMatchObject({ ok: true });
 
     const u = await db.vendorUser.findFirstOrThrow({ where: { shop, email: "owner@urban.example" }, include: { vendor: true } });
-    expect([u.status, u.role, u.vendor?.vendorName, u.vendor?.description]).toEqual(["active", "owner", "Urban Store", "Sunglasses and watches"]);
+    expect([u.status, u.role, u.vendor?.vendorName]).toEqual(["active", "owner", "Urban Store"]);
     expect((await signIn(db, "spam@nowhere.example", PW, { shop })).ok).toBe(false);
     const after = await call(signups.loader, "/app/signups");
     expect(after.pending).toHaveLength(0);
@@ -143,7 +146,7 @@ describe("All vendors and the vendor page", () => {
     const page = await call(vendorPage.loader, "/app/vendor?name=Urban%20Store");
     expect(page.vendor.status).toBe("active");
     expect(page.people.map((p: { email: string }) => p.email)).toEqual(["owner@urban.example"]);
-    expect(page.profile.description).toBe("Sunglasses and watches");
+    expect(page.profile.missing).toEqual(["company name", "business address", "minimum order value"]);
     expect(page.lines.length).toBeGreaterThan(0);
     expect(page.lines).toHaveLength(await db.vendorOrderLine.count({ where: { shop, vendorName: "Urban Store" } }));
     const ashnurIds = (await db.vendorOrderLine.findMany({ where: { shop, vendorName: "Ashnur" } })).map((l) => l.lineItemId.toString());
@@ -182,35 +185,56 @@ describe("All vendors and the vendor page", () => {
     expect(await vendorPost({ intent: "update_user", userId: id, status: "banana", role: "owner", access: "edit" })).toMatchObject({ ok: false });
   });
 
-  it("business change: approve updates the details, decline keeps them and stores the reason", async () => {
+  it("business change with a document: the team sees it, opens the file, approves; a later change is declined with a reason", async () => {
     const t = await signIn(db, "owner@urban.example", PW, { shop });
     if (!t.ok) throw new Error();
     const me = (await getIdentity(db, shop, t.token))!;
     const meArg = { shop, user: me.user, vendor: me.vendor! };
-    await requestBusinessChange(db, meArg, { displayName: "Urban Store Pvt Ltd", city: "Chandigarh", state: "Punjab", phone: "+91 98140 12345" });
+    const form = new FormData();
+    for (const [k, v] of Object.entries({ companyName: "Urban Store Pvt Ltd", addressLine: "5 Mall Road", city: "Ludhiana", state: "Punjab", postalCode: "141001" })) form.append(k, v);
+    form.append("gstFile", new File([new TextEncoder().encode("%PDF-1.4\n%%EOF\n")], "gst.pdf", { type: "application/pdf" }));
+    expect(await requestBusinessChange(db, meArg, form)).toEqual({ ok: true });
 
     let page = await call(vendorPage.loader, "/app/vendor?name=Urban%20Store");
-    expect(page.change.pending.changes.city).toEqual({ from: "Ludhiana", to: "Chandigarh" });
+    expect(page.change.pending.changes.companyName).toEqual({ from: null, to: "Urban Store Pvt Ltd" });
+    const gstId = page.change.pending.changes.gstFileId.to;
+    expect(page.change.files[gstId].fileName).toBe("gst.pdf");
     expect((await call(allVendors.loader, "/app/vendors")).vendors[0].pendingChange).toBe(true);
+
+    // The team opens the document; a file from another shop is "not found".
+    const res = (await call(fileRoute.loader, `/app/files/${gstId}`)) as unknown as Response;
+    expect([res.status, res.headers.get("content-type")]).toEqual([200, "application/pdf"]);
+    who.shop = "someone-else.myshopify.com";
+    process.env.ALLOWED_SHOPS = `${shop},someone-else.myshopify.com`;
+    expect(((await call(fileRoute.loader, `/app/files/${gstId}`)) as unknown as Response).status).toBe(404);
+    process.env.ALLOWED_SHOPS = shop;
+    who.shop = shop;
+
     expect(await vendorPost({ intent: "approve_change", requestId: page.change.pending.id })).toMatchObject({ ok: true });
     page = await call(vendorPage.loader, "/app/vendor?name=Urban%20Store");
-    expect([page.profile.displayName, page.profile.city]).toEqual(["Urban Store Pvt Ltd", "Chandigarh"]);
+    expect([page.profile.companyName, page.profile.postalCode, page.profile.gstFile.fileName]).toEqual(["Urban Store Pvt Ltd", "141001", "gst.pdf"]);
+    expect(page.profile.missing).toEqual(["minimum order value"]);
 
-    await requestBusinessChange(db, meArg, { displayName: "Urban Store Pvt Ltd", city: "Mohali", state: "Punjab", phone: "+91 98140 12345" });
+    await requestBusinessChange(db, meArg, { companyName: "Urban Store Pvt Ltd", addressLine: "5 Mall Road", city: "Chandigarh", state: "Punjab", postalCode: "160001" });
     page = await call(vendorPage.loader, "/app/vendor?name=Urban%20Store");
     expect(await vendorPost({ intent: "reject_change", requestId: page.change.pending.id, note: "Need proof of address" })).toMatchObject({ ok: true });
     page = await call(vendorPage.loader, "/app/vendor?name=Urban%20Store");
-    expect(page.profile.city).toBe("Chandigarh");
+    expect(page.profile.city).toBe("Ludhiana");
     expect(page.change.last).toMatchObject({ status: "rejected", note: "Need proof of address" });
   });
 
-  it("the team edits details directly, with checks", async () => {
-    const base = { intent: "details", displayName: "Urban Store", gstNumber: "03ABCDE1234F1Z5", phone: "+91 98140 12345", city: "Ludhiana", state: "Punjab", minimumOrderValue: "1500", productNote: "Sunglasses", description: "New text", policy: "3 days" };
+  it("the team edits brand name and text details directly, with checks", async () => {
+    const base = {
+      intent: "details", displayName: "Urban Store", companyName: "Urban Store Pvt Ltd", addressLine: "5 Mall Road", city: "Ludhiana", state: "Punjab",
+      postalCode: "141001", minimumOrderValue: "1500", shortDescription: "Sunglasses and watches", description: "New text",
+    };
     expect(await vendorPost(base)).toMatchObject({ ok: true });
-    expect(await vendorPost({ ...base, gstNumber: "BAD" })).toMatchObject({ ok: false });
+    expect(await vendorPost({ ...base, postalCode: "12" })).toMatchObject({ ok: false });
     expect(await vendorPost({ ...base, minimumOrderValue: "a lot" })).toMatchObject({ ok: false });
+    expect(await vendorPost({ ...base, displayName: "" })).toMatchObject({ ok: false });
     const v = await db.vendor.findFirstOrThrow({ where: { shop, vendorName: "Urban Store" } });
-    expect([v.displayName, v.description, v.minimumOrderValue?.toFixed(2), v.gstNumber]).toEqual(["Urban Store", "New text", "1500.00", "03ABCDE1234F1Z5"]);
+    expect([v.displayName, v.description, v.shortDescription, v.minimumOrderValue?.toFixed(2)]).toEqual(["Urban Store", "New text", "Sunglasses and watches", "1500.00"]);
+    expect((await call(vendorPage.loader, "/app/vendor?name=Urban%20Store")).profile.missing).toEqual([]);
   });
 
   it("an owner's staff invite shows up for the team; pausing the vendor signs everyone out", async () => {

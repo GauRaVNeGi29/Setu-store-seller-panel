@@ -15,8 +15,6 @@ afterAll(() => db.$disconnect());
 
 const form = (o: Partial<SignupInput> = {}): SignupInput => ({
   name: "Nusrat Mirza", email: "nusrat@ashnur.example", password: PW, phone: "+91 98765 43210",
-  brandName: "Ashnur", gstNumber: "08ABCDE1234F1Z5", city: "Jaipur", state: "Rajasthan",
-  productNote: "Handmade candles", description: "Hand-poured soy candles.", policy: "Dispatch in 3 days.", minimumOrderValue: "2,500",
   ...o,
 });
 
@@ -33,7 +31,7 @@ beforeEach(async () => {
 async function invitedActive(email = "owner@urban.example") {
   const v = await enableVendor(db, shop, "Urban Store", "test");
   expect(await addVendorUser(db, shop, v.id, email, "Owner", "test")).toEqual({ ok: true });
-  const r = await signUp(db, form({ email, brandName: "Urban Store" }), ctx);
+  const r = await signUp(db, form({ email }), ctx);
   if (!r.ok) throw new Error(JSON.stringify(r.errors));
   return { vendor: v, ...r };
 }
@@ -61,15 +59,14 @@ describe("passwords", () => {
 });
 
 describe("sign-up", () => {
-  it("an invited email becomes active at once and fills the vendor's brand details", async () => {
+  it("an invited email becomes active at once, keeping the team's vendor link", async () => {
     const r = await invitedActive();
     expect(r.ok && r.status).toBe("active");
     const me = await getIdentity(db, shop, r.ok ? r.token : null);
     expect(me?.user.status).toBe("active");
     expect(me?.vendor?.vendorName).toBe("Urban Store");
-    const v = await db.vendor.findUnique({ where: { id: r.vendor.id } });
-    expect(v).toMatchObject({ city: "Jaipur", gstNumber: "08ABCDE1234F1Z5", policy: "Dispatch in 3 days." });
-    expect(v!.minimumOrderValue!.toFixed(2)).toBe("2500.00");
+    const u = await db.vendorUser.findFirstOrThrow({ where: { shop, email: "owner@urban.example" } });
+    expect([u.name, u.phone]).toEqual(["Nusrat Mirza", "+91 98765 43210"]);
   });
 
   it("an unknown email becomes pending, with no vendor and no order access", async () => {
@@ -80,19 +77,14 @@ describe("sign-up", () => {
     expect(me?.vendor).toBeNull();
     const u = await db.vendorUser.findFirst({ where: { shop, email: "nusrat@ashnur.example" } });
     expect(u?.vendorId).toBeNull();
-    expect(u?.application).toMatchObject({ brandName: "Ashnur", minimumOrderValue: "2500" });
+    expect(Object.keys((u?.application ?? {}) as object)).toEqual(["submittedAt"]); // seller details only
   });
 
-  it("validates every field and reports each problem", async () => {
-    const r = await signUp(db, form({ name: "", email: "x", password: "short", phone: "12", brandName: "", gstNumber: "BAD", city: "", state: "", minimumOrderValue: "abc" }), ctx);
+  it("asks only for name, email, phone and password, and checks each", async () => {
+    const r = await signUp(db, form({ name: "", email: "x", password: "short", phone: "12" }), ctx);
     expect(r.ok).toBe(false);
     if (r.ok) return;
-    expect(Object.keys(r.errors).sort()).toEqual(["brandName", "city", "email", "gstNumber", "minimumOrderValue", "name", "password", "phone", "state"]);
-  });
-
-  it("GST, brand description, policy and minimum are optional", async () => {
-    const r = await signUp(db, form({ gstNumber: "", description: "", policy: "", minimumOrderValue: "", productNote: "" }), ctx);
-    expect(r.ok).toBe(true);
+    expect(Object.keys(r.errors).sort()).toEqual(["email", "name", "password", "phone"]);
   });
 
   it("an email that already has an account can't sign up again", async () => {
@@ -155,7 +147,7 @@ describe("team approval", () => {
     expect(me?.user.status).toBe("active");
     expect(me?.vendor?.vendorName).toBe("Ashnur");
     const v = await db.vendor.findFirst({ where: { shop, vendorName: "Ashnur" } });
-    expect(v?.description).toBe("Hand-poured soy candles.");
+    expect(v?.displayName).toBe("Ashnur"); // business and brand details are added later, on My brand
   });
 
   it("declining ends the applicant's session", async () => {

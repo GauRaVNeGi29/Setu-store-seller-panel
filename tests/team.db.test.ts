@@ -9,6 +9,7 @@ import {
 import * as profile from "../app/routes/portal.profile";
 import * as team from "../app/routes/portal.team";
 import * as layout from "../app/routes/portal";
+import * as files from "../app/routes/portal.files.$fileId";
 
 /**
  * Roles, staff access and business-change approval.
@@ -25,6 +26,7 @@ async function cleanup() {
   await db.portalSession.deleteMany({ where: { vendorUser: { shop } } });
   await db.passwordReset.deleteMany({ where: { vendorUser: { shop } } });
   await db.vendorChangeRequest.deleteMany({ where: { shop } });
+  await db.vendorFile.deleteMany({ where: { shop } });
   await db.vendorUser.deleteMany({ where: { shop } });
   await db.vendor.deleteMany({ where: { shop } });
   await db.loginAttempt.deleteMany({ where: { shop } });
@@ -35,7 +37,7 @@ async function cleanup() {
 async function owner(vendorName: string, email: string) {
   const v = await enableVendor(db, shop, vendorName, "test");
   await addVendorUser(db, shop, v.id, email, "Owner", "test");
-  const r = await signUp(db, { name: "Owner", email, password: PW, phone: "+91 98765 43210", brandName: vendorName, city: "Jaipur", state: "Rajasthan", gstNumber: "08ABCDE1234F1Z5" }, ctx);
+  const r = await signUp(db, { name: "Owner", email, password: PW, phone: "+91 98765 43210" }, ctx);
   if (!r.ok) throw new Error(JSON.stringify(r.errors));
   const me = await meFor(r.token);
   return { vendor: v, me, cookie: cookieOf(r.token) };
@@ -61,9 +63,9 @@ async function staff(o: Me, email: string, access: "view" | "edit") {
 const post = (path: string, cookie: string, fields: Record<string, string>) =>
   new Request("https://portal.test" + path, { method: "POST", headers: { Cookie: cookie }, body: new URLSearchParams(fields) });
 type Fn = (a: { request: Request; params: Record<string, string>; context: unknown }) => Promise<unknown>;
-async function run(fn: unknown, request: Request) {
+async function run(fn: unknown, request: Request, params: Record<string, string> = {}) {
   try {
-    return { data: await (fn as Fn)({ request, params: {}, context: {} }) as Record<string, unknown> };
+    return { data: await (fn as Fn)({ request, params, context: {} }) as Record<string, unknown> };
   } catch (e) {
     if (e instanceof Response) return { location: e.headers.get("Location"), status: e.status };
     throw e;
@@ -73,77 +75,179 @@ const get = (path: string, cookie: string) => new Request("https://portal.test" 
 
 beforeEach(cleanup);
 
+const PDF = () => Buffer.from("%PDF-1.4\n1 0 obj << >> endobj\ntrailer << >>\n%%EOF\n");
+const PNG = () => Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
+const file = (bytes: Buffer, name: string, type: string) => new File([new Uint8Array(bytes)], name, { type });
+const fd = (o: Record<string, string | File>) => { const f = new FormData(); for (const [k, v] of Object.entries(o)) f.append(k, v); return f; };
+const ADDRESS = { companyName: "Ashnur Crafts Pvt Ltd", addressLine: "12 MI Road", city: "Jaipur", state: "Rajasthan", postalCode: "302001" };
+const multipart = (path: string, cookie: string, body: FormData) =>
+  new Request("https://portal.test" + path, { method: "POST", headers: { Cookie: cookie }, body });
+
+describe("seller details", () => {
+  it("everyone – even view-only staff – edits their own name and phone; email can't change", async () => {
+    const { me: o } = await owner("Ashnur", "o@ashnur.example");
+    const viewer = await staff(o, "view@ashnur.example", "view");
+    const r = await run(profile.action, post("/portal/profile", viewer.cookie, { intent: "seller", name: "Asha", phone: "+91 90000 11111", email: "evil@x.example" }));
+    expect(r.location).toBe("/portal/profile?saved=seller");
+    const u = await db.vendorUser.findUniqueOrThrow({ where: { id: viewer.id } });
+    expect([u.name, u.phone, u.email]).toEqual(["Asha", "+91 90000 11111", "view@ashnur.example"]);
+    expect((await run(profile.action, post("/portal/profile", viewer.cookie, { intent: "seller", name: "", phone: "1" }))).data?.errors).toMatchObject({ name: expect.any(String), phone: expect.any(String) });
+  });
+});
+
 describe("brand details", () => {
   it("owners and view-and-edit staff save them at once; view-only staff can't", async () => {
     const { me: o } = await owner("Ashnur", "o@ashnur.example");
     const editor = await staff(o, "edit@ashnur.example", "edit");
     const viewer = await staff(o, "view@ashnur.example", "view");
 
-    expect(await updateBrand(db, o, { description: "By owner", minimumOrderValue: "2,500" })).toEqual({ ok: true });
-    expect(await updateBrand(db, editor.me, { description: "By editor" })).toEqual({ ok: true });
-    expect((await updateBrand(db, viewer.me, { description: "By viewer" })).ok).toBe(false);
-    expect((await db.vendor.findFirstOrThrow({ where: { shop, vendorName: "Ashnur" } })).description).toBe("By editor");
+    expect(await updateBrand(db, o, { description: "By owner", shortDescription: "Candles", minimumOrderValue: "2,500" })).toEqual({ ok: true });
+    expect(await updateBrand(db, editor.me, { description: "By editor", minimumOrderValue: "2500" })).toEqual({ ok: true });
+    expect((await updateBrand(db, viewer.me, { description: "By viewer", minimumOrderValue: "1" })).ok).toBe(false);
+    const v = await db.vendor.findFirstOrThrow({ where: { shop, vendorName: "Ashnur" } });
+    expect([v.description, v.shortDescription, v.minimumOrderValue?.toFixed(2)]).toEqual(["By editor", null, "2500.00"]);
 
     // Through the real page action, with the viewer's cookie.
-    const r = await run(profile.action, post("/portal/profile", viewer.cookie, { intent: "brand", description: "Sneaky" }));
+    const r = await run(profile.action, post("/portal/profile", viewer.cookie, { intent: "brand", description: "Sneaky", minimumOrderValue: "1" }));
     expect(r.data?.ok).toBe(false);
     expect((await db.vendor.findFirstOrThrow({ where: { shop, vendorName: "Ashnur" } })).description).toBe("By editor");
   });
 
-  it("checks the minimum order value", async () => {
+  it("minimum order value is required and must be an amount; short description is one line", async () => {
     const { me: o } = await owner("Ashnur", "o@ashnur.example");
-    const r = await updateBrand(db, o, { minimumOrderValue: "lots" });
-    expect(r.ok).toBe(false);
+    expect((await updateBrand(db, o, { description: "x" })).ok).toBe(false);
+    expect((await updateBrand(db, o, { minimumOrderValue: "lots" })).ok).toBe(false);
+    expect((await updateBrand(db, o, { minimumOrderValue: "100", shortDescription: "x".repeat(161) })).ok).toBe(false);
+  });
+
+  it("logo and banner upload, show up, can be replaced and removed", async () => {
+    const { me: o, vendor, cookie } = await owner("Ashnur", "o@ashnur.example");
+    const r = await run(profile.action, multipart("/portal/profile", cookie, fd({ intent: "brand", minimumOrderValue: "1000", logoFile: file(PNG(), "logo.png", "image/png"), bannerFile: file(PNG(), "banner.png", "image/png") })));
+    expect(r.location).toBe("/portal/profile?saved=brand");
+    let v = await db.vendor.findUniqueOrThrow({ where: { id: vendor.id } });
+    expect(v.logoFileId && v.bannerFileId).toBeTruthy();
+    const firstLogo = v.logoFileId!;
+
+    await updateBrand(db, o, fd({ minimumOrderValue: "1000", logoFile: file(PNG(), "logo-2.png", "image/png"), remove_bannerFile: "1" }));
+    v = await db.vendor.findUniqueOrThrow({ where: { id: vendor.id } });
+    expect(v.logoFileId).not.toBe(firstLogo);
+    expect(v.bannerFileId).toBeNull();
+    expect(await db.vendorFile.count({ where: { vendorId: vendor.id } })).toBe(1); // replaced and removed files are deleted
+  });
+});
+
+describe("files", () => {
+  it("refuses wrong types, disguised files, SVG and files over the limit – and stores nothing", async () => {
+    const { me: o, vendor } = await owner("Ashnur", "o@ashnur.example");
+    const html = Buffer.from("<html><script>alert(1)</script></html>");
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
+    const big = Buffer.concat([PDF(), Buffer.alloc(5 * 1024 * 1024)]);
+    const tries: [string, File][] = [
+      ["gstFile", file(html, "gst.pdf", "application/pdf")], // HTML pretending to be a PDF
+      ["gstFile", file(PNG().subarray(0, 4), "gst.png", "image/png")], // broken image
+      ["iecFile", file(big, "iec.pdf", "application/pdf")], // too large
+    ];
+    for (const [field, f] of tries) {
+      const r = await requestBusinessChange(db, o, fd({ ...ADDRESS, [field]: f }));
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.errors?.[field]).toBeTruthy();
+    }
+    const logo = await updateBrand(db, o, fd({ minimumOrderValue: "1", logoFile: file(svg, "logo.svg", "image/svg+xml") }));
+    expect(logo.ok).toBe(false);
+    const pdfLogo = await updateBrand(db, o, fd({ minimumOrderValue: "1", logoFile: file(PDF(), "logo.pdf", "application/pdf") }));
+    expect(pdfLogo.ok).toBe(false);
+    expect(await db.vendorFile.count({ where: { vendorId: vendor.id } })).toBe(0);
+    expect(await db.vendorChangeRequest.count({ where: { vendorId: vendor.id } })).toBe(0);
+  });
+
+  it("a vendor's files open only for its own people; another vendor or a signed-out visitor gets nothing", async () => {
+    const { me: a, cookie: aCookie, vendor } = await owner("Ashnur", "o@ashnur.example");
+    const { cookie: uCookie } = await owner("Urban Store", "o@urban.example");
+    await requestBusinessChange(db, a, fd({ ...ADDRESS, gstFile: file(PDF(), "GST cert (2025).pdf", "application/pdf") }));
+    const id = (await db.vendorFile.findFirstOrThrow({ where: { vendorId: vendor.id } })).id;
+
+    const own = await run(files.loader, get(`/portal/files/${id}`, aCookie), { fileId: id }) as { data?: unknown };
+    const res = own.data as unknown as Response;
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("application/pdf");
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("content-security-policy")).toContain("sandbox");
+    expect(res.headers.get("cache-control")).toContain("no-store");
+    expect(Buffer.from(await res.arrayBuffer()).subarray(0, 5).toString()).toBe("%PDF-");
+
+    const other = (await run(files.loader, get(`/portal/files/${id}`, uCookie), { fileId: id })).data as unknown as Response;
+    expect(other.status).toBe(404);
+    expect((await run(files.loader, get(`/portal/files/${id}`, ""), { fileId: id })).location).toBe("/portal/login");
   });
 });
 
 describe("business details", () => {
-  it("nothing changes until the team approves; approving applies exactly the requested values", async () => {
+  it("nothing changes until the team approves; approving applies text and documents", async () => {
     const { me: o, vendor } = await owner("Ashnur", "o@ashnur.example");
-    expect(await requestBusinessChange(db, o, { displayName: "Ashnur Studio", gstNumber: "08ABCDE1234F1Z5", phone: "+91 90000 00000", city: "Udaipur", state: "Rajasthan" })).toEqual({ ok: true });
+    const r = await requestBusinessChange(db, o, fd({ ...ADDRESS, gstFile: file(PDF(), "gst.pdf", "application/pdf"), iecFile: file(PNG(), "iec.png", "image/png") }));
+    expect(r).toEqual({ ok: true });
 
     let v = await db.vendor.findUniqueOrThrow({ where: { id: vendor.id } });
-    expect(v.displayName).toBe("Ashnur");
-    expect(v.city).toBe("Jaipur");
+    expect([v.companyName, v.gstFileId]).toEqual([null, null]);
 
     const state = await changeRequestState(db, shop, vendor.id);
-    expect(Object.keys(state.pending!.changes).sort()).toEqual(["city", "displayName", "phone"]); // GST and state unchanged
+    expect(Object.keys(state.pending!.changes).sort()).toEqual(["addressLine", "city", "companyName", "gstFileId", "iecFileId", "postalCode", "state"]);
+    expect(state.files[state.pending!.changes.gstFileId!.to!].fileName).toBe("gst.pdf");
     expect(await reviewBusinessChange(db, shop, state.pending!.id, "approve", null, "admin:test")).toEqual({ ok: true });
 
     v = await db.vendor.findUniqueOrThrow({ where: { id: vendor.id } });
-    expect([v.displayName, v.city, v.phone, v.gstNumber]).toEqual(["Ashnur Studio", "Udaipur", "+91 90000 00000", "08ABCDE1234F1Z5"]);
+    expect([v.companyName, v.addressLine, v.city, v.state, v.postalCode]).toEqual(["Ashnur Crafts Pvt Ltd", "12 MI Road", "Jaipur", "Rajasthan", "302001"]);
+    expect(v.gstFileId && v.iecFileId).toBeTruthy();
     expect(v.vendorName).toBe("Ashnur"); // the Shopify vendor link never changes
     expect((await changeRequestState(db, shop, vendor.id)).pending).toBeNull();
+
+    // Replacing a document: the old one is deleted once the new one is approved.
+    const oldGst = v.gstFileId!;
+    await requestBusinessChange(db, o, fd({ ...ADDRESS, gstFile: file(PDF(), "gst-new.pdf", "application/pdf") }));
+    const p2 = (await changeRequestState(db, shop, vendor.id)).pending!;
+    expect(Object.keys(p2.changes)).toEqual(["gstFileId"]);
+    await reviewBusinessChange(db, shop, p2.id, "approve", null, "admin:test");
+    expect(await db.vendorFile.count({ where: { id: oldGst } })).toBe(0);
   });
 
-  it("a new request replaces the waiting one; declining keeps the details and tells the vendor why", async () => {
+  it("company name and full address are required; PIN code is 6 digits", async () => {
+    const { me: o } = await owner("Ashnur", "o@ashnur.example");
+    const r = await requestBusinessChange(db, o, { companyName: "", addressLine: "", city: "", state: "", postalCode: "12" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(Object.keys(r.errors ?? {}).sort()).toEqual(["addressLine", "city", "companyName", "postalCode", "state"]);
+  });
+
+  it("a new request replaces the waiting one and keeps its files; declining keeps the details and deletes the files", async () => {
     const { me: o, vendor } = await owner("Ashnur", "o@ashnur.example");
-    const base = { displayName: "Ashnur", gstNumber: "08ABCDE1234F1Z5", phone: "+91 98765 43210", state: "Rajasthan" };
-    await requestBusinessChange(db, o, { ...base, city: "Udaipur" });
-    await requestBusinessChange(db, o, { ...base, city: "Jodhpur" });
+    await requestBusinessChange(db, o, fd({ ...ADDRESS, gstFile: file(PDF(), "gst.pdf", "application/pdf") }));
+    await requestBusinessChange(db, o, { ...ADDRESS, city: "Jodhpur" });
     expect(await db.vendorChangeRequest.count({ where: { vendorId: vendor.id, status: "pending" } })).toBe(1);
     const { pending } = await changeRequestState(db, shop, vendor.id);
     expect(pending!.changes.city!.to).toBe("Jodhpur");
+    expect(pending!.changes.gstFileId!.to).toBeTruthy(); // kept from the first request
 
     await reviewBusinessChange(db, shop, pending!.id, "reject", "Please send a GST certificate for the new address.", "admin:test");
-    expect((await db.vendor.findUniqueOrThrow({ where: { id: vendor.id } })).city).toBe("Jaipur");
+    const v = await db.vendor.findUniqueOrThrow({ where: { id: vendor.id } });
+    expect([v.city, v.gstFileId]).toEqual([null, null]);
+    expect(await db.vendorFile.count({ where: { vendorId: vendor.id } })).toBe(0);
     const after = await changeRequestState(db, shop, vendor.id);
     expect(after.last?.status).toBe("rejected");
     expect(after.last?.note).toMatch(/GST certificate/);
     expect((await reviewBusinessChange(db, shop, pending!.id, "approve", null, "admin:test")).ok).toBe(false); // already decided
   });
 
-  it("refuses an unchanged request, can be withdrawn, and view-only staff can't send one", async () => {
+  it("refuses an unchanged request, can be withdrawn (deleting its files), and view-only staff can't send one", async () => {
     const { me: o, vendor } = await owner("Ashnur", "o@ashnur.example");
-    const same = { displayName: "Ashnur", gstNumber: "08ABCDE1234F1Z5", phone: "+91 98765 43210", city: "Jaipur", state: "Rajasthan" };
-    expect((await requestBusinessChange(db, o, same)).ok).toBe(false);
-    await requestBusinessChange(db, o, { ...same, city: "Ajmer" });
+    await requestBusinessChange(db, o, ADDRESS);
+    await reviewBusinessChange(db, shop, (await changeRequestState(db, shop, vendor.id)).pending!.id, "approve", null, "admin:test");
+    expect((await requestBusinessChange(db, o, ADDRESS)).ok).toBe(false);
+    await requestBusinessChange(db, o, fd({ ...ADDRESS, city: "Ajmer", adCodeFile: file(PDF(), "ad.pdf", "application/pdf") }));
     expect(await withdrawBusinessChange(db, o)).toEqual({ ok: true });
     expect((await changeRequestState(db, shop, vendor.id)).pending).toBeNull();
+    expect(await db.vendorFile.count({ where: { vendorId: vendor.id } })).toBe(0);
 
     const viewer = await staff(o, "view@ashnur.example", "view");
-    expect((await requestBusinessChange(db, viewer.me, { ...same, city: "Ajmer" })).ok).toBe(false);
-    expect((await requestBusinessChange(db, o, { ...same, gstNumber: "NOTAGST" })).ok).toBe(false);
+    expect((await requestBusinessChange(db, viewer.me, { ...ADDRESS, city: "Ajmer" })).ok).toBe(false);
   });
 });
 
@@ -228,8 +332,8 @@ describe("team controls in Shopify admin", () => {
   it("the All vendors list counts people and flags waiting changes", async () => {
     const { me: o } = await owner("Ashnur", "o@ashnur.example");
     await staff(o, "s@ashnur.example", "view");
-    await requestBusinessChange(db, o, { displayName: "Ashnur", city: "Ajmer", state: "Rajasthan", gstNumber: "08ABCDE1234F1Z5", phone: "+91 98765 43210" });
+    await requestBusinessChange(db, o, ADDRESS);
     const [row] = await listAllVendors(db, shop);
-    expect(row).toMatchObject({ vendorName: "Ashnur", people: 2, staff: 1, active: 2, pendingChange: true, owners: ["Owner"] });
+    expect(row).toMatchObject({ vendorName: "Ashnur", people: 2, staff: 1, active: 2, pendingChange: true, owners: ["Owner"], missing: ["company name", "business address", "minimum order value"] });
   });
 });

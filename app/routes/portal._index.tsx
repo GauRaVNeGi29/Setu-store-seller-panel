@@ -6,6 +6,7 @@ import { listMyOrders, type OrderFilter } from "../lib/portal/data.server";
 import { day, inr } from "../lib/portal/format";
 import { IconBox } from "../lib/portal/icons";
 import { plural, Status } from "../lib/portal/ui";
+import { missingDetails } from "../lib/vendors/fields";
 
 const FILTERS: { value: OrderFilter; label: string }[] = [
   { value: "all", label: "All" },
@@ -20,8 +21,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const f = url.searchParams.get("status") as OrderFilter | null;
   const filter = FILTERS.some((x) => x.value === f) ? (f as OrderFilter) : "all";
   const page = Number(url.searchParams.get("page") ?? 1);
-  const list = await listMyOrders(db, { shop: me.shop, vendorName: me.vendor.vendorName }, filter, page);
-  return { ...list, filter };
+  const [list, v] = await Promise.all([
+    listMyOrders(db, { shop: me.shop, vendorName: me.vendor.vendorName }, filter, page),
+    db.vendor.findUnique({ where: { id: me.vendor.id }, select: { companyName: true, addressLine: true, city: true, state: true, postalCode: true, minimumOrderValue: true } }),
+  ]);
+  const missing = v ? missingDetails({ ...v, minimumOrderValue: v.minimumOrderValue?.toFixed(2) ?? null }) : [];
+  return { ...list, filter, missing };
 };
 
 export default function MyOrders() {
@@ -35,6 +40,11 @@ export default function MyOrders() {
 
   return (
     <>
+      {d.missing.length > 0 && (
+        <p className="vp-msg vp-msg--todo" role="status">
+          Complete your profile: add your {d.missing.join(", ").replace(/, ([^,]*)$/, " and $1")} on <Link to="/portal/profile">My brand</Link>.
+        </p>
+      )}
       <section className={`vp-hero${waiting ? "" : " vp-hero--clear"}`} aria-labelledby="hero-line">
         <div>
           <p className="vp-hero-line" id="hero-line">

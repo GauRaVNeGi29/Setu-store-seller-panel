@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useFetcher, useLoaderData } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
@@ -6,11 +6,11 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { vendorLines } from "../lib/orders/admin.server";
-import { addVendorUser, enableVendor, getVendorByName, getVendorProfile, removeVendorUser, setVendorStatus } from "../lib/vendors/vendors.server";
+import { addVendorUser, enableVendor, getVendorByName, removeVendorUser, setVendorStatus } from "../lib/vendors/vendors.server";
 import {
-  adminUpdateDetails, adminUpdateUser, changeRequestState, listPeople, reviewBusinessChange,
+  adminUpdateDetails, adminUpdateUser, changeRequestState, listPeople, reviewBusinessChange, vendorDetails,
 } from "../lib/vendors/team.server";
-import { BUSINESS_FIELDS, FIELD_LABEL } from "../lib/vendors/fields";
+import { BUSINESS_FIELDS, BUSINESS_FILES, FIELD_LABEL } from "../lib/vendors/fields";
 
 /**
  * One vendor, team-only inside Shopify admin:
@@ -25,7 +25,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const name = new URL(request.url).searchParams.get("name") ?? "";
   const [lines, vendor] = await Promise.all([vendorLines(db, session.shop, name), getVendorByName(db, session.shop, name)]);
   const [profile, people, change] = vendor
-    ? await Promise.all([getVendorProfile(db, session.shop, vendor.id), listPeople(db, session.shop, vendor.id), changeRequestState(db, session.shop, vendor.id)])
+    ? await Promise.all([vendorDetails(db, session.shop, vendor.id), listPeople(db, session.shop, vendor.id), changeRequestState(db, session.shop, vendor.id)])
     : [null, [], null];
   return { name, lines, profile, people, change, vendor: vendor && { id: vendor.id, status: vendor.status } };
 };
@@ -81,6 +81,45 @@ const input = { padding: 6, border: "1px solid #ccc", borderRadius: 6, font: "in
 const STATUS = {
   unfulfilled: "To ship", partial: "Partly shipped", fulfilled: "Shipped", refunded: "Refunded", cancelled: "Cancelled",
 } as Record<string, string>;
+
+type AdminFile = { id: string; fileName: string; mimeType: string; size: number } | null;
+
+/** Files are fetched with the admin session (App Bridge adds the token to fetch), then opened from memory. */
+async function openFile(id: string) {
+  const res = await fetch(`/app/files/${id}`);
+  if (!res.ok) throw new Error(`Couldn't open the file (${res.status})`);
+  const url = URL.createObjectURL(await res.blob());
+  window.open(url, "_blank", "noopener");
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+function FileButton({ file }: { file: AdminFile }) {
+  const [error, setError] = useState<string | null>(null);
+  if (!file) return <span style={{ color: "#666" }}>Not uploaded</span>;
+  return (
+    <span>
+      <s-button variant="tertiary" onClick={() => openFile(file.id).catch((e: Error) => setError(e.message))}>{file.fileName}</s-button>
+      <small style={{ color: "#666" }}> {(file.size / 1024).toFixed(0)} KB</small>
+      {error && <small style={{ color: "#a63a32" }}> {error}</small>}
+    </span>
+  );
+}
+
+function ImagePreview({ file, wide }: { file: AdminFile; wide?: boolean }) {
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    if (!file) return;
+    let url: string | null = null;
+    fetch(`/app/files/${file.id}`).then((r) => (r.ok ? r.blob() : null)).then((b) => {
+      if (b) { url = URL.createObjectURL(b); setSrc(url); }
+    }).catch(() => undefined);
+    return () => { if (url) URL.revokeObjectURL(url); };
+  }, [file]);
+  if (!file) return <span style={{ color: "#666" }}>Not uploaded</span>;
+  return src
+    ? <img src={src} alt="" style={{ display: "block", width: wide ? 320 : 72, height: wide ? 100 : 72, objectFit: wide ? "cover" : "contain", border: "1px solid #e1e3dc", borderRadius: 8, background: "#f3f4f0" }} />
+    : <span style={{ color: "#666" }}>Loading…</span>;
+}
 
 type Person = { id: string; email: string; name: string | null; status: string; role: string; access: string; lastLoginAt: string | null };
 
@@ -163,13 +202,17 @@ export default function Vendor() {
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead><tr style={{ textAlign: "left" }}><th style={cell}>Detail</th><th style={cell}>Now</th><th style={cell}>Requested</th></tr></thead>
                 <tbody>
-                  {BUSINESS_FIELDS.filter((k) => pending.changes[k]).map((k) => (
-                    <tr key={k}>
-                      <td style={cell}>{FIELD_LABEL[k]}</td>
-                      <td style={cell}>{pending.changes[k]!.from ?? "–"}</td>
-                      <td style={cell}><b>{pending.changes[k]!.to ?? "(removed)"}</b></td>
-                    </tr>
-                  ))}
+                  {BUSINESS_FIELDS.filter((k) => pending.changes[k]).map((k) => {
+                    const isFile = (BUSINESS_FILES as readonly string[]).includes(k);
+                    const show = (v: string | null) => (isFile ? (v ? <FileButton file={change!.files[v] ?? null} /> : "–") : v ?? "–");
+                    return (
+                      <tr key={k}>
+                        <td style={cell}>{FIELD_LABEL[k]}</td>
+                        <td style={cell}>{show(pending.changes[k]!.from)}</td>
+                        <td style={cell}><b>{pending.changes[k]!.to === null ? "(removed)" : show(pending.changes[k]!.to)}</b></td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 12 }}>
@@ -227,18 +270,37 @@ export default function Vendor() {
 
           {profile && (
             <s-section heading="Details">
-              <s-paragraph>Your edits here apply at once. Vendors can change brand details themselves; their business changes come to you for approval.</s-paragraph>
+              {profile.missing.length > 0 && <s-banner tone="warning">Missing: {profile.missing.join(", ")}.</s-banner>}
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, marginBottom: 16 }}>
+                <tbody>
+                  {([
+                    ["GST certificate", <FileButton key="g" file={profile.gstFile} />],
+                    ["IEC certificate", <FileButton key="i" file={profile.iecFile} />],
+                    ["AD code letter", <FileButton key="a" file={profile.adCodeFile} />],
+                    ["Brand logo", <ImagePreview key="l" file={profile.logoFile} />],
+                    ["Brand banner", <ImagePreview key="b" file={profile.bannerFile} wide />],
+                  ] as [string, React.ReactNode][]).map(([k, v]) => (
+                    <tr key={k}>
+                      <td style={{ ...cell, color: "#666", width: 170 }}>{k}</td>
+                      <td style={cell}>{v}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <s-paragraph>Documents, logo and banner come from the vendor. Text details you change here apply at once, without an approval step.</s-paragraph>
               <fetcher.Form method="post" key={JSON.stringify(profile)}>
                 <input type="hidden" name="name" value={name} />
                 <input type="hidden" name="intent" value="details" />
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
                   {([
-                    ["displayName", "Business name", profile.displayName],
-                    ["gstNumber", "GST number", profile.gstNumber],
-                    ["phone", "Business phone", profile.phone],
+                    ["displayName", "Brand name (shown in the portal)", profile.displayName],
+                    ["companyName", "Company name", profile.companyName],
+                    ["addressLine", "Street address", profile.addressLine],
                     ["city", "City", profile.city],
                     ["state", "State", profile.state],
+                    ["postalCode", "PIN code", profile.postalCode],
                     ["minimumOrderValue", "Minimum order value (₹)", profile.minimumOrderValue],
+                    ["shortDescription", "Short description", profile.shortDescription],
                   ] as [string, string, string | null][]).map(([k, l, v]) => (
                     <label key={k} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                       <span>{l}</span>
@@ -246,16 +308,10 @@ export default function Vendor() {
                     </label>
                   ))}
                 </div>
-                {([
-                  ["productNote", "What they sell", profile.productNote],
-                  ["description", "Brand description", profile.description],
-                  ["policy", "Short policy", profile.policy],
-                ] as [string, string, string | null][]).map(([k, l, v]) => (
-                  <label key={k} style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 12 }}>
-                    <span>{l}</span>
-                    <textarea name={k} defaultValue={v ?? ""} rows={3} style={input} />
-                  </label>
-                ))}
+                <label style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 12 }}>
+                  <span>Description</span>
+                  <textarea name="description" defaultValue={profile.description ?? ""} rows={4} style={input} />
+                </label>
                 <div style={{ marginTop: 12 }}>
                   <s-button type="submit" {...(busy ? { loading: true } : {})}>Save details</s-button>
                 </div>

@@ -129,23 +129,37 @@ model Vendor {
   id          String       @id @default(cuid())
   shop        String
   vendorName  String // must equal the Shopify product Vendor, e.g. "Urban Store"
-  displayName String
+  displayName String // brand name shown in the portal; set by the team
   status      VendorStatus @default(active)
 
-  // Brand details (from sign-up; editable by the team)
-  phone             String?
-  gstNumber         String?
-  city              String?
-  state             String?
+  // Business details – the vendor changes these through a request the team approves
+  companyName  String? // registered company name
+  addressLine  String?
+  city         String?
+  state        String?
+  postalCode   String?
+  gstFileId    String? // VendorFile ids (private documents)
+  iecFileId    String?
+  adCodeFileId String?
+
+  // Brand details – the vendor changes these directly
   description       String?
-  policy            String?
-  productNote       String?
+  shortDescription  String?
   minimumOrderValue Decimal? @db.Decimal(12, 2) // INR, as given by the vendor; not yet applied to the cart
+  logoFileId        String?
+  bannerFileId      String?
+
+  // No longer shown (kept so nothing already saved is lost)
+  phone       String?
+  gstNumber   String?
+  policy      String?
+  productNote String?
 
   createdAt      DateTime              @default(now())
   updatedAt      DateTime              @updatedAt
   users          VendorUser[]
   changeRequests VendorChangeRequest[]
+  files          VendorFile[]
 
   @@unique([shop, vendorName])
 }
@@ -278,4 +292,37 @@ model VendorChangeRequest {
 
   @@index([shop, status])
   @@index([vendorId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Files vendors upload (documents, logo, banner)
+// ---------------------------------------------------------------------------
+
+enum FileKind {
+  gst // GST registration certificate
+  iec // Import Export Code certificate
+  ad_code // AD code letter from the bank
+  logo
+  banner
+}
+
+/// A file a vendor uploaded. Never public: served only to that vendor's own
+/// signed-in people and to the Setu Store team. Stored in the database for now.
+/// A Vendor's *FileId columns point at the files in use; files attached to a
+/// pending business change are referenced from the request until approved.
+model VendorFile {
+  id           String   @id @default(cuid())
+  shop         String
+  vendorId     String
+  vendor       Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  kind         FileKind
+  fileName     String // as uploaded, cleaned
+  mimeType     String // decided from the file's content, not from the browser
+  size         Int
+  sha256       String
+  data         Bytes
+  uploadedById String? // VendorUser id, or null when the team uploaded it
+  createdAt    DateTime @default(now())
+
+  @@index([vendorId, kind])
 }

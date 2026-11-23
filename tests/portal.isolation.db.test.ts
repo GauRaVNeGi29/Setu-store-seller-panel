@@ -42,8 +42,8 @@ async function cleanup() {
   }
 }
 
-async function cookieFor(email: string, brandName: string) {
-  const r = await signUp(db, { name: "Test", email, password: PW, phone: "+91 98765 43210", brandName, city: "Jaipur", state: "Rajasthan" }, { shop });
+async function cookieFor(email: string) {
+  const r = await signUp(db, { name: "Test", email, password: PW, phone: "+91 98765 43210" }, { shop });
   if (!r.ok) throw new Error(JSON.stringify(r.errors));
   return `${COOKIE_NAME}=${encodeURIComponent(r.token)}`;
 }
@@ -74,9 +74,9 @@ beforeAll(async () => {
   const urban = await enableVendor(db, shop, "Urban Store", "test");
   await addVendorUser(db, shop, ashnur.id, "nusrat@ashnur.example", "Nusrat", "test");
   await addVendorUser(db, shop, urban.id, "owner@urban.example", null, "test");
-  ashnurCookie = await cookieFor("nusrat@ashnur.example", "Ashnur"); // invited → active
-  urbanCookie = await cookieFor("owner@urban.example", "Urban Store");
-  pendingCookie = await cookieFor("someone@newbrand.example", "Urban Store"); // claims to be Urban Store; not invited → pending
+  ashnurCookie = await cookieFor("nusrat@ashnur.example"); // invited → active
+  urbanCookie = await cookieFor("owner@urban.example");
+  pendingCookie = await cookieFor("someone@newbrand.example"); // not invited → pending
 });
 afterAll(async () => {
   await cleanup();
@@ -168,7 +168,7 @@ describe("an applicant waiting for approval", () => {
     ["what to ship", toShip, "/portal/ship"],
     ["layout", layout, "/portal"],
     ["my brand", profile, "/portal/profile"],
-  ])("is sent to 'under review' from %s – even claiming a vendor's brand name", async (_n, mod, path) => {
+  ])("is sent to 'under review' from %s", async (_n, mod, path) => {
     const r = await load(mod, path, pendingCookie, { orderId: "19043720134765" });
     expect(r.status).toBe(302);
     expect(r.location).toBe("/portal/pending");

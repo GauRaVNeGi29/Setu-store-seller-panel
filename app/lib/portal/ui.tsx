@@ -123,3 +123,46 @@ export const Status = ({ value }: { value: string }) => (
 );
 
 export const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+export type PortalFile = { id: string; fileName: string; mimeType: string; size: number } | null;
+
+const kb = (n: number) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+
+/** Link to one of the vendor's own files (opens in a new tab). */
+export function FileLink({ file, label }: { file: NonNullable<PortalFile>; label?: string }) {
+  return (
+    <a className="vp-filelink" href={`/portal/files/${file.id}`} target="_blank" rel="noreferrer">
+      <span className="vp-filename">{label ?? file.fileName}</span>
+      <span className="vp-small"> · {file.mimeType === "application/pdf" ? "PDF" : file.mimeType.replace("image/", "").toUpperCase()} · {kb(file.size)}</span>
+    </a>
+  );
+}
+
+/** File picker with the current file, the rules and any error. `removable` adds a "Remove" tick box. */
+export function FileField({ name, label, current, accept, hint, error, removable, image }: {
+  name: string; label: string; current: PortalFile; accept: string; hint: string; error?: string; removable?: boolean; image?: boolean;
+}) {
+  const describedBy = [error ? `${name}-error` : null, `${name}-hint`].filter(Boolean).join(" ");
+  return (
+    <div className="vp-field vp-filefield">
+      <label htmlFor={name}>{label}<span className="vp-optional"> (optional)</span></label>
+      {current && (
+        <div className="vp-filecurrent">
+          {image && <img src={`/portal/files/${current.id}`} alt="" className={`vp-thumb vp-thumb--${name}`} />}
+          <span>Current: <FileLink file={current} /></span>
+          {removable && (
+            <label className="vp-remove" htmlFor={`remove_${name}`}>
+              <input type="checkbox" id={`remove_${name}`} name={`remove_${name}`} value="1" /> Remove
+            </label>
+          )}
+        </div>
+      )}
+      <input
+        id={name} name={name} type="file" accept={accept} className="vp-input vp-file"
+        aria-invalid={error ? true : undefined} aria-describedby={describedBy}
+      />
+      <p id={`${name}-hint`} className="vp-hint">{current ? "Choose a file only if you want to replace it. " : ""}{hint}</p>
+      {error && <p id={`${name}-error`} className="vp-field-error">{error}</p>}
+    </div>
+  );
+}
