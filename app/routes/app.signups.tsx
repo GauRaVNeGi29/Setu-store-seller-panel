@@ -43,7 +43,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 const when = (iso: string) => new Date(iso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
-const inr = (v: string) => `₹${Number(v).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 type Signup = Awaited<ReturnType<typeof loader>>["pending"][number];
 
@@ -60,19 +59,16 @@ function SignupCard({ s, vendors }: { s: Signup; vendors: string[] }) {
   const [vendorName, setVendorName] = useState(guess);
   const listId = `vendors-${s.id}`;
 
+  // Sign-up now asks only for the person's details. Older sign-ups also carried brand details; show them if present.
   const rows: [string, string | null | undefined][] = [
-    ["Person", [s.name, s.email, s.phone].filter(Boolean).join(" · ")],
-    ["Brand", a.brandName],
-    ["GST", a.gstNumber],
-    ["City / state", [a.city, a.state].filter(Boolean).join(", ")],
-    ["Sells", a.productNote],
-    ["Minimum order", a.minimumOrderValue ? inr(a.minimumOrderValue) : null],
-    ["Description", a.description],
-    ["Policy", a.policy],
+    ["Name", s.name],
+    ["Email", s.email],
+    ["Phone", s.phone],
+    ...(a.brandName ? ([["Brand (from sign-up)", a.brandName], ["City / state", [a.city, a.state].filter(Boolean).join(", ")]] as [string, string][]) : []),
   ];
 
   return (
-    <s-section heading={a.brandName || s.email}>
+    <s-section heading={s.name || s.email}>
       <s-paragraph>Signed up {when(s.createdAt)}</s-paragraph>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
         <tbody>
@@ -118,7 +114,7 @@ export default function Signups() {
       {rejected.length > 0 && (
         <s-section heading="Recently declined">
           {rejected.map((s) => (
-            <s-paragraph key={s.id}>{s.application.brandName ?? "–"} · {s.email} · declined {s.reviewedAt ? when(s.reviewedAt) : ""}</s-paragraph>
+            <s-paragraph key={s.id}>{s.name ?? "–"} · {s.email} · declined {s.reviewedAt ? when(s.reviewedAt) : ""}</s-paragraph>
           ))}
         </s-section>
       )}

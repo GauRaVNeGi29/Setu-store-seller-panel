@@ -27,6 +27,10 @@ export async function requireVendor(request: Request): Promise<ActiveVendor> {
   const identity = await getIdentity(db, shop, readSessionToken(request));
   if (!identity) throw redirect("/portal/login");
   if (identity.user.status !== "active" || !identity.vendor) throw redirect("/portal/pending");
+  // A Setu Store team view is read-only: nothing that changes data runs, whatever the page.
+  if (identity.teamViewer && request.method !== "GET" && request.method !== "HEAD") {
+    throw new Response("This is a read-only team view of the vendor portal. Nothing can be changed from it.", { status: 403 });
+  }
   return { ...identity, shop, vendor: identity.vendor };
 }
 

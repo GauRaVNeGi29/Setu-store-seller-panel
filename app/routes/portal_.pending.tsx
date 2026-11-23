@@ -13,9 +13,8 @@ export const meta: MetaFunction = () => [{ title: "Account under review · Setu 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const me = await requireUser(request);
   if (me.user.status === "active") throw redirect("/portal");
-  const u = await db.vendorUser.findUnique({ where: { id: me.user.id }, select: { application: true, createdAt: true } });
-  const a = (u?.application ?? {}) as { brandName?: string };
-  return { name: me.user.name, email: me.user.email, brandName: a.brandName ?? null, since: u?.createdAt.toISOString() ?? null };
+  const u = await db.vendorUser.findUnique({ where: { id: me.user.id }, select: { createdAt: true } });
+  return { name: me.user.name, email: me.user.email, since: u?.createdAt.toISOString() ?? null };
 };
 
 export default function Pending() {
@@ -25,8 +24,8 @@ export default function Pending() {
       title={d.name ? `Thanks, ${d.name.split(" ")[0]}. We're reviewing your account.` : "We're reviewing your account."}
       lead={
         <>
-          The Setu Store team is checking the details you sent{d.brandName ? <> for <b>{d.brandName}</b></> : null}. Once they approve your
-          account and link it to your products, your orders will appear here.
+          The Setu Store team is checking your account. Once they approve it and link it to your products, your orders will appear
+          here, and you can add your business and brand details on My brand.
         </>
       }
     >

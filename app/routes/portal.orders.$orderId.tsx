@@ -25,7 +25,7 @@ export default function OrderDetail() {
 
   return (
     <>
-      <Link className="vp-back" to="/portal"><IconBack />All orders</Link>
+      <Link className="vp-back" to="/portal/orders"><IconBack />All orders</Link>
       <div className="vp-pagehead">
         <div>
           <h1 className="vp-h1">Order {o.orderName}</h1>
@@ -86,7 +86,7 @@ export default function OrderDetail() {
 export function ErrorBoundary() {
   return (
     <>
-      <Link className="vp-back" to="/portal"><IconBack />All orders</Link>
+      <Link className="vp-back" to="/portal/orders"><IconBack />All orders</Link>
       <div className="vp-panel vp-empty">
         <h1 className="vp-h2">Order not found</h1>
         <p>This order doesn&apos;t exist or doesn&apos;t include your products.</p>

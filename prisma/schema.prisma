@@ -129,22 +129,37 @@ model Vendor {
   id          String       @id @default(cuid())
   shop        String
   vendorName  String // must equal the Shopify product Vendor, e.g. "Urban Store"
-  displayName String
+  displayName String // brand name shown in the portal; set by the team
   status      VendorStatus @default(active)
 
-  // Brand details (from sign-up; editable by the team)
-  phone             String?
-  gstNumber         String?
-  city              String?
-  state             String?
-  description       String?
-  policy            String?
-  productNote       String?
-  minimumOrderValue Decimal? @db.Decimal(12, 2) // INR, as given by the vendor; not yet applied to the cart
+  // Business details – the vendor changes these through a request the team approves
+  companyName  String? // registered company name
+  addressLine  String?
+  city         String?
+  state        String?
+  postalCode   String?
+  gstFileId    String? // VendorFile ids (private documents)
+  iecFileId    String?
+  adCodeFileId String?
 
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
-  users     VendorUser[]
+  // Brand details – the vendor changes these directly
+  description       String?
+  shortDescription  String?
+  minimumOrderValue Decimal? @db.Decimal(12, 2) // INR, as given by the vendor; not yet applied to the cart
+  logoFileId        String?
+  bannerFileId      String?
+
+  // No longer shown (kept so nothing already saved is lost)
+  phone       String?
+  gstNumber   String?
+  policy      String?
+  productNote String?
+
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  users          VendorUser[]
+  changeRequests VendorChangeRequest[]
+  files          VendorFile[]
 
   @@unique([shop, vendorName])
 }
@@ -154,31 +169,46 @@ enum UserStatus {
   pending // signed up on their own; waiting for the team to approve and link a vendor
   active // can sign in and see their vendor's orders
   rejected // sign-up declined by the team
-  disabled // access removed by the team
+  disabled // "Deactivated": access removed by the team or the vendor's owner
+}
+
+enum VendorRole {
+  owner // everything, including adding and managing staff
+  staff // what their access allows; never manages other people
+}
+
+enum StaffAccess {
+  view // sees orders and details; changes nothing
+  edit // can also edit brand details and send business changes for approval
 }
 
 /// A person who signs in. An email is unique per shop. vendorId is set by the
 /// team (invite or approval), never by the person.
 model VendorUser {
-  id           String     @id @default(cuid())
+  id           String      @id @default(cuid())
   shop         String
   vendorId     String?
-  vendor       Vendor?    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  vendor       Vendor?     @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   email        String // lower-case
   name         String?
   phone        String?
-  status       UserStatus @default(invited)
+  status       UserStatus  @default(invited)
+  role         VendorRole  @default(owner)
+  access       StaffAccess @default(edit) // used only when role = staff
+  invitedById  String? // the owner who added this staff member, if any
   passwordHash String? // scrypt; null until the person sets a password
   /// What a self sign-up submitted (brand name, GST, description, policy, MOV, …), kept for the team's review.
   application  Json?
   reviewedAt   DateTime?
   reviewedBy   String?
   lastLoginAt  DateTime?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
-  sessions PortalSession[]
-  resets   PasswordReset[]
+  sessions       PortalSession[]
+  resets         PasswordReset[]
+  changeRequests VendorChangeRequest[]
+  handoffs       PortalHandoff[]
 
   @@unique([shop, email])
   @@index([shop, status])
@@ -227,6 +257,91 @@ model PortalSession {
   revokedAt    DateTime?
   ip           String?
   userAgent    String?
+  /// Set when a Setu Store team member opened the portal "as" this vendor from
+  /// Shopify admin: the session is read-only and lasts at most an hour.
+  teamViewer   String?
 
   @@index([vendorUserId])
+}
+
+/// One-time link from Shopify admin into a vendor's portal (team view).
+/// Only the token's hash is stored; it works once, within 60 seconds.
+model PortalHandoff {
+  id           String     @id @default(cuid())
+  tokenHash    String     @unique
+  vendorUserId String
+  vendorUser   VendorUser @relation(fields: [vendorUserId], references: [id], onDelete: Cascade)
+  teamViewer   String // the team member who opened it, as recorded in the audit log ("admin:<their email>")
+  expiresAt    DateTime
+  usedAt       DateTime?
+  createdAt    DateTime   @default(now())
+
+  @@index([vendorUserId])
+}
+
+// ---------------------------------------------------------------------------
+// Business detail changes waiting for the team
+// ---------------------------------------------------------------------------
+
+enum ChangeStatus {
+  pending
+  approved
+  rejected
+  withdrawn // the vendor cancelled it
+}
+
+/// A vendor's request to change business details (name, GST, phone, city,
+/// state). Nothing changes on the vendor until the team approves. At most one
+/// pending request per vendor; a new one replaces it.
+model VendorChangeRequest {
+  id            String       @id @default(cuid())
+  shop          String
+  vendorId      String
+  vendor        Vendor       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  requestedById String?
+  requestedBy   VendorUser?  @relation(fields: [requestedById], references: [id], onDelete: SetNull)
+  /// { field: { from, to } } for the fields that differ, e.g. { "gstNumber": { "from": null, "to": "08ABCDE1234F1Z5" } }
+  changes       Json
+  status        ChangeStatus @default(pending)
+  note          String? // the team's reason, shown to the vendor when declined
+  reviewedAt    DateTime?
+  reviewedBy    String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([shop, status])
+  @@index([vendorId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Files vendors upload (documents, logo, banner)
+// ---------------------------------------------------------------------------
+
+enum FileKind {
+  gst // GST registration certificate
+  iec // Import Export Code certificate
+  ad_code // AD code letter from the bank
+  logo
+  banner
+}
+
+/// A file a vendor uploaded. Never public: served only to that vendor's own
+/// signed-in people and to the Setu Store team. Stored in the database for now.
+/// A Vendor's *FileId columns point at the files in use; files attached to a
+/// pending business change are referenced from the request until approved.
+model VendorFile {
+  id           String   @id @default(cuid())
+  shop         String
+  vendorId     String
+  vendor       Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  kind         FileKind
+  fileName     String // as uploaded, cleaned
+  mimeType     String // decided from the file's content, not from the browser
+  size         Int
+  sha256       String
+  data         Bytes
+  uploadedById String? // VendorUser id, or null when the team uploaded it
+  createdAt    DateTime @default(now())
+
+  @@index([vendorId, kind])
 }

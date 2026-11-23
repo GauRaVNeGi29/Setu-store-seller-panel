@@ -49,7 +49,10 @@ export async function setVendorStatus(db: PrismaClient, shop: string, vendorId: 
   return { ok: true } as VendorResult;
 }
 
-export async function addVendorUser(db: PrismaClient, shop: string, vendorId: string, rawEmail: string, name: string | null, actor: string): Promise<VendorResult> {
+export async function addVendorUser(
+  db: PrismaClient, shop: string, vendorId: string, rawEmail: string, name: string | null, actor: string,
+  opts: { role?: "owner" | "staff"; access?: "view" | "edit" } = {},
+): Promise<VendorResult> {
   const email = normaliseEmail(rawEmail);
   if (!isValidEmail(email)) return { ok: false, error: `"${rawEmail}" is not a valid email address.` };
   const vendor = await db.vendor.findFirst({ where: { id: vendorId, shop } });
@@ -62,7 +65,7 @@ export async function addVendorUser(db: PrismaClient, shop: string, vendorId: st
       : { ok: false, error: `${email} already belongs to ${existing.vendor?.displayName ?? "another account"}. An email can belong to one vendor only.` };
   }
   // Invited: they create their password on the sign-up page and are active straight away.
-  await db.vendorUser.create({ data: { shop, vendorId: vendor.id, email, name: name?.trim() || null, status: "invited" } });
+  await db.vendorUser.create({ data: { shop, vendorId: vendor.id, email, name: name?.trim() || null, status: "invited", role: opts.role ?? "owner", access: opts.access ?? "edit" } });
   await db.auditLog.create({ data: { shop, actor, action: "vendor_user.added", target: `vendor:${vendor.id}`, detail: { email } } });
   return { ok: true };
 }
@@ -137,17 +140,7 @@ export async function rejectSignup(db: PrismaClient, shop: string, userId: strin
   return { ok: true };
 }
 
-export async function getVendorProfile(db: PrismaClient, shop: string, vendorId: string) {
-  const v = await db.vendor.findFirst({ where: { id: vendorId, shop } });
-  if (!v) return null;
-  return {
-    displayName: v.displayName, vendorName: v.vendorName, phone: v.phone, gstNumber: v.gstNumber, city: v.city, state: v.state,
-    description: v.description, policy: v.policy, productNote: v.productNote,
-    minimumOrderValue: v.minimumOrderValue ? v.minimumOrderValue.toFixed(2) : null,
-  };
-}
-
-/** Copies sign-up brand details onto the vendor where the team hasn't filled them in. */
+/** Copies brand details from an older-style sign-up (before sign-up became seller details only) onto empty vendor fields. */
 export async function fillVendorProfile(db: PrismaClient, vendorId: string, a: Record<string, string | null>, phone?: string | null) {
   const vendor = await db.vendor.findUnique({ where: { id: vendorId } });
   if (!vendor) return;

@@ -37,7 +37,7 @@ export default function WhatToShip() {
         <div className="vp-panel vp-empty">
           <p className="vp-h3">You&apos;re all caught up</p>
           <p>New orders with your products will appear here as soon as they come in.</p>
-          <p><Link to="/portal">See all orders</Link></p>
+          <p><Link to="/portal/orders">See all orders</Link></p>
         </div>
       ) : (
         <>
