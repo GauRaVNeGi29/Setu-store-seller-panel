@@ -3,7 +3,7 @@ import { Form, NavLink, Outlet, useLoaderData } from "react-router";
 import db from "../db.server";
 import { requireVendor } from "../lib/portal/context.server";
 import { listToShip } from "../lib/portal/data.server";
-import { IconBox, IconOrders, IconOut, IconStore, IconTeam } from "../lib/portal/icons";
+import { IconBox, IconHome, IconOrders, IconOut, IconStore, IconTeam } from "../lib/portal/icons";
 import { portalLinks, Wordmark } from "../lib/portal/ui";
 
 /**
@@ -21,7 +21,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 const NAV = [
-  { to: "/portal", label: "Orders", long: "My orders", Icon: IconOrders, end: true },
+  { to: "/portal", label: "Home", long: "Dashboard", Icon: IconHome, end: true },
+  { to: "/portal/orders", label: "Orders", long: "My orders", Icon: IconOrders, end: false },
   { to: "/portal/ship", label: "To ship", long: "What to ship", Icon: IconBox, end: false },
   { to: "/portal/profile", label: "My brand", long: "My brand", Icon: IconStore, end: false },
   { to: "/portal/team", label: "Team", long: "Team", Icon: IconTeam, end: false, ownerOnly: true },

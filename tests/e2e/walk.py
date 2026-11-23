@@ -192,9 +192,33 @@ async def main():
         ck = cookies.get("__Host-vp_session", {})
         check("Security", "session cookie is HttpOnly, Secure, SameSite=Lax", ck.get("httpOnly") and ck.get("secure") and ck.get("sameSite") == "Lax", str(ck)[:120])
 
-        # ------------------------------------------------------------ orders
+        # ------------------------------------------------------------ dashboard
         body = await text(owner)
-        check("My orders", "lists Urban Store's 5 orders", all(f"#100{i}" in body for i in range(1, 6)))
+        check("Dashboard", "is the home page after sign-in, with a greeting", owner.url.endswith("/portal") and "Harpreet" in await owner.inner_text("h1"))
+        check("Dashboard", "Dashboard is first in the menu", (await owner.locator("nav.vp-nav a").first.inner_text()).strip() == "Dashboard")
+        check("Dashboard", "To ship card: 33 units across 3 orders, oldest first", "33 units waiting across 3 orders" in body)
+        check("Dashboard", "never shows Ashnur's products", not re.search(r"Candle|Cutout", body))
+        await owner.click(".vp-dash-range a:has-text('All time')"); await owner.wait_for_url("**range=all"); await settle(owner)
+        body = await text(owner)
+        check("Dashboard", "All time: sales ₹3,475.00, 4 orders, 51 units, ₹75.00 refunded",
+              all(x in body for x in ["₹3,475.00", "₹868.75", "₹75.00"]) and await owner.locator(".vp-tile-value").first.inner_text() == "4")
+        check("Dashboard", "top product is the Golden Armlet (₹800.00)", (await owner.locator(".vp-ranked li").first.inner_text()).startswith("Elegant Spiral Golden Armlet"))
+        check("Dashboard", "orders by status: 1 shipped, 3 to ship, 1 cancelled",
+              [await x.inner_text() for x in await owner.locator(".vp-segbar-part").all()] == ["1", "3", "1"])
+        bar = owner.locator(".vp-chart-hit[aria-label*='Nov 2026: ₹3,475.00']")
+        await bar.focus(); await owner.wait_for_timeout(150)
+        tip = owner.locator(".vp-tip")
+        check("Dashboard", "sales chart: focusing the November bar shows ₹3,475.00", await tip.count() == 1 and "₹3,475.00" in await tip.inner_text())
+        await owner.click(".vp-tableview summary")
+        check("Dashboard", "sales chart has a table view with every value", "₹3,475.00" in await owner.inner_text(".vp-tableview table"))
+        await owner.click(".vp-dash-range a:has-text('Last 7 days')"); await owner.wait_for_url("**range=7"); await settle(owner)
+        check("Dashboard", "Last 7 days shows 7 daily bars", await owner.locator(".vp-chart-hit").count() == 7)
+        await owner.screenshot(path=f"{SHOTS}/dashboard.png", full_page=True)
+
+        # ------------------------------------------------------------ orders
+        await go(owner, "/portal/orders")
+        body = await text(owner)
+        check("My orders", "lists Urban Store's 5 orders at /portal/orders", all(f"#100{i}" in body for i in range(1, 6)))
         check("My orders", "never shows Ashnur products", not re.search(r"Candle|Cutout", body))
         await owner.click(".vp-seg a:has-text('To ship')"); await owner.wait_for_timeout(1200)
         check("My orders", "'To ship' filter opens and keeps only open orders", "#1005" not in await owner.inner_text("main"), owner.url)
@@ -428,16 +452,16 @@ async def main():
         tabs = m.locator("nav.vp-tabs a")
         n = await tabs.count()
         boxes = [await tabs.nth(i).bounding_box() for i in range(n)]
-        check("Mobile", "owner sees 4 bottom tabs, all on one row", n == 4 and len({round(b["y"]) for b in boxes}) == 1)
+        check("Mobile", "owner sees 5 bottom tabs (Home first), all on one row", n == 5 and len({round(b["y"]) for b in boxes}) == 1 and (await tabs.first.inner_text()).strip() == "Home")
         sw = await m.evaluate("document.documentElement.scrollWidth")
         check("Mobile", "no sideways scrolling on My orders", sw <= 390, f"scrollWidth {sw}")
-        for path in ["/portal/profile", "/portal/team", "/portal/ship", "/portal/orders/19043720298605"]:
+        for path in ["/portal?range=all", "/portal/orders", "/portal/profile", "/portal/team", "/portal/ship", "/portal/orders/19043720298605"]:
             await go(m, path)
             sw = await m.evaluate("document.documentElement.scrollWidth")
             if sw > 390:
                 check("Mobile", f"no sideways scrolling on {path}", False, f"scrollWidth {sw}")
         else:
-            check("Mobile", "no sideways scrolling on My brand, Team, What to ship, order detail", True)
+            check("Mobile", "no sideways scrolling on Dashboard, My orders, My brand, Team, What to ship, order detail", True)
         await m.screenshot(path=f"{SHOTS}/mobile-order.png", full_page=True)
         await mc.close()
 
