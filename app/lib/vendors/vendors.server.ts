@@ -49,7 +49,10 @@ export async function setVendorStatus(db: PrismaClient, shop: string, vendorId: 
   return { ok: true } as VendorResult;
 }
 
-export async function addVendorUser(db: PrismaClient, shop: string, vendorId: string, rawEmail: string, name: string | null, actor: string): Promise<VendorResult> {
+export async function addVendorUser(
+  db: PrismaClient, shop: string, vendorId: string, rawEmail: string, name: string | null, actor: string,
+  opts: { role?: "owner" | "staff"; access?: "view" | "edit" } = {},
+): Promise<VendorResult> {
   const email = normaliseEmail(rawEmail);
   if (!isValidEmail(email)) return { ok: false, error: `"${rawEmail}" is not a valid email address.` };
   const vendor = await db.vendor.findFirst({ where: { id: vendorId, shop } });
@@ -62,7 +65,7 @@ export async function addVendorUser(db: PrismaClient, shop: string, vendorId: st
       : { ok: false, error: `${email} already belongs to ${existing.vendor?.displayName ?? "another account"}. An email can belong to one vendor only.` };
   }
   // Invited: they create their password on the sign-up page and are active straight away.
-  await db.vendorUser.create({ data: { shop, vendorId: vendor.id, email, name: name?.trim() || null, status: "invited" } });
+  await db.vendorUser.create({ data: { shop, vendorId: vendor.id, email, name: name?.trim() || null, status: "invited", role: opts.role ?? "owner", access: opts.access ?? "edit" } });
   await db.auditLog.create({ data: { shop, actor, action: "vendor_user.added", target: `vendor:${vendor.id}`, detail: { email } } });
   return { ok: true };
 }

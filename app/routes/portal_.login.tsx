@@ -38,9 +38,11 @@ export default function Login() {
   const busy = useNavigation().state !== "idle";
   const [params] = useSearchParams();
   const changed = params.get("reset") === "1";
+  const welcome = params.get("welcome") === "1";
 
   return (
     <AuthLayout title="Sign in" lead="Welcome back. Sign in to see your orders and what to ship.">
+      {welcome && <p className="vp-msg vp-msg--ok" role="status">Your password is set. Sign in to get started.</p>}
       {changed && <p className="vp-msg vp-msg--ok" role="status">Your password has been changed. Sign in with the new one.</p>}
       {data?.error && <p className="vp-msg vp-msg--error" role="alert">{data.error}</p>}
       <Form method="post">

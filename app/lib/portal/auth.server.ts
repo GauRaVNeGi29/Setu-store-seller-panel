@@ -32,6 +32,7 @@ export const IP_FAILS_PER_HOUR = 30;
 export const SIGNUPS_PER_IP_PER_HOUR = 5;
 export const RESETS_PER_EMAIL_PER_HOUR = 3;
 export const RESET_TTL_MS = 30 * 60 * 1000;
+export const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const SESSION_MAX_MS = 7 * 24 * 60 * 60 * 1000;
 export const SESSION_IDLE_MS = 12 * 60 * 60 * 1000;
 const TOUCH_EVERY_MS = 5 * 60 * 1000;
@@ -99,8 +100,8 @@ export type SignupResult =
   | { ok: false; errors: Record<string, string> };
 
 const clip = (s: string | undefined, n: number) => (s ?? "").trim().slice(0, n);
-const GST = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
-const PHONE = /^\+?[0-9 ()-]{8,20}$/;
+export const GST = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
+export const PHONE = /^\+?[0-9 ()-]{8,20}$/;
 
 export function validateSignup(raw: SignupInput) {
   const v = {
@@ -257,6 +258,28 @@ export async function resetTokenValid(db: PrismaClient, shop: string, token: str
   return Boolean(r && !r.usedAt && r.expiresAt > now && r.vendorUser.shop === shop);
 }
 
+/** What a reset/invite link is for: "invite" when the person hasn't set a password yet. */
+export async function resetLinkInfo(db: PrismaClient, shop: string, token: string, now = new Date()) {
+  if (!token || token.length > 100) return { valid: false as const };
+  const r = await db.passwordReset.findUnique({ where: { tokenHash: hashToken(token) }, include: { vendorUser: true } });
+  if (!r || r.usedAt || r.expiresAt <= now || r.vendorUser.shop !== shop) return { valid: false as const };
+  return { valid: true as const, invite: r.vendorUser.status === "invited", email: r.vendorUser.email };
+}
+
+/**
+ * A set-password link for someone added by their vendor's owner. Works once
+ * and lasts 7 days; after that they can use "Forgot password" with the same email.
+ */
+export async function createInviteLink(db: PrismaClient, vendorUserId: string, ctx: Ctx): Promise<string> {
+  const now = ctx.now ?? new Date();
+  const token = randomBytes(32).toString("base64url");
+  await db.$transaction([
+    db.passwordReset.updateMany({ where: { vendorUserId, usedAt: null }, data: { usedAt: now } }),
+    db.passwordReset.create({ data: { tokenHash: hashToken(token), vendorUserId, ip: ctx.ip ?? null, expiresAt: new Date(now.getTime() + INVITE_TTL_MS), createdAt: now } }),
+  ]);
+  return token;
+}
+
 export type ResetResult = { ok: true } | { ok: false; error: string };
 
 export async function resetPassword(db: PrismaClient, token: string, password: string, ctx: Ctx): Promise<ResetResult> {
@@ -269,7 +292,14 @@ export async function resetPassword(db: PrismaClient, token: string, password: s
   const claimed = await db.passwordReset.updateMany({ where: { id: r.id, usedAt: null }, data: { usedAt: now } });
   if (claimed.count !== 1) return { ok: false, error: "This link has expired or was already used. Ask for a new one." };
   await db.$transaction([
-    db.vendorUser.update({ where: { id: r.vendorUserId }, data: { passwordHash: await hashPassword(password) } }),
+    db.vendorUser.update({
+      where: { id: r.vendorUserId },
+      data: {
+        passwordHash: await hashPassword(password),
+        // Staff invited by their owner become active once they set a password.
+        ...(r.vendorUser.status === "invited" && r.vendorUser.vendorId ? { status: "active" as const } : {}),
+      },
+    }),
     db.portalSession.updateMany({ where: { vendorUserId: r.vendorUserId, revokedAt: null }, data: { revokedAt: now } }),
     db.loginAttempt.deleteMany({ where: { shop: ctx.shop, email: r.vendorUser.email, success: false } }),
   ]);
@@ -283,7 +313,7 @@ export async function resetPassword(db: PrismaClient, token: string, password: s
 
 export type PortalIdentity = {
   sessionId: string;
-  user: { id: string; email: string; name: string | null; status: "active" | "pending" };
+  user: { id: string; email: string; name: string | null; status: "active" | "pending"; role: "owner" | "staff"; access: "view" | "edit" };
   vendor: { id: string; vendorName: string; displayName: string } | null; // null while pending
 };
 
@@ -306,7 +336,7 @@ export async function getIdentity(db: PrismaClient, shop: string, token: string 
   if (now.getTime() - s.lastSeenAt.getTime() > TOUCH_EVERY_MS) {
     await db.portalSession.update({ where: { id: s.id }, data: { lastSeenAt: now } });
   }
-  return { sessionId: s.id, user: { id: u.id, email: u.email, name: u.name, status: u.status }, vendor };
+  return { sessionId: s.id, user: { id: u.id, email: u.email, name: u.name, status: u.status, role: u.role, access: u.access }, vendor };
 }
 
 export async function endSession(db: PrismaClient, token: string | null) {

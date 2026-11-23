@@ -46,3 +46,17 @@ export function sendPasswordReset(to: string, name: string | null, link: string,
   ].join("\n");
   return send(to, "Reset your Setu Store vendor portal password", text, link, env);
 }
+
+export function sendStaffInvite(to: string, name: string | null, brand: string, invitedBy: string, link: string, env: Env = process.env) {
+  const text = [
+    `Hello${name ? ` ${name}` : ""},`,
+    "",
+    `${invitedBy} added you to ${brand}'s team on the Setu Store vendor portal.`,
+    "Open this link to choose your password. It works once and expires in 7 days:",
+    "",
+    link,
+    "",
+    "After that, sign in with this email address. If the link expires, use “Forgot password” on the sign-in page.",
+  ].join("\n");
+  return send(to, `Join ${brand} on the Setu Store vendor portal`, text, link, env);
+}

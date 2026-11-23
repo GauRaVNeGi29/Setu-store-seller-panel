@@ -3,7 +3,7 @@ import { Form, NavLink, Outlet, useLoaderData } from "react-router";
 import db from "../db.server";
 import { requireVendor } from "../lib/portal/context.server";
 import { listToShip } from "../lib/portal/data.server";
-import { IconBox, IconOrders, IconOut, IconStore } from "../lib/portal/icons";
+import { IconBox, IconOrders, IconOut, IconStore, IconTeam } from "../lib/portal/icons";
 import { portalLinks, Wordmark } from "../lib/portal/ui";
 
 /**
@@ -17,17 +17,19 @@ export const meta: MetaFunction = () => [{ title: "Setu Store vendor portal" }, 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const me = await requireVendor(request);
   const ship = await listToShip(db, { shop: me.shop, vendorName: me.vendor.vendorName });
-  return { vendor: me.vendor.displayName, name: me.user.name, email: me.user.email, toShip: ship.units };
+  return { vendor: me.vendor.displayName, name: me.user.name, email: me.user.email, toShip: ship.units, owner: me.user.role === "owner" };
 };
 
 const NAV = [
   { to: "/portal", label: "Orders", long: "My orders", Icon: IconOrders, end: true },
   { to: "/portal/ship", label: "To ship", long: "What to ship", Icon: IconBox, end: false },
   { to: "/portal/profile", label: "My brand", long: "My brand", Icon: IconStore, end: false },
+  { to: "/portal/team", label: "Team", long: "Team", Icon: IconTeam, end: false, ownerOnly: true },
 ];
 
 export default function PortalLayout() {
-  const { vendor, name, email, toShip } = useLoaderData<typeof loader>();
+  const { vendor, name, email, toShip, owner } = useLoaderData<typeof loader>();
+  const nav = NAV.filter((n) => owner || !("ownerOnly" in n));
   const count = (to: string) =>
     to === "/portal/ship" && toShip > 0 ? <span className="vp-count" aria-label={`${toShip} units to ship`}>{toShip > 99 ? "99+" : toShip}</span> : null;
 
@@ -40,7 +42,7 @@ export default function PortalLayout() {
           <span>Selling on Setu Store</span>
         </div>
         <nav className="vp-nav" aria-label="Main">
-          {NAV.map(({ to, long, Icon, end }) => (
+          {nav.map(({ to, long, Icon, end }) => (
             <NavLink key={to} to={to} end={end}>
               <Icon />
               {long}
@@ -73,7 +75,7 @@ export default function PortalLayout() {
       </main>
 
       <nav className="vp-tabs" aria-label="Main">
-        {NAV.map(({ to, label, Icon, end }) => (
+        {nav.map(({ to, label, Icon, end }) => (
           <NavLink key={to} to={to} end={end}>
             <Icon />
             {label}
