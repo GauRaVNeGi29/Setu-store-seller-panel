@@ -16,10 +16,12 @@ export default async function handleRequest(
 ) {
   addDocumentResponseHeaders(request, responseHeaders);
   if (new URL(request.url).pathname.startsWith("/portal")) {
-    // Vendor portal: never framed, no referrer leaks, never cached by shared caches.
+    // Vendor portal: never framed, no referrer leaks to other sites, never cached by shared caches.
+    // "same-origin" (not "no-referrer"): with "no-referrer" browsers send `Origin: null` on form
+    // posts, and React Router's CSRF check then rejects every form sent before JavaScript loads.
     responseHeaders.set("X-Frame-Options", "DENY");
     responseHeaders.set("Content-Security-Policy", "frame-ancestors 'none'");
-    responseHeaders.set("Referrer-Policy", "no-referrer");
+    responseHeaders.set("Referrer-Policy", "same-origin");
     responseHeaders.set("Cache-Control", "private, no-store");
     responseHeaders.set("X-Content-Type-Options", "nosniff");
   }
