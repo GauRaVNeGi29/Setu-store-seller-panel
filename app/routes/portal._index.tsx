@@ -34,6 +34,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     dash,
     greeting: hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening",
     firstName: (me.user.name ?? "").split(" ")[0] || null,
+    teamView: !!me.teamViewer,
     brand: details && {
       name: details.displayName, logoId: details.logoFile?.id ?? null, missing: details.missing,
       minimumOrderValue: details.minimumOrderValue, shortDescription: details.shortDescription,
@@ -75,7 +76,7 @@ function Tile({ label, value, children }: { label: string; value: string; childr
 }
 
 export default function Dashboard() {
-  const { dash: d, greeting, firstName, brand, change, people } = useLoaderData<typeof loader>();
+  const { dash: d, greeting, firstName, brand, change, people, teamView } = useLoaderData<typeof loader>();
   const loading = useNavigation().state === "loading";
   const period = d.range === "all" ? "" : `${d.range} days`;
   const k = d.kpis;
@@ -86,7 +87,7 @@ export default function Dashboard() {
     <>
       <div className="vp-pagehead">
         <div>
-          <h1 className="vp-h1">{greeting}{firstName ? `, ${firstName}` : ""}</h1>
+          <h1 className="vp-h1">{teamView ? `${brand?.name ?? "Vendor"} dashboard` : `${greeting}${firstName ? `, ${firstName}` : ""}`}</h1>
           <p className="vp-lead">Here&apos;s how {brand?.name ?? "your brand"} is doing on Setu Store.</p>
         </div>
       </div>

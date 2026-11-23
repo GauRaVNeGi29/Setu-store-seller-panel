@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useFetcher, useLoaderData } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
@@ -11,6 +11,8 @@ import {
   adminUpdateDetails, adminUpdateUser, changeRequestState, listPeople, reviewBusinessChange, vendorDetails,
 } from "../lib/vendors/team.server";
 import { BUSINESS_FIELDS, BUSINESS_FILES, FIELD_LABEL } from "../lib/vendors/fields";
+import { createTeamHandoff } from "../lib/portal/auth.server";
+import { portalBaseUrl } from "../lib/portal/context.server";
 
 /**
  * One vendor, team-only inside Shopify admin:
@@ -27,10 +29,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const [profile, people, change] = vendor
     ? await Promise.all([vendorDetails(db, session.shop, vendor.id), listPeople(db, session.shop, vendor.id), changeRequestState(db, session.shop, vendor.id)])
     : [null, [], null];
-  return { name, lines, profile, people, change, vendor: vendor && { id: vendor.id, status: vendor.status } };
+  return {
+    name, lines, profile, people, change, vendor: vendor && { id: vendor.id, status: vendor.status },
+    portalUrl: portalBaseUrl(request),
+  };
 };
 
-export const action = async ({ request }: ActionFunctionArgs): Promise<{ ok: boolean; message?: string; error?: string }> => {
+export const action = async ({ request }: ActionFunctionArgs): Promise<{ ok: boolean; message?: string; error?: string; viewUrl?: string }> => {
   const { session } = await authenticate.admin(request);
   const shop = session.shop;
   const actor = `admin:${session.onlineAccessInfo?.associated_user?.email ?? "staff"}`;
@@ -70,6 +75,10 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<{ ok: boo
       );
     case "details":
       return done(await adminUpdateDetails(db, shop, vendor.id, Object.fromEntries(form), actor), "Details saved");
+    case "team_view": {
+      const r = await createTeamHandoff(db, shop, vendor.id, actor);
+      return r.ok ? { ok: true, viewUrl: `${portalBaseUrl(request)}/portal/view?token=${encodeURIComponent(r.token)}` } : r;
+    }
   }
   return { ok: false, error: "Unknown action" };
 };
@@ -121,6 +130,48 @@ function ImagePreview({ file, wide }: { file: AdminFile; wide?: boolean }) {
     : <span style={{ color: "#666" }}>Loading…</span>;
 }
 
+/**
+ * Portal links. The app runs inside Shopify admin's frame and the portal never
+ * loads in a frame, so both open in a new tab. "View portal" gets a one-time
+ * link (60 s) from the server, opens it, and also shows it in case the browser
+ * blocked the new tab.
+ */
+function PortalAccess({ name, portalUrl, canView, why }: { name: string; portalUrl: string; canView: boolean; why: string | null }) {
+  const fetcher = useFetcher<typeof action>();
+  const busy = fetcher.state !== "idle";
+  const viewUrl = fetcher.data && "viewUrl" in fetcher.data ? fetcher.data.viewUrl : undefined;
+  const opened = useRef<string | null>(null);
+  useEffect(() => {
+    if (viewUrl && opened.current !== viewUrl) {
+      opened.current = viewUrl;
+      window.open(viewUrl, "_blank", "noopener");
+    }
+  }, [viewUrl]);
+  return (
+    <s-section heading="Vendor portal">
+      <s-paragraph>
+        Sellers sign in at <b>{portalUrl}/portal/login</b>. The portal opens in a new tab: it doesn&apos;t work inside Shopify admin.
+      </s-paragraph>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <s-button variant="primary" {...(busy || !canView ? { disabled: true } : {})}
+          onClick={() => fetcher.submit({ name, intent: "team_view" }, { method: "POST" })}>View portal as {name}</s-button>
+        <s-button href={`${portalUrl}/portal/login`} target="_blank">Open sign-in page</s-button>
+      </div>
+      {!canView && why && <s-paragraph>{why}</s-paragraph>}
+      {fetcher.data && !fetcher.data.ok && fetcher.data.error && <s-banner tone="critical">{fetcher.data.error}</s-banner>}
+      {viewUrl && (
+        <s-banner tone="info">
+          Opened in a new tab: a read-only view of {name}&apos;s portal for one hour. Nothing didn&apos;t open?{" "}
+          <s-link href={viewUrl} target="_blank">Open {name}&apos;s portal</s-link> (this link works once, for 60 seconds).
+        </s-banner>
+      )}
+      <s-paragraph>
+        &ldquo;View portal&rdquo; shows exactly what {name}&apos;s owner sees, without their password. It can&apos;t change anything and is recorded in Recent activity.
+      </s-paragraph>
+    </s-section>
+  );
+}
+
 type Person = { id: string; email: string; name: string | null; status: string; role: string; access: string; lastLoginAt: string | null };
 
 function PersonRow({ p, name }: { p: Person; name: string }) {
@@ -168,7 +219,7 @@ function PersonRow({ p, name }: { p: Person; name: string }) {
 }
 
 export default function Vendor() {
-  const { name, lines, vendor, profile, people, change } = useLoaderData<typeof loader>();
+  const { name, lines, vendor, profile, people, change, portalUrl } = useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
   const shopify = useAppBridge();
   const busy = fetcher.state !== "idle";
@@ -196,6 +247,12 @@ export default function Vendor() {
         </s-section>
       ) : (
         <>
+          <PortalAccess
+            name={name} portalUrl={portalUrl}
+            canView={vendor.status === "active" && people.some((p) => p.status === "active")}
+            why={vendor.status !== "active" ? "This vendor is paused, so its portal can't be opened." : "No one from this vendor has an active account yet, so there's no portal to view."}
+          />
+
           {pending && (
             <s-section heading="Business change waiting for approval">
               <s-paragraph>Requested {when(pending.createdAt)}{pending.by ? ` by ${pending.by}` : ""}. Nothing changes until you approve.</s-paragraph>

@@ -208,6 +208,7 @@ model VendorUser {
   sessions       PortalSession[]
   resets         PasswordReset[]
   changeRequests VendorChangeRequest[]
+  handoffs       PortalHandoff[]
 
   @@unique([shop, email])
   @@index([shop, status])
@@ -256,6 +257,24 @@ model PortalSession {
   revokedAt    DateTime?
   ip           String?
   userAgent    String?
+  /// Set when a Setu Store team member opened the portal "as" this vendor from
+  /// Shopify admin: the session is read-only and lasts at most an hour.
+  teamViewer   String?
+
+  @@index([vendorUserId])
+}
+
+/// One-time link from Shopify admin into a vendor's portal (team view).
+/// Only the token's hash is stored; it works once, within 60 seconds.
+model PortalHandoff {
+  id           String     @id @default(cuid())
+  tokenHash    String     @unique
+  vendorUserId String
+  vendorUser   VendorUser @relation(fields: [vendorUserId], references: [id], onDelete: Cascade)
+  teamViewer   String // the team member who opened it, as recorded in the audit log ("admin:<their email>")
+  expiresAt    DateTime
+  usedAt       DateTime?
+  createdAt    DateTime   @default(now())
 
   @@index([vendorUserId])
 }

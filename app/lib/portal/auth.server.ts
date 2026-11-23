@@ -33,6 +33,8 @@ export const SIGNUPS_PER_IP_PER_HOUR = 5;
 export const RESETS_PER_EMAIL_PER_HOUR = 3;
 export const RESET_TTL_MS = 30 * 60 * 1000;
 export const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+export const HANDOFF_TTL_MS = 60 * 1000;
+export const TEAM_VIEW_MS = 60 * 60 * 1000;
 export const SESSION_MAX_MS = 7 * 24 * 60 * 60 * 1000;
 export const SESSION_IDLE_MS = 12 * 60 * 60 * 1000;
 const TOUCH_EVERY_MS = 5 * 60 * 1000;
@@ -192,14 +194,52 @@ export async function signIn(db: PrismaClient, rawEmail: string, password: strin
   return { ok: true, status: user.status === "active" ? "active" : "pending", ...(await createSession(db, user.id, ctx)) };
 }
 
-async function createSession(db: PrismaClient, vendorUserId: string, ctx: Ctx) {
+async function createSession(db: PrismaClient, vendorUserId: string, ctx: Ctx, teamViewer: string | null = null) {
   const now = ctx.now ?? new Date();
   const token = randomBytes(32).toString("base64url");
-  const expiresAt = new Date(now.getTime() + SESSION_MAX_MS);
+  const expiresAt = new Date(now.getTime() + (teamViewer ? TEAM_VIEW_MS : SESSION_MAX_MS));
   await db.portalSession.create({
-    data: { tokenHash: hashToken(token), vendorUserId, expiresAt, createdAt: now, lastSeenAt: now, ip: ctx.ip ?? null, userAgent: ctx.userAgent?.slice(0, 300) ?? null },
+    data: { tokenHash: hashToken(token), vendorUserId, expiresAt, createdAt: now, lastSeenAt: now, ip: ctx.ip ?? null, userAgent: ctx.userAgent?.slice(0, 300) ?? null, teamViewer },
   });
   return { token, expiresAt };
+}
+
+// ---------------------------------------------------------------------------
+// Team view: the Setu Store team opens a vendor's portal from Shopify admin
+// ---------------------------------------------------------------------------
+
+export type HandoffResult = { ok: true; token: string } | { ok: false; error: string };
+
+/**
+ * Called only from a Shopify-admin action (the team is signed in to Shopify).
+ * Makes a one-time token, valid 60 seconds, for a read-only view of this
+ * vendor's portal as its owner sees it. Needs an active vendor with someone
+ * who can sign in.
+ */
+export async function createTeamHandoff(db: PrismaClient, shop: string, vendorId: string, teamViewer: string, ctx: { now?: Date } = {}): Promise<HandoffResult> {
+  const now = ctx.now ?? new Date();
+  const vendor = await db.vendor.findFirst({ where: { id: vendorId, shop }, include: { users: { where: { status: "active" }, orderBy: { createdAt: "asc" } } } });
+  if (!vendor) return { ok: false, error: "Vendor not found" };
+  if (vendor.status !== "active") return { ok: false, error: "This vendor is paused. Reactivate it to view its portal." };
+  const as = vendor.users.find((u) => u.role === "owner") ?? vendor.users[0];
+  if (!as) return { ok: false, error: "No one from this vendor has an active account yet, so there's no portal to view." };
+  const token = randomBytes(32).toString("base64url");
+  await db.portalHandoff.create({ data: { tokenHash: hashToken(token), vendorUserId: as.id, teamViewer: teamViewer.slice(0, 200), expiresAt: new Date(now.getTime() + HANDOFF_TTL_MS), createdAt: now } });
+  await db.auditLog.create({ data: { shop, actor: teamViewer, action: "portal.team_view_opened", target: `vendor:${vendor.id}`, detail: { as: as.email } } });
+  return { ok: true, token };
+}
+
+/** Swaps a team-view token (once, within 60 s) for a read-only session lasting an hour. */
+export async function redeemTeamHandoff(db: PrismaClient, token: string, ctx: Ctx): Promise<{ token: string; expiresAt: Date } | null> {
+  const now = ctx.now ?? new Date();
+  if (!token || token.length < 20 || token.length > 100) return null;
+  const h = await db.portalHandoff.findUnique({ where: { tokenHash: hashToken(token) }, include: { vendorUser: { include: { vendor: true } } } });
+  if (!h || h.usedAt || h.expiresAt <= now || h.vendorUser.shop !== ctx.shop) return null;
+  const claimed = await db.portalHandoff.updateMany({ where: { id: h.id, usedAt: null }, data: { usedAt: now } });
+  if (claimed.count !== 1) return null;
+  const u = h.vendorUser;
+  if (u.status !== "active" || !u.vendor || u.vendor.status !== "active") return null;
+  return createSession(db, u.id, ctx, h.teamViewer);
 }
 
 // ---------------------------------------------------------------------------
@@ -288,6 +328,8 @@ export async function resetPassword(db: PrismaClient, token: string, password: s
 
 export type PortalIdentity = {
   sessionId: string;
+  /** Set for a Setu Store team member viewing this vendor's portal from Shopify admin: read-only. */
+  teamViewer: string | null;
   user: { id: string; email: string; name: string | null; status: "active" | "pending"; role: "owner" | "staff"; access: "view" | "edit" };
   vendor: { id: string; vendorName: string; displayName: string } | null; // null while pending
 };
@@ -311,7 +353,7 @@ export async function getIdentity(db: PrismaClient, shop: string, token: string 
   if (now.getTime() - s.lastSeenAt.getTime() > TOUCH_EVERY_MS) {
     await db.portalSession.update({ where: { id: s.id }, data: { lastSeenAt: now } });
   }
-  return { sessionId: s.id, user: { id: u.id, email: u.email, name: u.name, status: u.status, role: u.role, access: u.access }, vendor };
+  return { sessionId: s.id, teamViewer: s.teamViewer, user: { id: u.id, email: u.email, name: u.name, status: u.status, role: u.role, access: u.access }, vendor };
 }
 
 export async function endSession(db: PrismaClient, token: string | null) {

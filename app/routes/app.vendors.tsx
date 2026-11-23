@@ -4,6 +4,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { listAllVendors } from "../lib/vendors/team.server";
+import { portalBaseUrl } from "../lib/portal/context.server";
 
 /**
  * All vendors with portal access: who owns each account, how many people,
@@ -13,6 +14,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const vendors = await listAllVendors(db, session.shop);
   return {
+    portalUrl: portalBaseUrl(request),
     vendors,
     totals: {
       vendors: vendors.length,
@@ -25,7 +27,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 const cell = { padding: "8px 6px", borderBottom: "1px solid #eee", verticalAlign: "top" } as const;
 
 export default function AllVendors() {
-  const { vendors, totals } = useLoaderData<typeof loader>();
+  const { vendors, totals, portalUrl } = useLoaderData<typeof loader>();
   return (
     <s-page heading="All vendors">
       {(totals.changes > 0 || totals.approvals > 0) && (
@@ -35,6 +37,12 @@ export default function AllVendors() {
           Open the vendor to review.
         </s-banner>
       )}
+      <s-section heading="Vendor portal">
+        <s-paragraph>
+          Sellers sign in at <b>{portalUrl}/portal/login</b>. To see what a vendor sees, open the vendor and choose &ldquo;View portal&rdquo;.
+        </s-paragraph>
+        <s-button href={`${portalUrl}/portal/login`} target="_blank">Open sign-in page</s-button>
+      </s-section>
       <s-section heading={`Vendors with portal access (${totals.vendors})`}>
         {vendors.length === 0 ? (
           <s-paragraph>No vendor has portal access yet. Approve a sign-up, or open a vendor from &ldquo;Vendors and orders&rdquo; and set up access.</s-paragraph>
@@ -60,6 +68,7 @@ export default function AllVendors() {
                   <tr key={v.id}>
                     <td style={cell}>
                       <s-link href={`/app/vendor?name=${encodeURIComponent(v.vendorName)}`}>{v.displayName}</s-link>
+                      {v.missing.length > 0 && <><br /><small style={{ color: "#8a5a12" }}>Missing: {v.missing.join(", ")}</small></>}
                       {v.displayName !== v.vendorName && <><br /><small style={{ color: "#666" }}>Shopify vendor: {v.vendorName}</small></>}
                       {v.city && <><br /><small style={{ color: "#666" }}>{v.city}</small></>}
                     </td>

@@ -21,13 +21,15 @@ import { isValidEmail, normaliseEmail } from "./vendors.server";
 
 export type Me = {
   shop: string;
+  /** Set during a read-only Setu Store team view. */
+  teamViewer?: string | null;
   user: { id: string; email: string; role: "owner" | "staff"; access: "view" | "edit" };
   vendor: { id: string };
 };
 export type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string; errors?: Record<string, string> };
 
-export const canEdit = (me: Pick<Me, "user">) => me.user.role === "owner" || me.user.access === "edit";
-export const canManagePeople = (me: Pick<Me, "user">) => me.user.role === "owner";
+export const canEdit = (me: Pick<Me, "user" | "teamViewer">) => !me.teamViewer && (me.user.role === "owner" || me.user.access === "edit");
+export const canManagePeople = (me: Pick<Me, "user" | "teamViewer">) => !me.teamViewer && me.user.role === "owner";
 
 const DENIED = { ok: false as const, error: "Your access doesn't allow this. Ask your account owner." };
 
@@ -108,6 +110,7 @@ async function checkFiles(raw: Input, fields: readonly FileField[]) {
 
 /** Each signed-in person keeps their own name and phone up to date. Email is fixed. */
 export async function updateSellerDetails(db: PrismaClient, me: Me, raw: Input): Promise<Result> {
+  if (me.teamViewer) return DENIED;
   const name = clip(get(raw, "name"), 120);
   const phone = clip(get(raw, "phone"), 20);
   const errors: Record<string, string> = {};

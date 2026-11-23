@@ -5,6 +5,7 @@ import { requireVendor } from "../lib/portal/context.server";
 import { listToShip } from "../lib/portal/data.server";
 import { IconBox, IconHome, IconOrders, IconOut, IconStore, IconTeam } from "../lib/portal/icons";
 import { portalLinks, Wordmark } from "../lib/portal/ui";
+import { canManagePeople } from "../lib/vendors/team.server";
 
 /**
  * Signed-in vendor shell: sidebar on desktop, top bar + bottom tabs on phones.
@@ -17,7 +18,10 @@ export const meta: MetaFunction = () => [{ title: "Setu Store vendor portal" }, 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const me = await requireVendor(request);
   const ship = await listToShip(db, { shop: me.shop, vendorName: me.vendor.vendorName });
-  return { vendor: me.vendor.displayName, name: me.user.name, email: me.user.email, toShip: ship.units, owner: me.user.role === "owner" };
+  return {
+    vendor: me.vendor.displayName, name: me.user.name, email: me.user.email, toShip: ship.units, owner: canManagePeople(me),
+    teamView: me.teamViewer ? { by: me.teamViewer.replace(/^admin:/, ""), as: me.user.name || me.user.email } : null,
+  };
 };
 
 const NAV = [
@@ -29,7 +33,7 @@ const NAV = [
 ];
 
 export default function PortalLayout() {
-  const { vendor, name, email, toShip, owner } = useLoaderData<typeof loader>();
+  const { vendor, name, email, toShip, owner, teamView } = useLoaderData<typeof loader>();
   const nav = NAV.filter((n) => owner || !("ownerOnly" in n));
   const count = (to: string) =>
     to === "/portal/ship" && toShip > 0 ? <span className="vp-count" aria-label={`${toShip} units to ship`}>{toShip > 99 ? "99+" : toShip}</span> : null;
@@ -71,6 +75,17 @@ export default function PortalLayout() {
 
       <main className="vp-main" id="main">
         <div className="vp-page">
+          {teamView && (
+            <div className="vp-teamview" role="status">
+              <p>
+                <b>Setu Store team view of {vendor}</b>
+                <span>You&apos;re seeing what {teamView.as} sees. Read-only: nothing can be changed here. Ends after an hour.</span>
+              </p>
+              <Form method="post" action="/portal/logout">
+                <button className="vp-btn vp-btn--quiet" type="submit">Leave team view</button>
+              </Form>
+            </div>
+          )}
           <Outlet />
         </div>
       </main>

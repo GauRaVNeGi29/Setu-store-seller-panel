@@ -4,7 +4,7 @@ import fixture from "../fixtures/dev-orders-2026-11-20.json";
 import { saveOrder } from "../../app/lib/orders/sync.server";
 import { enableVendor, addVendorUser, approveSignup } from "../../app/lib/vendors/vendors.server";
 import { reviewBusinessChange } from "../../app/lib/vendors/team.server";
-import { signUp, signIn } from "../../app/lib/portal/auth.server";
+import { signUp, signIn, createTeamHandoff } from "../../app/lib/portal/auth.server";
 const db = new PrismaClient(); const shop = "seller-panel-dev.myshopify.com";
 const [cmd, a, b] = process.argv.slice(2);
 if (cmd === "seed" && /neon\.tech|q0zr1f/.test(process.env.DATABASE_URL ?? "")) throw new Error("Refusing to wipe a real database");
@@ -28,6 +28,9 @@ if (cmd === "seed") {
 } else if (cmd === "signin") {
   const r = await signIn(db, a, b, { shop });
   console.log(JSON.stringify(r.ok ? { ok: true, status: r.status } : r));
+} else if (cmd === "teamview") {
+  const v = await db.vendor.findFirstOrThrow({ where: { shop, vendorName: a } });
+  console.log(JSON.stringify(await createTeamHandoff(db, shop, v.id, "admin:team@setustore.test")));
 } else if (cmd === "clear-logins") {
   await db.loginAttempt.deleteMany({});
 } else if (cmd === "user") {

@@ -56,6 +56,7 @@ async function cleanup() {
   await db.passwordReset.deleteMany({ where: { vendorUser: { shop } } });
   await db.vendorChangeRequest.deleteMany({ where: { shop } });
   await db.vendorFile.deleteMany({ where: { shop } });
+  await db.portalHandoff.deleteMany({ where: { vendorUser: { shop } } });
   await db.vendorUser.deleteMany({ where: { shop } });
   await db.vendor.deleteMany({ where: { shop } });
   await db.loginAttempt.deleteMany({ where: { shop } });
@@ -252,6 +253,17 @@ describe("All vendors and the vendor page", () => {
     expect((await signIn(db, "helper@urban.example", PW, { shop })).ok).toBe(false);
     expect(await vendorPost({ intent: "activate" })).toMatchObject({ ok: true });
     expect((await signIn(db, "helper@urban.example", PW, { shop })).ok).toBe(true);
+  });
+
+  it("the vendor page shows the portal address and opens a one-time team view", async () => {
+    const page = await call(vendorPage.loader, "/app/vendor?name=Urban%20Store");
+    expect(page.portalUrl).toBe("https://app.test"); // PORTAL_URL / SHOPIFY_APP_URL in real use
+    const r = await vendorPost({ intent: "team_view" });
+    expect(r.ok).toBe(true);
+    expect(r.viewUrl).toMatch(/^https:\/\/app\.test\/portal\/view\?token=[\w-]{40,}$/);
+    expect(await db.auditLog.count({ where: { shop, action: "portal.team_view_opened", actor: "admin:team@setustore.test" } })).toBe(1);
+    expect((await call(home.loader, "/app")).portalUrl).toBe("https://app.test");
+    expect((await call(allVendors.loader, "/app/vendors")).portalUrl).toBe("https://app.test");
   });
 
   it("removing a person ends their access", async () => {

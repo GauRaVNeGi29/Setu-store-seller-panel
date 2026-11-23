@@ -411,6 +411,24 @@ async def main():
         check("Isolation", "Ashnur can't open Urban Store's GST document (not found)", st == 404, str(st))
         await ac.close()
 
+        # ------------------------------------------------------------ team view from Shopify admin
+        h = admin("teamview", "Urban Store")
+        tc = await browser.new_context(**desk); tv = await tc.new_page(); watch(tv, "teamview")
+        await tv.goto(f"{B}/portal/view?token={h['token']}"); await ready(tv); await settle(tv)
+        check("Team view", "the one-time link opens Urban Store's dashboard", tv.url.endswith("/portal") and "33 units waiting" in await text(tv), tv.url)
+        check("Team view", "a dark banner says it's a read-only team view", "Setu Store team view of" in await text(tv) and "Read-only" in await text(tv))
+        check("Team view", "no Team tab", await tv.locator("nav a[href='/portal/team']").count() == 0)
+        await go(tv, "/portal/profile")
+        check("Team view", "My brand has no Edit buttons at all", await tv.locator("a[href*='?edit=']").count() == 0)
+        st = await tv.evaluate("async () => (await fetch('/portal/profile', {method: 'POST', body: new URLSearchParams({intent: 'seller', name: 'Hacked', phone: '+91 90000 00000'})})).status")
+        check("Team view", "a forged save is refused (403)", st == 403 and "Hacked" not in await text(tv), str(st))
+        await submit(tv, "button:has-text('Leave team view')")
+        await go(tv, "/portal")
+        check("Team view", "Leave team view ends it", tv.url.endswith("/portal/login"))
+        await tv.goto(f"{B}/portal/view?token={h['token']}"); await ready(tv)
+        check("Team view", "the link can't be used twice", "expired" in await text(tv))
+        await tc.close()
+
         # ------------------------------------------------------------ forgot / reset, lockout, sign-out
         fc = await browser.new_context(**desk); f = await fc.new_page(); watch(f, "forgot")
         await go(f, "/portal/forgot"); await f.fill("#email", "nobody@nowhere.example"); await submit(f, "button[type=submit]")

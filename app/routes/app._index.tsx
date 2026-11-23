@@ -8,6 +8,7 @@ import db from "../db.server";
 import { recentActivity, vendorOverview } from "../lib/orders/admin.server";
 import { fullSync } from "../lib/orders/sync.server";
 import { portalStatusByVendor } from "../lib/vendors/vendors.server";
+import { portalBaseUrl } from "../lib/portal/context.server";
 
 /**
  * Stage 1 home: every vendor that appears on an order, with totals worked out
@@ -25,7 +26,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     const p = portal.get(v.vendorName);
     return { ...v, portal: p ? `${p.status === "active" ? "Active" : "Paused"} · ${p.users} ${p.users === 1 ? "person" : "people"}` : "Not set up" };
   });
-  return { ...overview, vendors, activity };
+  return { ...overview, vendors, activity, portalUrl: portalBaseUrl(request) };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -68,6 +69,13 @@ export default function Index() {
           <input type="hidden" name="intent" value="resync" />
           <s-button type="submit" {...(busy ? { loading: true } : {})}>Resync all orders</s-button>
         </fetcher.Form>
+      </s-section>
+
+      <s-section heading="Vendor portal">
+        <s-paragraph>
+          Sellers sign in at <b>{data.portalUrl}/portal/login</b>. Open a vendor below to view their portal as they see it.
+        </s-paragraph>
+        <s-button href={`${data.portalUrl}/portal/login`} target="_blank">Open sign-in page</s-button>
       </s-section>
 
       <s-section heading="Vendors">

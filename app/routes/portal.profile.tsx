@@ -31,9 +31,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
   const editable = canEdit(me);
   const want = url.searchParams.get("edit");
-  const edit = want === "seller" || (editable && (want === "business" || want === "brand")) ? want : null;
+  const edit = (want === "seller" && !me.teamViewer) || (editable && (want === "business" || want === "brand")) ? want : null;
   return {
-    details, change, editable, edit, saved: url.searchParams.get("saved"),
+    details, change, editable, edit, saved: url.searchParams.get("saved"), teamView: !!me.teamViewer,
     me: { ...person, role: me.user.role, access: me.user.access },
   };
 };
@@ -107,7 +107,7 @@ const DOCS = [
 ] as const;
 
 export default function Profile() {
-  const { details: d, change, editable, edit, saved, me } = useLoaderData<typeof loader>();
+  const { details: d, change, editable, edit, saved, me, teamView } = useLoaderData<typeof loader>();
   const data = useActionData<typeof action>();
   const nav = useNavigation();
   const busy = nav.state !== "idle";
@@ -131,7 +131,9 @@ export default function Profile() {
         <div>
           <h1 className="vp-h1">{d.displayName}</h1>
           <p className="vp-lead">
-            {editable
+            {teamView
+              ? "The vendor's seller, business and brand details, as they see them."
+              : editable
               ? "Your seller, business and brand details. Business details are checked by the Setu Store team before they change."
               : "You have view-only access to the business and brand details. Ask your account owner if something needs changing."}
           </p>
@@ -150,7 +152,7 @@ export default function Profile() {
       {/* ---------------- 1. Seller details ---------------- */}
       <section className="vp-panel" aria-labelledby="s1">
         <SectionHead id="s1" title="Seller details" note="Your own details. Everyone on your team has their own."
-          action={editing !== "seller" && <Link className="vp-btn vp-btn--quiet" to="?edit=seller">Edit</Link>} />
+          action={editing !== "seller" && !teamView && <Link className="vp-btn vp-btn--quiet" to="?edit=seller">Edit</Link>} />
         {editing === "seller" ? (
           <Form method="post" className="vp-panel-body vp-form">
             <input type="hidden" name="intent" value="seller" />
@@ -171,7 +173,7 @@ export default function Profile() {
             ["Name", me.name, true],
             ["Email", me.email],
             ["Phone", me.phone, true],
-            ["Password", <span key="pw" className="vp-pwrow">••••••••••<Link to="/portal/forgot">Change password</Link></span>],
+            ["Password", <span key="pw" className="vp-pwrow">••••••••••{!teamView && <Link to="/portal/forgot">Change password</Link>}</span>],
             ["Role", me.role === "owner" ? "Owner – full access" : me.access === "edit" ? "Staff – view and edit" : "Staff – view only"],
           ]} />
         )}

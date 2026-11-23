@@ -1,7 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { COOKIE_NAME, createInviteLink, getIdentity, resetPassword, signIn, signUp } from "../app/lib/portal/auth.server";
-import { addVendorUser, enableVendor } from "../app/lib/vendors/vendors.server";
+import { COOKIE_NAME, TEAM_VIEW_MS, createInviteLink, createTeamHandoff, getIdentity, redeemTeamHandoff, resetPassword, signIn, signUp } from "../app/lib/portal/auth.server";
+import { addVendorUser, enableVendor, setVendorStatus } from "../app/lib/vendors/vendors.server";
 import {
   addStaff, adminUpdateUser, changeRequestState, listAllVendors, ownerRemoveStaff, ownerUpdateStaff,
   requestBusinessChange, reviewBusinessChange, updateBrand, withdrawBusinessChange, type Me,
@@ -10,6 +10,7 @@ import * as profile from "../app/routes/portal.profile";
 import * as team from "../app/routes/portal.team";
 import * as layout from "../app/routes/portal";
 import * as files from "../app/routes/portal.files.$fileId";
+import * as teamView from "../app/routes/portal_.view";
 
 /**
  * Roles, staff access and business-change approval.
@@ -27,6 +28,7 @@ async function cleanup() {
   await db.passwordReset.deleteMany({ where: { vendorUser: { shop } } });
   await db.vendorChangeRequest.deleteMany({ where: { shop } });
   await db.vendorFile.deleteMany({ where: { shop } });
+  await db.portalHandoff.deleteMany({ where: { vendorUser: { shop } } });
   await db.vendorUser.deleteMany({ where: { shop } });
   await db.vendor.deleteMany({ where: { shop } });
   await db.loginAttempt.deleteMany({ where: { shop } });
@@ -335,5 +337,79 @@ describe("team controls in Shopify admin", () => {
     await requestBusinessChange(db, o, ADDRESS);
     const [row] = await listAllVendors(db, shop);
     expect(row).toMatchObject({ vendorName: "Ashnur", people: 2, staff: 1, active: 2, pendingChange: true, owners: ["Owner"], missing: ["company name", "business address", "minimum order value"] });
+  });
+});
+
+describe("team view from Shopify admin", () => {
+  it("a one-time link opens a read-only, one-hour view of the vendor's portal as its owner", async () => {
+    const { me: o, vendor } = await owner("Ashnur", "o@ashnur.example");
+    await staff(o, "s@ashnur.example", "edit");
+    const h = await createTeamHandoff(db, shop, vendor.id, "admin:team@setustore.test");
+    if (!h.ok) throw new Error(h.error);
+
+    const r = await run(teamView.loader, get(`/portal/view?token=${h.token}`, ""));
+    expect(r.location).toBe("/portal");
+    const again = await run(teamView.loader, get(`/portal/view?token=${h.token}`, ""));
+    expect(again.location).toBeUndefined(); // used once – shows "expired"
+
+    const s = await db.portalSession.findFirstOrThrow({ where: { teamViewer: "admin:team@setustore.test" }, include: { vendorUser: true } });
+    expect(s.vendorUser.email).toBe("o@ashnur.example"); // views as the owner
+    expect(s.expiresAt.getTime() - s.createdAt.getTime()).toBe(TEAM_VIEW_MS);
+    expect(await db.auditLog.count({ where: { shop, action: "portal.team_view_opened" } })).toBe(1);
+  });
+
+  it("can read every page but change nothing", async () => {
+    const { vendor } = await owner("Ashnur", "o@ashnur.example");
+    const h = await createTeamHandoff(db, shop, vendor.id, "admin:team@setustore.test");
+    if (!h.ok) throw new Error(h.error);
+    const s = await redeemTeamHandoff(db, h.token, { shop });
+    const cookie = cookieOf(s!.token);
+
+    const nav = (await run(layout.loader, get("/portal", cookie))).data!;
+    expect(nav.teamView).toMatchObject({ by: "team@setustore.test" });
+    expect(nav.owner).toBe(false); // no Team tab
+    const prof = (await run(profile.loader, get("/portal/profile?edit=seller", cookie))).data!;
+    expect([prof.editable, prof.edit, prof.teamView]).toEqual([false, null, true]);
+
+    const tries: [unknown, Request][] = [
+      [profile.action, post("/portal/profile", cookie, { intent: "seller", name: "Hacked", phone: "+91 90000 00000" })],
+      [profile.action, post("/portal/profile", cookie, { intent: "brand", description: "Hacked", minimumOrderValue: "1" })],
+      [profile.action, post("/portal/profile", cookie, { intent: "business", ...ADDRESS })],
+      [team.action, post("/portal/team", cookie, { intent: "add", email: "x@ashnur.example", access: "edit" })],
+    ];
+    for (const [fn, req] of tries) expect((await run(fn, req)).status).toBe(403);
+    expect(await db.vendorUser.count({ where: { shop, name: "Hacked" } })).toBe(0);
+    expect((await db.vendor.findUniqueOrThrow({ where: { id: vendor.id } })).description).toBeNull();
+    expect(await db.vendorChangeRequest.count({ where: { vendorId: vendor.id } })).toBe(0);
+    expect(await db.vendorUser.count({ where: { shop, email: "x@ashnur.example" } })).toBe(0);
+  });
+
+  it("links expire after 60 seconds, belong to one store, and need an active vendor with an active person", async () => {
+    const { vendor } = await owner("Ashnur", "o@ashnur.example");
+    const t0 = new Date();
+    const h = await createTeamHandoff(db, shop, vendor.id, "admin:team@setustore.test", { now: t0 });
+    if (!h.ok) throw new Error();
+    expect(await redeemTeamHandoff(db, h.token, { shop, now: new Date(t0.getTime() + 61_000) })).toBeNull();
+    const h2 = await createTeamHandoff(db, shop, vendor.id, "admin:team@setustore.test");
+    if (!h2.ok) throw new Error();
+    expect(await redeemTeamHandoff(db, h2.token, { shop: "someone-else.myshopify.com" })).toBeNull();
+    expect(await redeemTeamHandoff(db, "forged-token-forged-token-forged", { shop })).toBeNull();
+
+    expect((await createTeamHandoff(db, "someone-else.myshopify.com", vendor.id, "admin:x")).ok).toBe(false);
+    await setVendorStatus(db, shop, vendor.id, "paused", "test");
+    expect((await createTeamHandoff(db, shop, vendor.id, "admin:x")).ok).toBe(false);
+    const empty = await enableVendor(db, shop, "Nobody Yet", "test");
+    expect((await createTeamHandoff(db, shop, empty.id, "admin:x")).ok).toBe(false);
+  });
+
+  it("doesn't touch the vendor's own sign-in or sessions", async () => {
+    const { vendor, cookie } = await owner("Ashnur", "o@ashnur.example");
+    const before = await db.vendorUser.findFirstOrThrow({ where: { shop, email: "o@ashnur.example" } });
+    const h = await createTeamHandoff(db, shop, vendor.id, "admin:team@setustore.test");
+    if (!h.ok) throw new Error();
+    await redeemTeamHandoff(db, h.token, { shop });
+    const after = await db.vendorUser.findFirstOrThrow({ where: { shop, email: "o@ashnur.example" } });
+    expect(after.lastLoginAt?.getTime()).toBe(before.lastLoginAt?.getTime());
+    expect((await run(layout.loader, get("/portal", cookie))).data!.teamView).toBeNull(); // the owner's own session is normal
   });
 });
