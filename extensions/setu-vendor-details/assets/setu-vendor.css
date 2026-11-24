@@ -38,8 +38,8 @@
   flex: none;
   display: grid;
   place-items: center;
-  width: 48px;
-  height: 48px;
+  width: var(--setu-logo, 56px);
+  height: var(--setu-logo, 56px);
   border: 1px solid var(--setu-line);
   border-radius: 50%;
   overflow: hidden;
@@ -52,7 +52,7 @@
   object-fit: cover;
 }
 .setu-vendor-hd__initial {
-  font-size: 1.125rem;
+  font-size: calc(var(--setu-logo, 56px) * 0.4);
   font-weight: 600;
   line-height: 1;
 }
@@ -64,6 +64,9 @@
   line-height: 1.3;
 }
 .setu-vendor-hd__name {
+  font-weight: inherit;
+}
+.setu-vendor-hd__name--bold {
   font-weight: 600;
 }
 .setu-vendor-hd__tagline {

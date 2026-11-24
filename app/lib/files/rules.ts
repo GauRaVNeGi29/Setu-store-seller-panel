@@ -10,6 +10,6 @@ export const FILE_RULES: Record<FileKindName, { label: string; mimes: string[]; 
   gst: { label: "GST certificate", ...DOC, hint: "PDF, JPG or PNG, up to 5 MB." },
   iec: { label: "IEC certificate", ...DOC, hint: "Import Export Code certificate. PDF, JPG or PNG, up to 5 MB." },
   ad_code: { label: "AD code letter", ...DOC, hint: "Authorised Dealer code letter from your bank. PDF, JPG or PNG, up to 5 MB." },
-  logo: { label: "Brand logo", ...IMG, maxBytes: 2 * MB, hint: "Square works best, at least 512 × 512 px. PNG, JPG or WebP, up to 2 MB." },
+  logo: { label: "Brand logo", ...IMG, maxBytes: 2 * MB, hint: "Shown as a small circle beside your name on your product pages, so use your symbol rather than the full name and tagline. Square, at least 512 × 512 px. PNG, JPG or WebP, up to 2 MB." },
   banner: { label: "Brand banner", ...IMG, maxBytes: 5 * MB, hint: "Wide image, about 1600 × 500 px. PNG, JPG or WebP, up to 5 MB." },
 };
