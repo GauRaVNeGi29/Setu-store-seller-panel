@@ -1,0 +1,92 @@
+{%- doc -%}
+  Renders one part of a product's vendor details, from the store's
+  marketplace_seller entry for the product's vendor. The Setu Store Seller
+  Panel app keeps those entries up to date. Renders nothing when the vendor
+  has no entry.
+
+  @param {string} part - 'header' (logo, name, minimum) or 'description'
+  @param {product} product - the product whose vendor to show
+  @param {boolean} [show_tagline] - header: show the short description under the name
+  @param {boolean} [show_min] - header: show the minimum order value
+  @param {boolean} [show_link] - description: show a link to the vendor's products
+  @param {string} [link_label] - description: text for that link
+{%- enddoc -%}
+{%- liquid
+  assign seller = nil
+  if product != blank and product.vendor != blank
+    assign vendor = product.vendor
+    assign vendor_handle = vendor | handleize
+    assign seller = shop.metaobjects.marketplace_seller[vendor_handle]
+    if seller != nil and seller.vendor_name.value != vendor
+      assign seller = nil
+    endif
+    if seller == nil
+      for entry in shop.metaobjects.marketplace_seller.values
+        if entry.vendor_name.value == vendor
+          assign seller = entry
+          break
+        endif
+      endfor
+    endif
+  endif
+
+  if seller != nil
+    assign name = seller.display_name.value | default: seller.vendor_name.value | default: vendor
+    assign tagline = seller.short_description.value
+    assign description = seller.description.value
+    assign logo = seller.logo.value
+    assign mov = seller.minimum_order_value.value
+    assign url = seller.collection.value.url
+    if url == blank
+      assign url = vendor | url_for_vendor
+    endif
+  endif
+-%}
+{%- if seller != nil -%}
+  {%- if part == 'header' -%}
+    <div class="setu-vendor setu-vendor-hd" data-setu-vendor="header">
+      <a class="setu-vendor-hd__brand" href="{{ url }}">
+        <span class="setu-vendor-hd__logo">
+          {%- if logo != blank -%}
+            {{- logo | image_url: width: 144 | image_tag: width: 48, height: 48, alt: '', loading: 'eager', class: 'setu-vendor-hd__img' -}}
+          {%- else -%}
+            <span class="setu-vendor-hd__initial" aria-hidden="true">{{ name | slice: 0 | upcase | escape }}</span>
+          {%- endif -%}
+        </span>
+        <span class="setu-vendor-hd__text">
+          <span class="setu-vendor-hd__name">{{ name | escape }}</span>
+          {%- if show_tagline != false and tagline != blank -%}
+            <span class="setu-vendor-hd__tagline">{{ tagline | escape }}</span>
+          {%- endif -%}
+        </span>
+      </a>
+      {%- if show_min != false and mov != blank and mov > 0 -%}
+        {%- assign mov_cents = mov | times: 100 | round -%}
+        <span class="setu-vendor-hd__min">
+          <span class="setu-vendor-sr">{{ 'setu_vendor.minimum_order' | t }}</span>
+          <span aria-hidden="true">{{ 'setu_vendor.min' | t }}</span>
+          <span class="money">{{ mov_cents | money }}</span>
+        </span>
+      {%- endif -%}
+    </div>
+  {%- elsif part == 'description' -%}
+    {%- if description != blank or tagline != blank or show_link != false -%}
+      <div class="setu-vendor setu-vendor-ds" data-setu-vendor="description">
+        {%- if description != blank -%}
+          <p class="setu-vendor-ds__text">{{ description | escape | newline_to_br }}</p>
+        {%- elsif tagline != blank -%}
+          <p class="setu-vendor-ds__text">{{ tagline | escape }}</p>
+        {%- endif -%}
+        {%- if show_link != false -%}
+          <a class="setu-vendor-ds__link" href="{{ url }}">
+            {%- if link_label != blank -%}
+              {{- link_label | escape -}}
+            {%- else -%}
+              {{- 'setu_vendor.shop_all' | t }} {{ name | escape -}}
+            {%- endif -%}
+          </a>
+        {%- endif -%}
+      </div>
+    {%- endif -%}
+  {%- endif -%}
+{%- endif -%}

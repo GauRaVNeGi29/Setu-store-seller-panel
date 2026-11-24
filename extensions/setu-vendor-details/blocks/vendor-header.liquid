@@ -1,0 +1,32 @@
+{%- liquid
+  assign target_product = block.settings.product | default: product
+  render 'setu-vendor', part: 'header', product: target_product, show_tagline: block.settings.show_tagline, show_min: block.settings.show_min
+-%}
+
+{% schema %}
+{
+  "name": "Vendor header",
+  "target": "section",
+  "stylesheet": "setu-vendor.css",
+  "settings": [
+    {
+      "type": "product",
+      "id": "product",
+      "label": "Product",
+      "autofill": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_tagline",
+      "label": "Show short description",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_min",
+      "label": "Show minimum order value",
+      "default": true
+    }
+  ]
+}
+{% endschema %}

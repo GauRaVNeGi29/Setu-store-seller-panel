@@ -7,6 +7,7 @@ import {
   canEdit, canManagePeople, changeRequestState, requestBusinessChange, updateBrand, updateSellerDetails, vendorDetails, withdrawBusinessChange,
 } from "../lib/vendors/team.server";
 import { MAX_REQUEST_BYTES } from "../lib/files/files.server";
+import { updateStoreListing } from "../lib/storefront/update.server";
 import { FILE_RULES } from "../lib/files/rules";
 import { BUSINESS_FIELDS, BUSINESS_FILES, FIELD_LABEL, SHORT_DESCRIPTION_MAX, fileInputName, type BusinessField } from "../lib/vendors/fields";
 import { inr } from "../lib/portal/format";
@@ -57,6 +58,8 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<ActionRes
   }[intent];
   if (!run) return { ok: false, intent, error: "Unknown action" };
   const r = await run();
+  // Brand details are public: copy them to the store listing. A failure here is recorded for the team; the save stands.
+  if (r.ok && intent === "brand") await updateStoreListing(db, me.shop, me.vendor.id);
   if (r.ok) throw redirect(`/portal/profile?saved=${intent === "withdraw" ? "withdrawn" : intent}`);
   return { ok: false, intent, error: r.error, errors: r.errors, values };
 };
@@ -274,11 +277,11 @@ export default function Profile() {
           <Form method="post" encType="multipart/form-data" className="vp-panel-body vp-form">
             <input type="hidden" name="intent" value="brand" />
             <Field name="shortDescription" label="Short description" maxLength={SHORT_DESCRIPTION_MAX} defaultValue={val("shortDescription", d.shortDescription)}
-              error={err.shortDescription} hint={`One line about your brand, up to ${SHORT_DESCRIPTION_MAX} characters.`} />
+              error={err.shortDescription} hint={`One line about your brand, shown under your name on your product pages. Up to ${SHORT_DESCRIPTION_MAX} characters.`} />
             <Field name="description" label="Description" multiline defaultValue={val("description", d.description)} error={err.description}
-              hint="A few sentences: what you make, how, and what makes it yours." />
+              hint="A few sentences: what you make, how, and what makes it yours. Shown under Brand details on your product pages." />
             <Field name="minimumOrderValue" label="Minimum order value (₹)" required inputMode="decimal" defaultValue={val("minimumOrderValue", d.minimumOrderValue)}
-              error={err.minimumOrderValue} hint="The smallest order a retailer can place with you, in rupees." />
+              error={err.minimumOrderValue} hint="The smallest order a retailer can place with you, in rupees. Shown as “Min” beside your name and applied in the cart." />
             <FileField name="logoFile" label="Brand logo" current={d.logoFile} accept={FILE_RULES.logo.accept} hint={FILE_RULES.logo.hint}
               error={err.logoFile} removable image />
             <FileField name="bannerFile" label="Brand banner" current={d.bannerFile} accept={FILE_RULES.banner.accept} hint={FILE_RULES.banner.hint}

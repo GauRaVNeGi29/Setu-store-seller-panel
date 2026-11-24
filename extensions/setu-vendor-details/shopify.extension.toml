@@ -1,0 +1,7 @@
+# Vendor details on the storefront: the seller's logo, name and minimum order
+# value at the top of the product details, and the seller's description.
+# Data comes from the store's marketplace_seller entries, which the app keeps
+# up to date (app/lib/storefront/listing.server.ts).
+name = "Vendor details"
+type = "theme"
+handle = "setu-vendor-details"

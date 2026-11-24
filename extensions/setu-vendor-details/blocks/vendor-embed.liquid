@@ -1,0 +1,65 @@
+{%- comment -%}
+  Fills placeholders the theme puts anywhere on a product page:
+    <div class="setu-vendor-header"></div>       logo, name and minimum order value
+    <div class="setu-vendor-description"></div>  the vendor's description
+  The parts are rendered here on the server and moved into the placeholders
+  by setu-vendor.js, so there is no extra request.
+{%- endcomment -%}
+{%- if product != blank -%}
+  <template id="setu-vendor-header-tpl">
+    {%- render 'setu-vendor', part: 'header', product: product, show_tagline: block.settings.show_tagline, show_min: block.settings.show_min -%}
+  </template>
+  <template id="setu-vendor-description-tpl">
+    {%- render 'setu-vendor', part: 'description', product: product, show_link: block.settings.show_link, link_label: block.settings.link_label -%}
+  </template>
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "Vendor details",
+  "target": "body",
+  "javascript": "setu-vendor.js",
+  "stylesheet": "setu-vendor.css",
+  "enabled_on": {
+    "templates": ["product"]
+  },
+  "settings": [
+    {
+      "type": "paragraph",
+      "content": "Add <div class=\"setu-vendor-header\"></div> or <div class=\"setu-vendor-description\"></div> anywhere in the product page (for example in a Custom Liquid block), and the vendor's details appear there."
+    },
+    {
+      "type": "header",
+      "content": "Header"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_tagline",
+      "label": "Show short description",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_min",
+      "label": "Show minimum order value",
+      "default": true
+    },
+    {
+      "type": "header",
+      "content": "Description"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_link",
+      "label": "Show link to the vendor's products",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "link_label",
+      "label": "Link text",
+      "info": "Leave empty for \"Shop all from\" and the vendor's name."
+    }
+  ]
+}
+{% endschema %}
