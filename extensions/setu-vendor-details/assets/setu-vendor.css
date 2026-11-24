@@ -1,0 +1,113 @@
+/* Setu Store vendor details. Inherits the theme's font and colours. */
+.setu-vendor {
+  --setu-line: rgba(0, 0, 0, 0.14);
+  --setu-line: color-mix(in srgb, currentColor 16%, transparent);
+  --setu-soft: rgba(0, 0, 0, 0.04);
+  --setu-soft: color-mix(in srgb, currentColor 5%, transparent);
+  --setu-muted: rgba(0, 0, 0, 0.62);
+  --setu-muted: color-mix(in srgb, currentColor 66%, transparent);
+}
+
+/* Header: logo · name (· short description) ……… Min ₹ */
+.setu-vendor-hd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  width: 100%;
+}
+.setu-vendor-hd__brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+.setu-vendor-hd__brand:hover .setu-vendor-hd__name {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.setu-vendor-hd__brand:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+.setu-vendor-hd__logo {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border: 1px solid var(--setu-line);
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--setu-soft);
+}
+.setu-vendor-hd__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.setu-vendor-hd__initial {
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1;
+}
+.setu-vendor-hd__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  line-height: 1.3;
+}
+.setu-vendor-hd__name {
+  font-weight: 600;
+}
+.setu-vendor-hd__tagline {
+  max-width: 40ch;
+  overflow: hidden;
+  font-size: 0.875em;
+  color: var(--setu-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.setu-vendor-hd__min {
+  flex: none;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35em;
+  padding: 6px 12px;
+  border: 1px solid var(--setu-line);
+  border-radius: 999px;
+  font-size: 0.875em;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+/* Description */
+.setu-vendor-ds__text {
+  margin: 0 0 0.75em;
+}
+.setu-vendor-ds__link {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.setu-vendor-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* A placeholder with nothing to show (vendor not listed) takes no space. */
+.setu-vendor-header:empty,
+.setu-vendor-description:empty {
+  display: none;
+}

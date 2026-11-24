@@ -4,6 +4,7 @@ import { useFetcher, useLoaderData } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
+import { updateStoreListing } from "../lib/storefront/update.server";
 import db from "../db.server";
 import { vendorLines } from "../lib/orders/admin.server";
 import { addVendorUser, enableVendor, getVendorByName, removeVendorUser, setVendorStatus } from "../lib/vendors/vendors.server";
@@ -34,7 +35,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     ])
     : [null, [], null, []];
   return {
-    name, lines, profile, people, change, commission: [...commission].reverse(), vendor: vendor && { id: vendor.id, status: vendor.status },
+    name, lines, profile, people, change, commission: [...commission].reverse(), vendor: vendor && {
+      id: vendor.id, status: vendor.status,
+      store: { handle: vendor.storeEntryHandle, syncedAt: vendor.storeSyncedAt?.toISOString() ?? null, error: vendor.storeSyncError },
+    },
     portalUrl: portalBaseUrl(request),
   };
 };
@@ -77,8 +81,20 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<{ ok: boo
         await reviewBusinessChange(db, shop, f("requestId"), intent === "approve_change" ? "approve" : "reject", f("note") || null, actor),
         intent === "approve_change" ? "Change approved – details updated" : "Change declined",
       );
-    case "details":
-      return done(await adminUpdateDetails(db, shop, vendor.id, Object.fromEntries(form), actor), "Details saved");
+    case "details": {
+      const r = await adminUpdateDetails(db, shop, vendor.id, Object.fromEntries(form), actor);
+      if (!r.ok) return done(r, "");
+      const listing = await updateStoreListing(db, shop, vendor.id);
+      return listing.ok
+        ? { ok: true, message: "Details saved – store listing updated" }
+        : { ok: true, message: "Details saved", error: `The store listing didn't update: ${listing.error}` };
+    }
+    case "store_listing": {
+      const r = await updateStoreListing(db, shop, vendor.id);
+      return r.ok
+        ? { ok: true, message: r.changed.length ? "Store listing updated" : "Store listing already up to date" }
+        : { ok: false, error: r.error };
+    }
     case "commission": {
       const r = await setCommissionRate(db, shop, vendor.id, f("rate"), actor);
       return r.ok ? { ok: true, message: `Commission set to ${Number(r.rate)}%` } : r;
@@ -181,6 +197,37 @@ function PortalAccess({ name, portalUrl, canView, why }: { name: string; portalU
 }
 
 type RateRow = { rate: string; effectiveFrom: string; setBy: string; createdAt: string; fromStart: boolean };
+
+type StoreState = { handle: string | null; syncedAt: string | null; error: string | null };
+
+/** The vendor's public listing (marketplace_seller entry): what the theme shows on product pages and the cart uses for the minimum. */
+function StoreListingSection({ name, store }: { name: string; store: StoreState }) {
+  const fetcher = useFetcher<{ ok: boolean; message?: string; error?: string }>();
+  const shopify = useAppBridge();
+  const busy = fetcher.state !== "idle";
+  useEffect(() => {
+    if (fetcher.data?.ok && fetcher.data.message) shopify.toast.show(fetcher.data.message);
+  }, [fetcher.data, shopify]);
+  const error = fetcher.data && !fetcher.data.ok ? fetcher.data.error : fetcher.state === "idle" && !fetcher.data ? store.error : null;
+  return (
+    <s-section heading="Store listing">
+      <s-paragraph>
+        The logo, brand name, short description, description and minimum order value shown on this vendor&apos;s product pages.
+        The cart uses the same minimum. It updates by itself when the vendor saves My brand or you save Details.
+      </s-paragraph>
+      {error && <s-banner tone="warning">Last update didn&apos;t go through: {error}</s-banner>}
+      <s-paragraph>
+        {store.syncedAt ? <>Last updated {when(store.syncedAt)}.</> : <>Not copied to the store yet.</>}
+        {store.handle && <> Entry: <s-link href="shopify://admin/content/metaobjects/entries/marketplace_seller" target="_top">Marketplace seller</s-link> &ldquo;{store.handle}&rdquo;.</>}
+      </s-paragraph>
+      <fetcher.Form method="post">
+        <input type="hidden" name="name" value={name} />
+        <input type="hidden" name="intent" value="store_listing" />
+        <s-button type="submit" {...(busy ? { loading: true } : {})}>Update store listing</s-button>
+      </fetcher.Form>
+    </s-section>
+  );
+}
 
 function CommissionSection({ name, history }: { name: string; history: RateRow[] }) {
   const fetcher = useFetcher<typeof action>();
@@ -292,6 +339,7 @@ export default function Vendor() {
     <s-page heading={profile?.displayName || name || "(no vendor)"}>
       <s-link slot="breadcrumb-actions" href="/app/vendors">All vendors</s-link>
       {fetcher.data && !fetcher.data.ok && fetcher.data.error && <s-banner tone="critical">{fetcher.data.error}</s-banner>}
+      {fetcher.data && fetcher.data.ok && fetcher.data.error && <s-banner tone="warning">{fetcher.data.error}</s-banner>}
 
       {!vendor ? (
         <s-section heading="Vendor portal access">
@@ -310,6 +358,8 @@ export default function Vendor() {
           />
 
           <CommissionSection name={profile?.displayName ?? name} history={commission} />
+
+          <StoreListingSection name={name} store={vendor.store} />
 
           {pending && (
             <s-section heading="Business change waiting for approval">
@@ -432,7 +482,7 @@ export default function Vendor() {
                 </div>
               </fetcher.Form>
               <s-paragraph>
-                Shopify vendor name: <b>{name}</b> (fixed – this decides which order lines they see). The minimum order value is not yet used by the cart.
+                Shopify vendor name: <b>{name}</b> (fixed – this decides which order lines they see and which products show this listing).
               </s-paragraph>
             </s-section>
           )}

@@ -405,6 +405,7 @@ export async function listAllVendors(db: PrismaClient, shop: string) {
       commission: v.commissions[0]?.ratePercent.toFixed(2) ?? null,
       missing: missingDetails({ ...v, minimumOrderValue: v.minimumOrderValue?.toFixed(2) ?? null }),
       city: [v.city, v.state].filter(Boolean).join(", "),
+      store: v.storeSyncError ? "error" : v.storeSyncedAt ? "ok" : "never",
     };
   });
 }

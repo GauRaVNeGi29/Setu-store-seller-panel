@@ -31,6 +31,7 @@ Custom Shopify app that will give Setu Store's vendors a secure place to see the
 | Sign-up, sign-in, password reset, sessions | `app/lib/portal/auth.server.ts`, `app/routes/portal_.*.tsx` |
 | Sign-up approval (team) | `app/routes/app.signups.tsx` |
 | Vendor portal pages | `app/routes/portal*.tsx`, `app/lib/portal/data.server.ts` |
+| Store listing (vendor details for the theme) | `app/lib/storefront/`, `extensions/setu-vendor-details/` |
 | Tests (76): order mapping, sync, passwords, sign-up, approval, reset, sessions, vendor isolation through the real pages | `tests/` |
 
 ## First-time setup on your PC
@@ -67,6 +68,32 @@ Custom Shopify app that will give Setu Store's vendors a secure place to see the
 5. **Forgot password:** `/portal/forgot` → the page shows the reset link (development only) → choose a new password.
 
 What vendors never see: other vendors' items, an order's grand total, the buyer's name, email, phone or address. Applicants waiting for approval see no order data at all.
+
+## Vendor details on the storefront (product page)
+
+The app copies each vendor's public brand details into the store's **Marketplace seller** entry
+(`marketplace_seller` metaobject): brand name, short description, description, logo, banner and minimum
+order value. The cart already reads the minimum from there. Business documents never leave the app.
+
+- **When:** a seller saves *My brand*, or the team saves *Details* on the vendor page. *Update store listing*
+  (vendor page) and *Update all store listings* (All vendors) run it by hand. A failed update never undoes the save;
+  the reason shows on the vendor page.
+- **Fields:** the app adds any missing fields to the definition (`display_name`, `short_description`,
+  `description`, `logo`, `banner`). It never changes `collection` or `webkul_seller_id`, and never blanks a
+  minimum the app doesn't have yet. Code: `app/lib/storefront/listing.server.ts`.
+- **Theme:** the *Vendor details* theme app extension (`extensions/setu-vendor-details`) fills two placeholders,
+  the same way Webkul's script fills its own:
+  ```html
+  <div class="setu-vendor-header"></div>        <!-- logo, name (links to the seller collection), Min ₹ -->
+  <div class="setu-vendor-description"></div>   <!-- description and "Shop all from …" -->
+  ```
+  It also offers *Vendor header* and *Vendor description* blocks for the theme editor.
+
+**Turning it on (dev store):**
+1. `npm run dev -- --theme 189269180525` (the theme that holds the placeholders; without `--theme` the CLI uploads
+   a Dawn copy to host the extension). Accept the new permissions when the app opens (store content and files).
+2. In the app: *All vendors* → *Update all store listings*.
+3. Online Store → Themes → Customize → App embeds → switch on **Vendor details** → Save.
 
 ### Security rules (enforced on the server, covered by tests)
 
