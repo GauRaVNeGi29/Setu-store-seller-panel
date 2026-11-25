@@ -119,7 +119,7 @@ order value. The cart already reads the minimum from there. Business documents n
   the panel) and the number of products. The street address is never copied to the store.
 - **Feedback** on the seller page: a button opens a block with the seller's reviews and, for a signed-in buyer whose order
   from the seller has shipped, a form (1–5 stars, optional item, comment, name to show). It talks to the app through the
-  store's **app proxy**: `/apps/setu-seller/reviews` → `app/routes/proxy.reviews.tsx`. Shopify signs the request and says
+  store's **app proxy** (needs the `write_app_proxy` scope): `/apps/setu-seller/reviews` → `app/routes/proxy.reviews.tsx`. Shopify signs the request and says
   which customer is signed in; the buyer's orders are read from Shopify (`orders(query: "customer_id:…")`) and matched
   against the seller's shipped order lines, so nothing about who bought what is taken from the browser. The app has to be
   running for Feedback to load; the rest of the page doesn't depend on it.
