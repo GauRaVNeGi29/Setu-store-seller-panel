@@ -6,8 +6,9 @@ import { enableVendor, addVendorUser, approveSignup } from "../../app/lib/vendor
 import { reviewBusinessChange } from "../../app/lib/vendors/team.server";
 import { setCommissionRate } from "../../app/lib/commission/commission.server";
 import { signUp, signIn, createTeamHandoff } from "../../app/lib/portal/auth.server";
+import { submitReview, setReviewHidden } from "../../app/lib/reviews/reviews.server";
 const db = new PrismaClient(); const shop = "seller-panel-dev.myshopify.com";
-const [cmd, a, b] = process.argv.slice(2);
+const [cmd, a, b, c, d, e, f] = process.argv.slice(2);
 if (cmd === "seed" && /neon\.tech|q0zr1f/.test(process.env.DATABASE_URL ?? "")) throw new Error("Refusing to wipe a real database");
 if (cmd === "seed") {
   await db.portalSession.deleteMany({}); await db.passwordReset.deleteMany({}); await db.vendorChangeRequest.deleteMany({});
@@ -35,6 +36,15 @@ if (cmd === "seed") {
 } else if (cmd === "commission") {
   const v = await db.vendor.findFirstOrThrow({ where: { shop, vendorName: a } });
   console.log(JSON.stringify(await setCommissionRate(db, shop, v.id, b, "admin:team@setustore.test")));
+} else if (cmd === "review") {
+  // review <vendor> <buyer number> <order id> <stars> [comment] [name]: a buyer's review, as the storefront will send it
+  const v = await db.vendor.findFirstOrThrow({ where: { shop, vendorName: a } });
+  console.log(JSON.stringify(await submitReview(db, shop, { vendorId: v.id, customerId: BigInt(b), orderIds: [BigInt(c)], rating: d, comment: e, authorName: f })));
+} else if (cmd === "hide-review") {
+  // hide-review <vendor> <buyer number> <reason>
+  const v = await db.vendor.findFirstOrThrow({ where: { shop, vendorName: a } });
+  const r = await db.vendorReview.findFirstOrThrow({ where: { shop, vendorId: v.id, customerId: BigInt(b) } });
+  console.log(JSON.stringify(await setReviewHidden(db, shop, v.id, r.id, true, "admin:team@setustore.test", c)));
 } else if (cmd === "clear-logins") {
   await db.loginAttempt.deleteMany({});
 } else if (cmd === "user") {

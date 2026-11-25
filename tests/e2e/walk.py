@@ -243,6 +243,38 @@ async def main():
         card = await owner.inner_text(".vp-earncard")
         check("Earnings", "the dashboard shows the earnings summary", all(x in card for x in ["₹521.25", "₹2,953.75", "20%"]))
 
+        # ------------------------------------------------------------ reviews
+        await go(owner, "/portal/reviews")
+        check("Reviews", "the sidebar has a Reviews link, and the page says there are none yet",
+              await owner.locator("nav a[href='/portal/reviews']").count() >= 1 and "No reviews yet" in await text(owner))
+        await go(owner, "/portal")
+        check("Reviews", "the dashboard says 'None yet' and links to Reviews", await owner.locator("a[href='/portal/reviews']", has_text="None yet").count() == 1)
+        r = admin("review", "Urban Store", "501", "19043720134765", "5", "Too early", "Asha")
+        check("Reviews", "a buyer whose order hasn't shipped can't leave a review", r and r["ok"] is False and "shipped" in r["error"])
+        for buyer, stars, words, who in [("501", "5", "Lovely finish, well packed.", "Meera"), ("502", "4", "Good quality. Delivery took a while.", ""), ("503", "2", "Call me on 99999 00000 for cheaper rings", "Spam")]:
+            r = admin("review", "Urban Store", buyer, "19043720364141", stars, words, who)
+            check("Reviews", f"a buyer of shipped order #1004 can leave {stars} stars", r and r["ok"] is True, str(r))
+        await go(owner, "/portal/reviews")
+        body = await text(owner)
+        check("Reviews", "rating is 3.7 out of 5 from 3 reviews (5 + 4 + 2)", "3.7" in body and "From 3 reviews" in body, body[:300])
+        check("Reviews", "each review shows stars, the comment, the buyer's chosen name or 'Verified buyer', and the order",
+              all(x in body for x in ["Lovely finish, well packed.", "Meera", "Verified buyer", "Order #1004"])
+              and await owner.locator(".vp-review [aria-label='5 out of 5 stars']").count() == 1)
+        check("Reviews", "the star breakdown is read out as a table: 5 stars 1, 4 stars 1, 2 stars 1",
+              [(await row.inner_text()).split() for row in await owner.locator(".vp-rating-bars tr").all()] == [["5", "stars", "1"], ["4", "stars", "1"], ["3", "stars", "0"], ["2", "stars", "1"], ["1", "star", "0"]])
+        check("Reviews", "nothing on the page lets the seller change or remove a review", await owner.locator("main form, main button").count() == 0)
+        admin("hide-review", "Urban Store", "503", "Advertising, not a review")
+        await go(owner, "/portal/reviews")
+        body = await text(owner)
+        check("Reviews", "a review hidden by the team is marked with the reason and leaves the rating: 4.5 from 2 reviews",
+              all(x in body for x in ["Hidden by Setu Store", "Reason: Advertising, not a review", "4.5", "From 2 reviews", "1 hidden by Setu Store"]), body[:400])
+        await owner.screenshot(path=f"{SHOTS}/reviews.png", full_page=True)
+        await owner.locator(".vp-review a", has_text="Order #1004").first.click()
+        await owner.wait_for_url("**/portal/orders/19043720364141"); await ready(owner)
+        check("Reviews", "the order link opens that order", "#1004" in await text(owner))
+        await go(owner, "/portal")
+        check("Reviews", "the dashboard shows 4.5 from 2 reviews", "4.5 from 2 reviews" in (await owner.locator("a.vp-ratingline").inner_text()))
+
         # ------------------------------------------------------------ orders
         await go(owner, "/portal/orders")
         body = await text(owner)
@@ -504,14 +536,18 @@ async def main():
         check("Mobile", "owners reach Team from My brand", await m.locator("a.vp-teamlink[href='/portal/team']").is_visible())
         sw = await m.evaluate("document.documentElement.scrollWidth")
         check("Mobile", "no sideways scrolling on My orders", sw <= 390, f"scrollWidth {sw}")
-        for path in ["/portal?range=all", "/portal/orders", "/portal/earnings?range=all", "/portal/profile", "/portal/team", "/portal/ship", "/portal/orders/19043720298605"]:
+        for path in ["/portal?range=all", "/portal/orders", "/portal/earnings?range=all", "/portal/reviews", "/portal/profile", "/portal/team", "/portal/ship", "/portal/orders/19043720298605"]:
             await go(m, path)
             sw = await m.evaluate("document.documentElement.scrollWidth")
             if sw > 390:
                 check("Mobile", f"no sideways scrolling on {path}", False, f"scrollWidth {sw}")
         else:
-            check("Mobile", "no sideways scrolling on Dashboard, My orders, Earnings, My brand, Team, What to ship, order detail", True)
+            check("Mobile", "no sideways scrolling on Dashboard, My orders, Earnings, Reviews, My brand, Team, What to ship, order detail", True)
         await m.screenshot(path=f"{SHOTS}/mobile-order.png", full_page=True)
+        await go(m, "/portal/reviews")
+        await m.screenshot(path=f"{SHOTS}/mobile-reviews.png", full_page=True)
+        await go(m, "/portal")
+        check("Mobile", "Reviews is reachable on a phone from the dashboard", await m.locator("a.vp-ratingline:visible").count() == 1)
         await mc.close()
 
         await browser.close()

@@ -6,6 +6,8 @@ import { sellerDashboard } from "../lib/portal/dashboard.server";
 import { RANGES, isRange, type RangeKey } from "../lib/portal/ranges";
 import { canManagePeople, changeRequestState, vendorDetails } from "../lib/vendors/team.server";
 import { vendorEarnings } from "../lib/commission/commission.server";
+import { reviewSummary } from "../lib/reviews/reviews.server";
+import { Stars } from "../lib/portal/stars";
 import { CHART_GREEN, CHART_MADDER, CHART_TURMERIC, RankedBars, SalesChart, StatusBar } from "../lib/portal/charts";
 import { day, inr } from "../lib/portal/format";
 import { IconBox } from "../lib/portal/icons";
@@ -24,12 +26,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const want = new URL(request.url).searchParams.get("range");
   const range: RangeKey = isRange(want) ? want : "30";
   const owner = canManagePeople(me);
-  const [dash, earnings, details, change, people] = await Promise.all([
+  const [dash, earnings, details, change, people, reviews] = await Promise.all([
     sellerDashboard(db, { shop: me.shop, vendorName: me.vendor.vendorName }, range),
     vendorEarnings(db, { shop: me.shop, vendorName: me.vendor.vendorName, vendorId: me.vendor.id }, range),
     vendorDetails(db, me.shop, me.vendor.id),
     changeRequestState(db, me.shop, me.vendor.id),
     owner ? db.vendorUser.count({ where: { shop: me.shop, vendorId: me.vendor.id, status: { in: ["active", "invited"] } } }) : Promise.resolve(null),
+    reviewSummary(db, me.shop, me.vendor.id),
   ]);
   const hour = Number(new Date().toLocaleString("en-GB", { hour: "2-digit", hour12: false, timeZone: "Asia/Kolkata" }));
   return {
@@ -44,6 +47,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     },
     change: { pending: !!change.pending, declined: !change.pending && change.last?.status === "rejected" },
     people,
+    reviews: { count: reviews.count, average: reviews.average },
   };
 };
 
@@ -79,7 +83,7 @@ function Tile({ label, value, children }: { label: string; value: string; childr
 }
 
 export default function Dashboard() {
-  const { dash: d, earn, greeting, firstName, brand, change, people, teamView } = useLoaderData<typeof loader>();
+  const { dash: d, earn, greeting, firstName, brand, change, people, reviews, teamView } = useLoaderData<typeof loader>();
   const loading = useNavigation().state === "loading";
   const period = d.range === "all" ? "" : `${d.range} days`;
   const k = d.kpis;
@@ -153,6 +157,12 @@ export default function Dashboard() {
             <div>
               <dt>Minimum order</dt>
               <dd>{brand?.minimumOrderValue ? inr(brand.minimumOrderValue) : <Link to="/portal/profile?edit=brand">Add</Link>}</dd>
+            </div>
+            <div>
+              <dt>Reviews</dt>
+              <dd>{reviews.average !== null
+                ? <Link className="vp-ratingline" to="/portal/reviews"><Stars value={Number(reviews.average)} size={16} /> {reviews.average} from {plural(reviews.count, "review", "reviews")}</Link>
+                : <Link to="/portal/reviews">None yet</Link>}</dd>
             </div>
             {(change.pending || change.declined) && (
               <div>
