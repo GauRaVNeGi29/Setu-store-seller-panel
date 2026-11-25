@@ -1,6 +1,6 @@
 /*
  * Setu Store seller page: the seller's description opens short (two lines)
- * with "Show more", and "Show less" folds it again. A description that already
+ * with "See more", and "See less" folds it again. A description that already
  * fits in two lines gets no button. Without this script the whole description
  * shows.
  */

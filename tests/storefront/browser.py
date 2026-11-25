@@ -126,7 +126,7 @@ async def main():
             check(f"[{label}] opening it loads the rating and the first 10 reviews with name, date and item", await btn.get_attribute("aria-expanded") == "true" and await p.locator(".setu-feedback__item").count() == 10 and all(x in ft for x in ["Feedback on Urban Store", "4.5 out of 5 from 12 reviews", "Lovely finish, well packed.", "Meera", "20 Nov 2026", "About: Sunburst Pearl Ring", "(edited)"]), ft[:400])
             check(f"[{label}] review text is shown as text, never run as HTML", await p.locator(".setu-feedback__list img").count() == 0 and await p.title() != "hacked" and "<img src=x" in ft)
             await p.click("[data-setu-fb-more]"); await p.wait_for_function("document.querySelectorAll('.setu-feedback__item').length === 12")
-            check(f"[{label}] 'Show more reviews' adds the rest and then goes away", not await p.is_visible("[data-setu-fb-more]"))
+            check(f"[{label}] 'See more reviews' adds the rest and then goes away", not await p.is_visible("[data-setu-fb-more]"))
             link = p.locator(".setu-feedback__write a")
             check(f"[{label}] signed out: a sign-in link that comes back to this page, and no form", await link.get_attribute("href") == "/account/login?return_to=%2Fcollections%2Furban-store" and await p.locator("[data-setu-fb-form]").count() == 0)
             check(f"[{label}] no sideways scroll with Feedback open", await p.evaluate("document.documentElement.scrollWidth") <= vp["width"])
@@ -169,25 +169,25 @@ async def main():
             terms = await p.eval_on_selector_all(".setu-seller__meta--terms li", "els => els.map(e => e.textContent.trim())")
             check(f"[{label}] another seller: its own minimum and dates (today + 12 to 14 days)", terms == ["Rs. 10,000.00 minimum", f"Arrives {day(12)} – {day(14)}"], str(terms))
             await p.screenshot(path=f"{OUT}/seller-plain-{label}.png")
-            # ---- The description box: full width, cream, two lines with Show more / Show less
-            geo = "(() => { const r = (q) => document.querySelector(q).getBoundingClientRect(); const c = getComputedStyle(document.querySelector('.setu-seller__about')); const t = document.querySelector('.setu-seller__about-text'); const b = document.querySelector('[data-setu-about-toggle]'); return { seller: r('.setu-seller'), ref: r(REF), box: r('.setu-seller__about'), textH: t.clientHeight, fullH: t.scrollHeight, line: parseFloat(getComputedStyle(t).lineHeight), bg: c.backgroundColor, border: c.borderTopWidth + ' ' + c.borderTopStyle, button: b.hidden ? null : b.textContent.trim(), expanded: b.getAttribute('aria-expanded'), page: document.documentElement.scrollWidth } })()"
+            # ---- The description box: full width, light grey, two lines with See more / See less
+            geo = "(() => { const r = (q) => document.querySelector(q).getBoundingClientRect(); const c = getComputedStyle(document.querySelector('.setu-seller__about')); const t = document.querySelector('.setu-seller__about-text'); const b = document.querySelector('[data-setu-about-toggle]'); return { seller: r('.setu-seller'), ref: r(REF), box: r('.setu-seller__about'), textH: t.clientHeight, fullH: t.scrollHeight, line: parseFloat(getComputedStyle(t).lineHeight), bg: c.backgroundColor, border: c.borderTopWidth + ' ' + c.borderTopStyle, button: b.hidden ? null : b.textContent.trim(), weight: getComputedStyle(b).fontWeight, expanded: b.getAttribute('aria-expanded'), page: document.documentElement.scrollWidth } })()"
             for page_name, ref, what in [("seller-ashnur-long.html", ".setu-seller__body", "plain header"), ("seller-urban-long.html", ".setu-seller__body", "header with a banner")]:
                 await p.goto(f"{BASE}/{page_name}"); await p.wait_for_selector(".setu-seller")
                 g = await p.evaluate(geo.replace("REF", repr(ref)))
                 inset = 20 if "urban" in page_name and vp["width"] > 749 else 12 if "urban" in page_name else 0
                 left, right = g["box"]["left"] - g["seller"]["left"], g["seller"]["right"] - g["box"]["right"]
                 check(f"[{label}] description ({what}): a box across the full width, the same gap right as left", abs(left - right) < 1 and abs(left - inset) < 1 and g["box"]["width"] > g["seller"]["width"] - 2 * inset - 1 and g["page"] <= vp["width"], f"{left} {right} {g['box']['width']} {g['seller']['width']}")
-                check(f"[{label}] description ({what}): cream background with a border", g["bg"] == "rgb(250, 245, 234)" and g["border"] == "1px solid", f"{g['bg']} {g['border']}")
-                check(f"[{label}] description ({what}): opens two lines tall with 'Show more'", g["textH"] <= 2 * g["line"] + 2 and g["textH"] > g["line"] and g["fullH"] > g["textH"] and g["button"] == "Show more" and g["expanded"] == "false", str(g))
+                check(f"[{label}] description ({what}): light grey background (#f7f7f7) with a border", g["bg"] == "rgb(247, 247, 247)" and g["border"] == "1px solid", f"{g['bg']} {g['border']}")
+                check(f"[{label}] description ({what}): opens two lines tall with 'See more'", g["textH"] <= 2 * g["line"] + 2 and g["textH"] > g["line"] and g["fullH"] > g["textH"] and g["button"] == "See more" and g["expanded"] == "false", str(g))
                 first = await p.evaluate("(() => { const t = document.querySelector('.setu-seller__about-text'); const r = document.createRange(); r.selectNodeContents(t); const rows = new Set([...r.getClientRects()].filter(x => x.width > 1 && x.top < t.getBoundingClientRect().bottom - 2).map(x => Math.round(x.top))); return rows.size })()")
                 check(f"[{label}] description ({what}): both of the two lines carry words (no blank line from a paragraph break)", first == 2, str(first))
                 await p.click("[data-setu-about-toggle]")
                 o = await p.evaluate(geo.replace("REF", repr(ref)))
-                check(f"[{label}] description ({what}): 'Show more' unfolds all of it, paragraphs kept, button becomes 'Show less'", o["textH"] >= o["fullH"] - 1 and o["textH"] > 3 * o["line"] and o["button"] == "Show less" and o["expanded"] == "true" and "Ships worldwide" in await p.inner_text(".setu-seller__about-text") and await p.locator(".setu-seller__about-text br:visible").count() >= 0 and o["page"] <= vp["width"], str(o))
+                check(f"[{label}] description ({what}): 'See more' unfolds all of it, paragraphs kept, button becomes 'See less'", o["textH"] >= o["fullH"] - 1 and o["textH"] > 3 * o["line"] and o["button"] == "See less" and o["weight"] in ("400", "normal") and o["expanded"] == "true" and "Ships worldwide" in await p.inner_text(".setu-seller__about-text") and await p.locator(".setu-seller__about-text br:visible").count() >= 0 and o["page"] <= vp["width"], str(o))
                 await p.screenshot(path=f"{OUT}/about-open-{label}.png") if "ashnur" in page_name else None
                 await p.keyboard.press("Enter")
                 c = await p.evaluate(geo.replace("REF", repr(ref)))
-                check(f"[{label}] description ({what}): 'Show less' folds it again (keyboard works, focus stays on the button)", c["textH"] == g["textH"] and c["button"] == "Show more" and c["expanded"] == "false" and await p.evaluate("document.activeElement.hasAttribute('data-setu-about-toggle')"), str(c))
+                check(f"[{label}] description ({what}): 'See less' folds it again (keyboard works, focus stays on the button)", c["textH"] == g["textH"] and c["button"] == "See more" and c["expanded"] == "false" and await p.evaluate("document.activeElement.hasAttribute('data-setu-about-toggle')"), str(c))
                 await p.screenshot(path=f"{OUT}/about-{label}.png") if "ashnur" in page_name else None
             await p.goto(f"{BASE}/seller-urban.html"); await p.wait_for_selector(".setu-seller")
             fits = vp["width"] > 749  # the sample description is one line on a wide screen, more than two on a phone

@@ -225,14 +225,14 @@
   margin: 0;
   color: var(--setu-muted);
 }
-/* The seller's description: a cream box across the header's full width. With
+/* The seller's description: a light grey box across the header's full width. With
    the script it opens two lines tall ("is-short") and a button unfolds it. */
 .setu-seller__about {
   margin: 16px 0 0;
   padding: 14px 18px;
-  border: 1px solid var(--setu-about-line, #e7dcc5);
+  border: 1px solid var(--setu-about-line, #e4e4e4);
   border-radius: 12px;
-  background: var(--setu-about-bg, #faf5ea);
+  background: var(--setu-about-bg, #f7f7f7);
 }
 .setu-seller--banner .setu-seller__about {
   margin-inline: 20px;
@@ -260,7 +260,6 @@
   color: inherit;
   font: inherit;
   font-size: 0.875em;
-  font-weight: 600;
   text-decoration: underline;
   text-underline-offset: 3px;
   cursor: pointer;
