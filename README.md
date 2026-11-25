@@ -45,7 +45,7 @@ Custom Shopify app that will give Setu Store's vendors a secure place to see the
    npm install
    npm run config:link      # choose "Setu Store Vendor Portal – DEV"; this fills client_id in shopify.app.toml
    ```
-4. **Local database.** Any Postgres works. Easiest: a free Neon project named `setu-vendor-portal-dev` (separate from the Import Duties database). Copy `.env.example` to `.env` and set `DATABASE_URL` and `ALLOWED_SHOPS=seller-panel-dev.myshopify.com`.
+4. **Local database.** Any Postgres works. Easiest: a free Neon project named `setu-vendor-portal-dev` (separate from the Import Duties database). Copy `.env.example` to `.env` and set `DATABASE_URL` (Neon's pooled address), `DIRECT_URL` (the direct address, used only for migrations) and `ALLOWED_SHOPS=seller-panel-dev.myshopify.com`.
 5. **Run.**
    ```bash
    npm run dev              # shopify app dev; pick seller-panel-dev.myshopify.com when asked
@@ -109,7 +109,7 @@ order value. The cart already reads the minimum from there. Business documents n
 ```bash
 # needs a throwaway Postgres database
 export TEST_DATABASE_URL=postgresql://USER:PASSWORD@localhost:5432/setu_vendor_portal_test
-DATABASE_URL=$TEST_DATABASE_URL npx prisma migrate deploy
+DATABASE_URL=$TEST_DATABASE_URL DIRECT_URL=$TEST_DATABASE_URL npx prisma migrate deploy
 npm test
 ```
 

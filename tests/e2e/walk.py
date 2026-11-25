@@ -1,7 +1,7 @@
 """Browser walk-through of the Setu Store vendor portal against a local copy.
 
 Run (from the repo root, with a throwaway database):
-  E2E_DATABASE_URL=postgresql://…/vp_e2e npx prisma migrate deploy
+  DATABASE_URL=postgresql://…/vp_e2e DIRECT_URL=postgresql://…/vp_e2e npx prisma migrate deploy
   E2E_DATABASE_URL=… npx tsx tests/e2e/helper.mts seed
   npm run build && NODE_ENV=development DATABASE_URL=$E2E_DATABASE_URL PORTAL_SHOP=seller-panel-dev.myshopify.com \
     ALLOWED_SHOPS=seller-panel-dev.myshopify.com PORTAL_DEV_SHOW_EMAILS=true SHOPIFY_API_KEY=x SHOPIFY_API_SECRET=y \
@@ -17,7 +17,8 @@ from playwright.async_api import async_playwright
 
 B = "http://localhost:3999"
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-ENV = {**os.environ, "DATABASE_URL": os.environ.get("E2E_DATABASE_URL", "postgresql://postgres:ci@localhost:5432/vp_e2e")}
+_E2E_DB = os.environ.get("E2E_DATABASE_URL", "postgresql://postgres:ci@localhost:5432/vp_e2e")
+ENV = {**os.environ, "DATABASE_URL": _E2E_DB, "DIRECT_URL": _E2E_DB}
 PDF = b"%PDF-1.4\n1 0 obj << >> endobj\ntrailer << >>\n%%EOF\n"
 SVG = b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'
 

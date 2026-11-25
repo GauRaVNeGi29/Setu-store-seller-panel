@@ -14,8 +14,13 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  // The app's everyday connection. On Neon: the pooled address (host with -pooler), which copes
+  // with the database sleeping, plus ?pgbouncer=true&connect_timeout=15&pool_timeout=30.
+  url       = env("DATABASE_URL")
+  // Database structure changes (prisma migrate) only: the direct address. Migrations take a
+  // lock that the pooled address can't hold. Locally without Neon, set it to the same as DATABASE_URL.
+  directUrl = env("DIRECT_URL")
 }
 
 // ---------------------------------------------------------------------------
