@@ -15,6 +15,8 @@ import { reviewSummary } from "../reviews/reviews.server";
  *    the store.
  *  - rating and review_count come from the vendor's published reviews, and
  *    are empty until there is one.
+ *  - location is the vendor's city and country (never the street address);
+ *    joined_on is the day the vendor was added to the seller panel.
  *  - minimum_order_value is written only when the app has one, so a value
  *    already set on the store is never blanked by a vendor who hasn't filled
  *    in their brand details yet.
@@ -44,6 +46,8 @@ export const SELLER_FIELDS: FieldDef[] = [
   { key: "description", name: "Description", type: "multi_line_text_field", description: "Set by the Setu Store Seller Panel app." },
   { key: "logo", name: "Logo", type: "file_reference", validations: IMAGE_ONLY, description: "Set by the Setu Store Seller Panel app." },
   { key: "banner", name: "Banner", type: "file_reference", validations: IMAGE_ONLY, description: "Set by the Setu Store Seller Panel app." },
+  { key: "location", name: "Location", type: "single_line_text_field", description: "City and country. Set by the Setu Store Seller Panel app." },
+  { key: "joined_on", name: "Joined Setu Store on", type: "date", description: "Set by the Setu Store Seller Panel app." },
   { key: "rating", name: "Rating (out of 5)", type: "number_decimal", description: "Average of buyers' reviews. Set by the Setu Store Seller Panel app." },
   { key: "review_count", name: "Number of reviews", type: "number_integer", description: "Set by the Setu Store Seller Panel app." },
 ];
@@ -396,6 +400,8 @@ export async function ensureStoreImage(
 // Sync
 // ---------------------------------------------------------------------------
 
+/** The calendar day in India, as YYYY-MM-DD. */
+const istDate = (d: Date) => new Date(d.getTime() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
 const sameDecimal = (a: string, b: string) => a !== "" && b !== "" && Number(a) === Number(b);
 const NUMBERS = new Set(["minimum_order_value", "rating", "review_count"]);
 
@@ -431,6 +437,8 @@ export async function syncListing(
       banner: await imageId(vendor.bannerFileId, "banner"),
     };
     if (vendor.minimumOrderValue != null) want.minimum_order_value = vendor.minimumOrderValue.toFixed(2);
+    want.location = [vendor.city, vendor.country].map((v) => (v ?? "").trim()).filter(Boolean).join(", ");
+    want.joined_on = istDate(vendor.createdAt);
     const reviews = await reviewSummary(db, shop, vendor.id);
     want.rating = reviews.average ?? "";
     want.review_count = reviews.count ? String(reviews.count) : "";

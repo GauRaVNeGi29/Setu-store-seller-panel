@@ -30,17 +30,20 @@ const sellers = NAMES.map((name, i) => {
   const handle = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   const n = [10, 3, 0, 37, 17, 44, 212, 1, 5, 9, 12, 2, 1128][i];
   const products = Array.from({ length: Math.min(n, 30) }, (_, k) => product(name, k));
-  const collection = i === 8 ? null : { id: 1000 + i, handle, title: name, url: "/collections/" + handle, products_count: n, products };
+  const collection = i === 8 ? null : { id: 1000 + i, handle, title: name, url: "/collections/" + handle, products_count: n, all_products_count: n, products };
   if (collection) collection.products.first = products[0];
   const f = (v) => ({ value: v });
-  return { system: { handle }, vendor_name: f(name), display_name: f(i === 1 ? "Ashnur Candles" : name), short_description: f(i % 2 ? "" : "Handmade in small batches"), description: f(i === 0 ? "Urban Store makes statement jewellery for boutiques.\nEvery piece is cast and finished by hand in Ludhiana." : ""), logo: f(i % 3 === 2 ? null : { src: swatch(COLORS[i % COLORS.length], "logo") }), banner: f(i === 0 ? { src: swatch("#c9b79c", "") } : null), minimum_order_value: f(i === 4 ? null : [1000, 10000, 9574, 2500][i % 4]), collection: f(collection), rating: f(i < 2 ? [4.5, 3.7][i] : null), review_count: f(i < 2 ? [2, 14][i] : null) };
+  return { system: { handle }, vendor_name: f(name), display_name: f(i === 1 ? "Ashnur Candles" : name), short_description: f(i % 2 ? "" : "Handmade in small batches"), description: f(i === 0 ? "Urban Store makes statement jewellery for boutiques.\nEvery piece is cast and finished by hand in Ludhiana." : ""), logo: f(i % 3 === 2 ? null : { src: swatch(COLORS[i % COLORS.length], "logo") }), banner: f(i === 0 ? { src: swatch("#c9b79c", "") } : null), minimum_order_value: f(i === 4 ? null : [1000, 10000, 9574, 2500][i % 4]), collection: f(collection), rating: f(i < 2 ? [4.5, 3.7][i] : null), review_count: f(i < 2 ? [2, 14][i] : null), location: f(i === 0 ? "Ludhiana, India" : i === 1 ? "India" : null), joined_on: f(i < 2 ? "2026-03-14" : null) };
 });
 const marketplace_seller = { values: sellers };
 for (const s of sellers) marketplace_seller[s.system.handle] = s;
 const shop = { metaobjects: { marketplace_seller } };
-const render = (name, vars) => engine.parseAndRenderSync(snippet(name), { shop, ...vars });
+const routes = { root_url: "/", account_login_url: "/account/login" };
+// shop, routes and customer are global in Shopify: visible inside rendered snippets too.
+const render = (name, vars) => engine.parseAndRenderSync(snippet(name), vars, { globals: { shop, routes, customer: vars.customer ?? null } });
 
-const css = fs.readFileSync(path.join(EXT, "assets/setu-vendor.css"), "utf8"), js = fs.readFileSync(path.join(EXT, "assets/setu-vendor.js"), "utf8");
+const css = fs.readFileSync(path.join(EXT, "assets/setu-vendor.css"), "utf8");
+const js = ["setu-vendor.js", "setu-brands.js", "setu-feedback.js"].map((f) => fs.readFileSync(path.join(EXT, "assets", f), "utf8")).join("</script><script>");
 const page = (title, main, templates) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>
 <style>:root{--color-background:#fff;--color-foreground:#4a4a4a}body{margin:0;font:14px/1.5 Georgia,serif;color:#4a4a4a;background:#fff}header,footer{padding:20px 40px;border-bottom:1px solid #eee}footer{background:#e9e4e0;margin-top:40px}h1{font-weight:400;font-size:40px;margin:0}.section{padding:40px 40px 0;max-width:1400px;margin:0 auto;box-sizing:border-box}.page-width-content{padding-bottom:80px}.rte{max-width:42rem}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}.grid div{aspect-ratio:1;background:#f3f3f3}@media(max-width:749px){.section{padding:24px 16px 0}.grid{grid-template-columns:repeat(2,1fr)}}</style>
 <style>${css}</style></head><body><header>Seller Panel Dev</header><main id="MainContent">${main}</main><footer>Footer</footer>${templates}<script>${js}</script></body></html>`;
@@ -49,8 +52,9 @@ fs.writeFileSync(path.join(OUT, "brands.html"), page("Brands", `<div class="sect
 fs.writeFileSync(path.join(OUT, "brands-auto.html"), page("Brands", `<div class="section page-width-content"><h1>Brands</h1></div>`, `<template id="setu-all-brands-tpl" data-auto="end">${brands}</template>`));
 fs.writeFileSync(path.join(OUT, "brands-nojs.html"), page("Brands", `<div class="section"><h1>Brands</h1>${render("setu-brands", { per_page: 10, wide: false })}</div>`, "").replace(/<script>[\s\S]*<\/script>/, ""));
 const grid = `<div class="section"><div class="grid">${"<div></div>".repeat(8)}</div></div>`;
-const sellerPage = (c, name) => { const html = render("setu-seller-page", { collection: c, heading_tag: "h1" }); fs.writeFileSync(path.join(OUT, name), page(c.title, `<div class="section"><h1>${c.title}</h1></div>${grid}`, `<template id="setu-seller-header-tpl" data-auto="top" data-hide-title="${c.title}">${html}</template>`)); return html.trim().length; };
+const sellerPage = (c, name, customer = null) => { const html = render("setu-seller-page", { collection: c, heading_tag: "h1", customer }); fs.writeFileSync(path.join(OUT, name), page(c.title, `<div class="section"><h1>${c.title}</h1></div>${grid}`, `<template id="setu-seller-header-tpl" data-auto="top" data-hide-title="${c.title}">${html}</template>`)); return html.trim().length; };
 const urban = sellers[0].collection.value, ashnur = sellers[1].collection.value, pyramid = sellers[2].collection.value;
-const rings = { id: 5, handle: "rings", title: "Rings", url: "/collections/rings", products_count: 2, products: [urban.products[0], ashnur.products[0]] }; rings.products.first = rings.products[0];
-const other = { id: 6, handle: "urban-store", title: "Urban Store", url: "/collections/x", products_count: 1, products: [ashnur.products[0]] }; other.products.first = other.products[0];
+const rings = { id: 5, handle: "rings", title: "Rings", url: "/collections/rings", products_count: 2, all_products_count: 2, products: [urban.products[0], ashnur.products[0]] }; rings.products.first = rings.products[0];
+const other = { id: 6, handle: "urban-store", title: "Urban Store", url: "/collections/x", products_count: 1, all_products_count: 1, products: [ashnur.products[0]] }; other.products.first = other.products[0];
+sellerPage(urban, "seller-urban-buyer.html", { first_name: "Asha" });
 console.log(JSON.stringify({ urban: sellerPage(urban, "seller-urban.html") > 0, ashnur: sellerPage(ashnur, "seller-ashnur.html") > 0, emptySeller: sellerPage(pyramid, "seller-empty.html") > 0, categoryCollection: sellerPage(rings, "not-seller.html"), sameHandleDifferentCollection: sellerPage(other, "not-seller-2.html"), rows: (brands.match(/data-setu-brand /g) || []).length }));

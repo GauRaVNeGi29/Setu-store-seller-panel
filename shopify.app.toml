@@ -31,6 +31,13 @@ api_version = "2026-10"
   uri = "/webhooks/orders"
   topics = [ "orders/delete" ]
 
+# Storefront requests to /apps/setu-seller/... are passed by Shopify, signed, to the app's /proxy/...
+# (seller reviews on the seller page: app/routes/proxy.reviews.tsx).
+[app_proxy]
+url = "/proxy"
+subpath = "setu-seller"
+prefix = "apps"
+
 [auth]
 redirect_urls = [ "https://shopify.dev/apps/default-app-home/api/auth" ]
 
