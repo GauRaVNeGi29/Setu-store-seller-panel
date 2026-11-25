@@ -1,0 +1,124 @@
+{%- doc -%}
+  The All brands list: one row per seller with the seller's logo, name and
+  minimum order, a row of the seller's products and a "View all" card. Sellers
+  come from the store's marketplace_seller entries, which the Setu Store
+  Seller Panel app keeps up to date. Sorting, search and paging are added in
+  the browser by setu-vendor.js; without it the full list shows.
+
+  @param {number} [per_page] - sellers per page (default 10)
+  @param {number} [product_limit] - products shown per seller before "View all" (default 8)
+  @param {boolean} [show_min] - show each seller's minimum order value
+  @param {boolean} [show_rating] - show each seller's rating once they have reviews
+  @param {boolean} [wide] - spread to the full page width even inside a narrow page column
+{%- enddoc -%}
+{%- liquid
+  assign per = per_page | default: 10 | at_least: 1
+  assign limit = product_limit | default: 8 | at_least: 1 | at_most: 12
+-%}
+<div class="setu-vendor setu-brands{% if wide != false %} setu-brands--wide{% endif %}" data-setu-vendor="brands" data-setu-brands data-per-page="{{ per }}">
+  <div class="setu-brands__bar" data-setu-bar hidden>
+    <label class="setu-brands__sort">
+      <span>{{ 'setu_vendor.sort_by' | t }}</span>
+      <select data-setu-sort>
+        <option value="az">{{ 'setu_vendor.sort_az' | t }}</option>
+        <option value="za">{{ 'setu_vendor.sort_za' | t }}</option>
+      </select>
+    </label>
+    <label class="setu-brands__search">
+      <span class="setu-vendor-sr">{{ 'setu_vendor.search_label' | t }}</span>
+      <input type="search" placeholder="{{ 'setu_vendor.search' | t }}" autocomplete="off" data-setu-search>
+    </label>
+  </div>
+
+  <ul class="setu-brands__list" data-setu-list>
+    {%- paginate shop.metaobjects.marketplace_seller.values by 250 -%}
+      {%- for seller in shop.metaobjects.marketplace_seller.values -%}
+        {%- liquid
+          assign vendor = seller.vendor_name.value
+          assign name = seller.display_name.value | default: vendor
+          if name == blank
+            continue
+          endif
+          assign seller_collection = seller.collection.value
+          assign url = seller_collection.url
+          if url == blank
+            assign url = vendor | url_for_vendor
+          endif
+          assign logo = seller.logo.value
+          assign mov = seller.minimum_order_value.value
+          assign count = seller_collection.products_count | default: 0
+        -%}
+        <li class="setu-brand" data-setu-brand data-name="{{ name | downcase | escape }}">
+          <a class="setu-brand__seller" href="{{ url }}">
+            <span class="setu-brand__logo">
+              {%- if logo != blank -%}
+                {{- logo | image_url: width: 288 | image_tag: widths: '96, 192, 288', sizes: '96px', width: 96, height: 96, alt: '', loading: 'lazy', class: 'setu-brand__logo-img' -}}
+              {%- else -%}
+                <span class="setu-brand__initial" aria-hidden="true">{{ name | slice: 0 | upcase | escape }}</span>
+              {%- endif -%}
+            </span>
+            <span class="setu-brand__name">{{ name | escape }}</span>
+            {%- if show_min != false and mov != blank and mov > 0 -%}
+              {%- assign mov_cents = mov | times: 100 | round -%}
+              <span class="setu-brand__min">{{ 'setu_vendor.minimum_purchase' | t }} <span class="money">{{ mov_cents | money }}</span></span>
+            {%- endif -%}
+            {%- if show_rating != false -%}
+              {%- render 'setu-stars', rating: seller.rating.value, count: seller.review_count.value -%}
+            {%- endif -%}
+          </a>
+
+          {%- if seller_collection != blank and count > 0 -%}
+            <div class="setu-brand__products" data-setu-scroller>
+              <button type="button" class="setu-brand__nav setu-brand__nav--prev" data-setu-prev aria-label="{{ 'setu_vendor.previous_products' | t }}" hidden>
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+              <ul class="setu-brand__track" data-setu-track>
+                {%- for item in seller_collection.products limit: limit -%}
+                  <li class="setu-brand__card">
+                    <a class="setu-brand__card-link" href="{{ item.url | within: seller_collection }}">
+                      <span class="setu-brand__media">
+                        {%- if item.featured_image != blank -%}
+                          {{- item.featured_image | image_url: width: 600 | image_tag: widths: '200, 300, 400, 600', sizes: '(min-width: 990px) 240px, (min-width: 750px) 30vw, 44vw', alt: item.featured_image.alt, loading: 'lazy', class: 'setu-brand__img' -}}
+                        {%- endif -%}
+                      </span>
+                      <span class="setu-brand__title">{{ item.title | escape }}</span>
+                      <span class="setu-brand__price">
+                        <span class="money">{{ item.price | money }}</span>
+                        {%- if item.compare_at_price > item.price %}
+                          <span class="setu-brand__msrp">{{ 'setu_vendor.msrp' | t }} <span class="money">{{ item.compare_at_price | money }}</span></span>
+                        {%- endif -%}
+                      </span>
+                    </a>
+                  </li>
+                {%- endfor -%}
+                <li class="setu-brand__card setu-brand__card--all">
+                  <a class="setu-brand__card-link" href="{{ url }}">
+                    <span>{{ 'setu_vendor.view_all' | t }}</span>
+                    <span>{{ 'setu_vendor.product_count' | t: count: count }}</span>
+                    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  </a>
+                </li>
+              </ul>
+              <button type="button" class="setu-brand__nav setu-brand__nav--next" data-setu-next aria-label="{{ 'setu_vendor.next_products' | t }}" hidden>
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </div>
+          {%- else -%}
+            <p class="setu-brand__empty">{{ 'setu_vendor.no_products' | t }}</p>
+          {%- endif -%}
+        </li>
+      {%- endfor -%}
+    {%- endpaginate -%}
+  </ul>
+
+  <p class="setu-brands__none" data-setu-none role="status" hidden>{{ 'setu_vendor.no_match' | t }}</p>
+  <nav
+    class="setu-brands__pager"
+    data-setu-pager
+    data-label-page="{{ 'setu_vendor.page' | t: number: '%n' | escape }}"
+    data-label-previous="{{ 'setu_vendor.previous_page' | t | escape }}"
+    data-label-next="{{ 'setu_vendor.next_page' | t | escape }}"
+    aria-label="{{ 'setu_vendor.pages' | t }}"
+    hidden
+  ></nav>
+</div>

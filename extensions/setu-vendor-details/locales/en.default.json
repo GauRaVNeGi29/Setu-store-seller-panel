@@ -2,6 +2,27 @@
   "setu_vendor": {
     "min": "Min",
     "minimum_order": "Minimum order",
-    "shop_all": "Shop all from"
+    "minimum_purchase": "Minimum purchase amount",
+    "shop_all": "Shop all from",
+    "sort_by": "Sort by",
+    "sort_az": "Name A–Z",
+    "sort_za": "Name Z–A",
+    "search": "Search brands",
+    "search_label": "Search brands by name",
+    "msrp": "MSRP",
+    "view_all": "View all",
+    "product_count": {
+      "one": "{{ count }} product",
+      "other": "{{ count }} products"
+    },
+    "no_products": "No products listed yet.",
+    "no_match": "No brands match your search.",
+    "pages": "Pages of brands",
+    "previous_products": "Previous products",
+    "next_products": "More products",
+    "rating_label": "Rated {{ rating }} out of 5 from {{ count }} reviews",
+    "page": "Page {{ number }}",
+    "previous_page": "Previous page",
+    "next_page": "Next page"
   }
 }

@@ -37,13 +37,17 @@ afterAll(async () => {
 // ---------------------------------------------------------------------------
 
 type Entry = { id: string; handle: string; fields: Record<string, string> };
-function fakeStore(opts: { deny?: boolean } = {}) {
+function fakeStore(opts: { deny?: boolean; denyCollections?: boolean } = {}) {
   const s = {
     definition: { id: "gid://shopify/MetaobjectDefinition/1", keys: ["vendor_name", "minimum_order_value", "collection", "webkul_seller_id"], publishable: false },
     entries: new Map<string, Entry>([
       ["pyramid-and-precious", { id: "gid://shopify/Metaobject/1", handle: "pyramid-and-precious", fields: { vendor_name: "Pyramid and Precious", minimum_order_value: "9574.0", collection: "gid://shopify/Collection/1", webkul_seller_id: "3027862" } }],
       ["urban-store", { id: "gid://shopify/Metaobject/2", handle: "urban-store", fields: { vendor_name: "Urban Store", minimum_order_value: "1000.0", collection: "gid://shopify/Collection/2", webkul_seller_id: "3027774" } }],
     ]),
+    // Collections by handle. The dev store has one for each seller, but Ashnur's entry isn't linked to it.
+    collections: new Map<string, { id: string; vendors: string[]; published: boolean }>(),
+    vendorProducts: {} as Record<string, number>,
+    created: [] as { title: string; vendor: string }[],
     files: new Map<string, { status: string; polls: number }>(),
     uploads: [] as { url: string; fileName: string | null; size: number }[],
     ops: [] as string[],
@@ -58,7 +62,36 @@ function fakeStore(opts: { deny?: boolean } = {}) {
     s.ops.push(op);
     const ok = (data: unknown) => ({ json: async () => ({ data }) });
     if (opts.deny && op !== "SetuSellerDefinition") return { json: async () => ({ errors: [{ message: "Access denied for metaobjectUpsert field. Required access: `write_metaobjects` access scope." }] }) };
+    if (opts.denyCollections && /Collection|OnlineStore/.test(op)) return { json: async () => ({ errors: [{ message: "Access denied for collectionCreate field. Required access: `write_products` access scope." }] }) };
     switch (op) {
+      case "SetuOnlineStorePublication":
+        return ok({ publications: { nodes: [{ id: "gid://shopify/Publication/pos", catalog: { apps: { nodes: [{ handle: "pos" }] } } }, { id: "gid://shopify/Publication/web", catalog: { apps: { nodes: [{ handle: "online_store" }] } } }] } });
+      case "SetuSellerCollectionFind": {
+        const c = s.collections.get(v.handle);
+        const vendor = /^vendor:"(.*)"$/.exec(v.vendorQuery)?.[1] ?? "";
+        return ok({
+          collectionByIdentifier: c ? { id: c.id, productsCount: { count: c.vendors.length }, products: { nodes: c.vendors.map((vendor) => ({ vendor })) }, publishedOnPublication: c.published } : null,
+          productsCount: { count: s.vendorProducts[vendor] ?? 0 },
+        });
+      }
+      case "SetuSellerCollectionCheck": {
+        const c = [...s.collections.values()].find((x) => x.id === v.id);
+        return ok({ collection: c ? { id: c.id, publishedOnPublication: c.published } : null });
+      }
+      case "SetuSellerCollectionCreate": {
+        const cond = v.collection.sources[0].source.inclusion.conditions[0].productVendor;
+        if (cond.relation !== "EQUALS" || cond.values.length !== 1) throw new Error("collection must be 'vendor equals X'");
+        const id = `gid://shopify/Collection/${next++}`;
+        s.collections.set(`new-${id}`, { id, vendors: [], published: false });
+        s.created.push({ title: v.collection.title, vendor: cond.values[0] });
+        return ok({ collectionCreate: { collection: { id, handle: "x" }, userErrors: [] } });
+      }
+      case "SetuSellerCollectionPublish": {
+        if (v.publicationId !== "gid://shopify/Publication/web") throw new Error("published to the wrong channel");
+        const c = [...s.collections.values()].find((x) => x.id === v.id);
+        if (c) c.published = true;
+        return ok({ publishablePublish: { userErrors: [] } });
+      }
       case "SetuSellerDefinition":
         return ok({ metaobjectDefinitionByType: { id: s.definition.id, capabilities: { publishable: { enabled: s.definition.publishable } }, fieldDefinitions: s.definition.keys.map((key) => ({ key })) } });
       case "SetuSellerDefinitionUpdate": {
@@ -252,8 +285,75 @@ describe("store listing", () => {
     const v = await vendorWith("Ashnur", { minimumOrderValue: "5000", shortDescription: "Silver from Jaipur" });
     const r = await syncListing(db, graphql, shop, v.id, deps);
     expect(r).toMatchObject({ ok: true, handle: "ashnur" });
-    expect(s.entries.get("ashnur")?.fields).toEqual({ vendor_name: "Ashnur", display_name: "Ashnur", short_description: "Silver from Jaipur", minimum_order_value: "5000.00" });
+    expect(s.entries.get("ashnur")?.fields).toEqual({ vendor_name: "Ashnur", display_name: "Ashnur", short_description: "Silver from Jaipur", minimum_order_value: "5000.00", collection: expect.stringMatching(/^gid:\/\/shopify\/Collection\//) });
     expect(s.upserts.at(-1)?.fields.map((f) => f.key)).not.toContain("description"); // empty values aren't sent for a new entry
+  });
+
+  it("links the seller's existing collection when it holds exactly the seller's products, and publishes it", async () => {
+    const { s, graphql, deps } = fakeStore();
+    s.collections.set("ashnur", { id: "gid://shopify/Collection/77", vendors: Array(10).fill("Ashnur"), published: false });
+    s.vendorProducts.Ashnur = 10;
+    const v = await vendorWith("Ashnur");
+    expect(await syncListing(db, graphql, shop, v.id, deps)).toMatchObject({ ok: true, changed: expect.arrayContaining(["collection"]) });
+    expect(s.entries.get("ashnur")?.fields.collection).toBe("gid://shopify/Collection/77");
+    expect(s.collections.get("ashnur")?.published).toBe(true);
+    expect(s.created).toEqual([]);
+    expect((await db.vendor.findUniqueOrThrow({ where: { id: v.id } })).storeCollectionId).toBe("gid://shopify/Collection/77");
+    // Nothing more to do next time.
+    const before = s.ops.length;
+    expect(await syncListing(db, graphql, shop, v.id, deps)).toMatchObject({ changed: [] });
+    expect(s.ops.slice(before).filter((o) => /Collection/.test(o))).toEqual([]);
+  });
+
+  it("makes a new 'Vendor is X' collection when the same-named one isn't just the seller's products", async () => {
+    for (const [vendors, total] of [[["Ashnur", "Urban Store"], 2], [["Ashnur"], 5], [[], 0]] as [string[], number][]) {
+      resetDefinitionCache();
+      await cleanup();
+      const { s, graphql, deps } = fakeStore();
+      s.collections.set("ashnur", { id: "gid://shopify/Collection/77", vendors, published: true });
+      s.vendorProducts.Ashnur = total;
+      const v = await vendorWith("Ashnur", { displayName: "Ashnur Candles" });
+      expect(await syncListing(db, graphql, shop, v.id, deps)).toMatchObject({ ok: true });
+      expect(s.created).toEqual([{ title: "Ashnur Candles", vendor: "Ashnur" }]);
+      const linked = s.entries.get("ashnur")!.fields.collection;
+      expect(linked).not.toBe("gid://shopify/Collection/77");
+      expect([...s.collections.values()].find((c) => c.id === linked)?.published).toBe(true);
+    }
+  });
+
+  it("puts back the collection it linked before, and makes a new one if that was deleted", async () => {
+    const { s, graphql, deps } = fakeStore();
+    const v = await vendorWith("Ashnur");
+    await syncListing(db, graphql, shop, v.id, deps);
+    const first = s.entries.get("ashnur")!.fields.collection;
+    delete s.entries.get("ashnur")!.fields.collection; // someone cleared it in Shopify admin
+    await syncListing(db, graphql, shop, v.id, deps);
+    expect(s.entries.get("ashnur")!.fields.collection).toBe(first);
+    expect(s.created).toHaveLength(1);
+
+    delete s.entries.get("ashnur")!.fields.collection;
+    s.collections.clear(); // and now the collection itself is gone
+    await syncListing(db, graphql, shop, v.id, deps);
+    expect(s.created).toHaveLength(2);
+    expect(s.entries.get("ashnur")!.fields.collection).not.toBe(first);
+  });
+
+  it("never changes a collection that is already on the entry", async () => {
+    const { s, graphql, deps } = fakeStore();
+    const v = await vendorWith("Urban Store");
+    await syncListing(db, graphql, shop, v.id, deps);
+    expect(s.entries.get("urban-store")?.fields.collection).toBe("gid://shopify/Collection/2");
+    expect(s.ops.filter((o) => /Collection|OnlineStore/.test(o))).toEqual([]);
+  });
+
+  it("without permission for collections, the rest of the listing still updates and the reason is kept", async () => {
+    const { s, graphql, deps } = fakeStore({ denyCollections: true });
+    const v = await vendorWith("Ashnur", { minimumOrderValue: "5000" });
+    const r = await syncListing(db, graphql, shop, v.id, deps);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/product page couldn't be set up.*approve the new permissions/);
+    expect(s.entries.get("ashnur")?.fields).toMatchObject({ vendor_name: "Ashnur", minimum_order_value: "5000.00" });
+    expect((await db.vendor.findUniqueOrThrow({ where: { id: v.id } })).storeSyncError).toMatch(/product page/);
   });
 
   it("marks new entries active when the definition has publishing switched on", async () => {

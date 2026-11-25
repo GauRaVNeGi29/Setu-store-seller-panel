@@ -156,13 +156,18 @@ describe("rating", () => {
   it("is copied to the store listing, and cleared when the last review is hidden", async () => {
     resetDefinitionCache();
     const entries = new Map<string, Record<string, string>>();
-    const keys = ["vendor_name", "minimum_order_value", "collection"];
+    const keys = ["vendor_name", "minimum_order_value", "collection"]; // the app adds the rest
     const graphql = async (query: string, o?: { variables?: Record<string, any> }) => { // eslint-disable-line @typescript-eslint/no-explicit-any
       const v = o?.variables ?? {};
       const op = /(?:query|mutation) (\w+)/.exec(query)?.[1];
       const ok = (data: unknown) => ({ json: async () => ({ data }) });
       if (op === "SetuSellerDefinition") return ok({ metaobjectDefinitionByType: { id: "d", capabilities: { publishable: { enabled: false } }, fieldDefinitions: keys.map((key) => ({ key })) } });
       if (op === "SetuSellerDefinitionUpdate") return ok({ metaobjectDefinitionUpdate: { metaobjectDefinition: { id: "d" }, userErrors: [] } });
+      if (op === "SetuOnlineStorePublication") return ok({ publications: { nodes: [{ id: "p", catalog: { apps: { nodes: [{ handle: "online_store" }] } } }] } });
+      if (op === "SetuSellerCollectionFind") return ok({ collectionByIdentifier: null, productsCount: { count: 0 } });
+      if (op === "SetuSellerCollectionCreate") return ok({ collectionCreate: { collection: { id: "gid://shopify/Collection/9", handle: "urban-store" }, userErrors: [] } });
+      if (op === "SetuSellerCollectionPublish") return ok({ publishablePublish: { userErrors: [] } });
+      if (op === "SetuSellerCollectionCheck") return ok({ collection: { id: "gid://shopify/Collection/9", publishedOnPublication: true } });
       if (op === "SetuSellerEntries") return ok({ metaobjects: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] } });
       if (op === "SetuSellerEntry") {
         const e = entries.get(v.handle.handle);

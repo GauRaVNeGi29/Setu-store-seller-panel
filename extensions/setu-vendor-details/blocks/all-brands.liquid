@@ -1,0 +1,42 @@
+{%- render 'setu-brands', per_page: block.settings.per_page, product_limit: block.settings.product_limit, show_min: block.settings.show_min, show_rating: block.settings.show_rating, wide: false -%}
+
+{% schema %}
+{
+  "name": "All brands",
+  "target": "section",
+  "stylesheet": "setu-vendor.css",
+  "javascript": "setu-vendor.js",
+  "settings": [
+    {
+      "type": "range",
+      "id": "per_page",
+      "label": "Sellers per page",
+      "min": 5,
+      "max": 30,
+      "step": 5,
+      "default": 10
+    },
+    {
+      "type": "range",
+      "id": "product_limit",
+      "label": "Products shown per seller",
+      "min": 4,
+      "max": 12,
+      "step": 1,
+      "default": 8
+    },
+    {
+      "type": "checkbox",
+      "id": "show_min",
+      "label": "Show minimum order value",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_rating",
+      "label": "Show seller ratings",
+      "default": true
+    }
+  ]
+}
+{% endschema %}

@@ -18,7 +18,12 @@ import { reviewSummary } from "../reviews/reviews.server";
  *  - minimum_order_value is written only when the app has one, so a value
  *    already set on the store is never blanked by a vendor who hasn't filled
  *    in their brand details yet.
- *  - collection and webkul_seller_id are never touched.
+ *  - collection is the vendor's product listing page. A collection already
+ *    set on the entry is never changed. When it is empty the app links one:
+ *    an existing collection named after the vendor that holds exactly the
+ *    vendor's products, or else a new automatic collection ("Vendor is X"),
+ *    published to the online store.
+ *  - webkul_seller_id is never touched.
  *
  * Only public brand images (logo, banner) are copied to the store's Files.
  * Business documents (GST, IEC, AD code) never leave the app.
@@ -121,6 +126,44 @@ export const FILE_STATUS = `#graphql
     node(id: $id) { ... on MediaImage { id fileStatus fileErrors { message } } }
   }`;
 
+export const COLLECTION_FIND = `#graphql
+  query SetuSellerCollectionFind($handle: String!, $vendorQuery: String!, $publicationId: ID!) {
+    collectionByIdentifier(identifier: { handle: $handle }) {
+      id
+      productsCount { count }
+      products(first: 50) { nodes { vendor } }
+      publishedOnPublication(publicationId: $publicationId)
+    }
+    productsCount(query: $vendorQuery) { count }
+  }`;
+
+export const COLLECTION_CHECK = `#graphql
+  query SetuSellerCollectionCheck($id: ID!, $publicationId: ID!) {
+    collection(id: $id) { id publishedOnPublication(publicationId: $publicationId) }
+  }`;
+
+export const ONLINE_STORE = `#graphql
+  query SetuOnlineStorePublication {
+    publications(first: 50) {
+      nodes { id catalog { ... on AppCatalog { apps(first: 5) { nodes { handle } } } } }
+    }
+  }`;
+
+const COLLECTION_CREATE = `#graphql
+  mutation SetuSellerCollectionCreate($collection: CollectionCreateInput!) {
+    collectionCreate(collection: $collection) {
+      collection { id handle }
+      userErrors { field message }
+    }
+  }`;
+
+const COLLECTION_PUBLISH = `#graphql
+  mutation SetuSellerCollectionPublish($id: ID!, $publicationId: ID!) {
+    publishablePublish(id: $id, input: [{ publicationId: $publicationId }]) {
+      userErrors { field message }
+    }
+  }`;
+
 type UserError = { field?: string[] | null; message: string; code?: string | null };
 
 export class ListingError extends Error {}
@@ -144,7 +187,7 @@ function userErrors(errors: UserError[] | undefined, what: string) {
 /** Turns Shopify's errors into something the team can act on. */
 export function friendly(e: unknown): string {
   const text = e instanceof Error ? `${e.message} ${JSON.stringify((e as { body?: unknown }).body ?? "")}` : JSON.stringify(e);
-  if (/access denied|ACCESS_DENIED|requires? .*scope|write_metaobject|write_files/i.test(text)) {
+  if (/access denied|ACCESS_DENIED|requires? .*scope|write_metaobject|write_files|write_products|write_publications/i.test(text)) {
     return "The app isn't allowed to update store content yet. Open the app in Shopify admin and approve the new permissions, then try again.";
   }
   if (/could not find a session|no session/i.test(text)) return "The app has no saved Shopify sign-in for this store. Open the app in Shopify admin once, then try again.";
@@ -156,7 +199,11 @@ export function friendly(e: unknown): string {
 // ---------------------------------------------------------------------------
 
 const checked = new Map<string, { until: number; publishable: boolean }>();
-export const resetDefinitionCache = () => checked.clear();
+const onlineStore = new Map<string, string>();
+export const resetDefinitionCache = () => {
+  checked.clear();
+  onlineStore.clear();
+};
 
 /**
  * Makes sure the definition exists and has every field the listing needs.
@@ -222,6 +269,76 @@ export async function findEntryHandle(graphql: AdminGraphql, vendorName: string)
     cursor = metaobjects.pageInfo.endCursor;
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Collection (the vendor's product listing page)
+// ---------------------------------------------------------------------------
+
+/** The Online Store's publication: a collection has to be published there to have a page. */
+async function onlineStorePublication(graphql: AdminGraphql, shop: string): Promise<string> {
+  const known = onlineStore.get(shop);
+  if (known) return known;
+  const { publications } = await call<{ publications: { nodes: { id: string; catalog: { apps?: { nodes: { handle: string }[] } } | null }[] } }>(graphql, ONLINE_STORE, {});
+  const hit = publications.nodes.find((p) => p.catalog?.apps?.nodes.some((a) => a.handle === "online_store"));
+  if (!hit) throw new ListingError("This store has no Online Store sales channel, so a seller page can't be published.");
+  onlineStore.set(shop, hit.id);
+  return hit.id;
+}
+
+async function publish(graphql: AdminGraphql, id: string, publicationId: string) {
+  const r = await call<{ publishablePublish: { userErrors: UserError[] } }>(graphql, COLLECTION_PUBLISH, { id, publicationId });
+  userErrors(r.publishablePublish.userErrors, "Couldn't publish the seller's collection");
+}
+
+/**
+ * The collection to link to a vendor whose entry has none, published to the
+ * online store. In order: the one the app linked before (if it still exists);
+ * an existing collection with the vendor's handle that holds exactly the
+ * vendor's products; a new automatic collection of the vendor's products.
+ */
+export async function ensureSellerCollection(
+  db: PrismaClient, graphql: AdminGraphql, shop: string,
+  vendor: { id: string; vendorName: string; displayName: string; storeCollectionId: string | null },
+): Promise<string> {
+  const publicationId = await onlineStorePublication(graphql, shop);
+  const keep = async (id: string, published: boolean) => {
+    if (!published) await publish(graphql, id, publicationId);
+    if (vendor.storeCollectionId !== id) await db.vendor.update({ where: { id: vendor.id }, data: { storeCollectionId: id } });
+    return id;
+  };
+
+  if (vendor.storeCollectionId) {
+    const { collection } = await call<{ collection: { id: string; publishedOnPublication: boolean } | null }>(graphql, COLLECTION_CHECK, { id: vendor.storeCollectionId, publicationId });
+    if (collection) return keep(collection.id, collection.publishedOnPublication);
+  }
+
+  const found = await call<{
+    collectionByIdentifier: { id: string; productsCount: { count: number } | null; products: { nodes: { vendor: string }[] }; publishedOnPublication: boolean } | null;
+    productsCount: { count: number } | null;
+  }>(graphql, COLLECTION_FIND, { handle: handleFor(vendor.vendorName), vendorQuery: `vendor:"${vendor.vendorName.replace(/(["\\])/g, "\\$1")}"`, publicationId });
+  const existing = found.collectionByIdentifier;
+  const size = existing?.productsCount?.count ?? 0;
+  if (existing && size > 0 && size === (found.productsCount?.count ?? -1) && existing.products.nodes.every((p) => p.vendor === vendor.vendorName)) {
+    return keep(existing.id, existing.publishedOnPublication);
+  }
+
+  const created = await call<{ collectionCreate: { collection: { id: string } | null; userErrors: UserError[] } }>(graphql, COLLECTION_CREATE, {
+    collection: {
+      title: vendor.displayName,
+      sources: [{
+        source: {
+          title: `Products by ${vendor.vendorName}`,
+          targetType: "PRODUCTS",
+          inclusion: { matchType: "ALL", conditions: [{ productVendor: { matchType: "ANY", relation: "EQUALS", values: [vendor.vendorName] } }] },
+        },
+      }],
+    },
+  });
+  userErrors(created.collectionCreate.userErrors, "Couldn't create the seller's collection");
+  const id = created.collectionCreate.collection?.id;
+  if (!id) throw new ListingError("Shopify didn't return the new collection.");
+  return keep(id, false);
 }
 
 // ---------------------------------------------------------------------------
@@ -322,6 +439,17 @@ export async function syncListing(
       graphql, ENTRY_QUERY, { handle: { type: SELLER_TYPE, handle } },
     );
     const have = Object.fromEntries((entry?.fields ?? []).map((f) => [f.key, f.value ?? ""]));
+
+    // The seller's product page: link a collection only when the entry has none.
+    // If that can't be done, the rest of the listing is still updated and the reason is reported.
+    let collectionError: string | null = null;
+    if (!have.collection) {
+      try {
+        want.collection = await ensureSellerCollection(db, graphql, shop, vendor);
+      } catch (e) {
+        collectionError = e instanceof ListingError ? e.message : friendly(e);
+      }
+    }
     const changed = Object.keys(want).filter((k) => {
       const now = have[k] ?? "";
       if (NUMBERS.has(k) && sameDecimal(now, want[k])) return false;
@@ -337,6 +465,11 @@ export async function syncListing(
         },
       });
       userErrors(r.metaobjectUpsert.userErrors, "Shopify didn't accept the listing");
+    }
+    if (collectionError) {
+      const error = `The listing was updated, but the seller's product page couldn't be set up. ${collectionError}`;
+      await db.vendor.update({ where: { id: vendor.id }, data: { storeEntryHandle: handle, storeSyncError: error } });
+      return { ok: false, error };
     }
     await db.vendor.update({ where: { id: vendor.id }, data: { storeEntryHandle: handle, storeSyncedAt: new Date(), storeSyncError: null } });
     return { ok: true, handle, changed };

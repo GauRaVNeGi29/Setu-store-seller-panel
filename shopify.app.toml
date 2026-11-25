@@ -9,7 +9,7 @@ application_url = "https://shopify.dev/apps/default-app-home"
 
 [access_scopes]
 # Read-only. Stage 1 needs no write access and no theme access.
-scopes = "read_orders,read_products,read_merchant_managed_fulfillment_orders,write_metaobjects,write_metaobject_definitions,write_files"
+scopes = "read_orders,write_products,read_publications,write_publications,read_merchant_managed_fulfillment_orders,write_metaobjects,write_metaobject_definitions,write_files"
 
 [webhooks]
 api_version = "2026-10"

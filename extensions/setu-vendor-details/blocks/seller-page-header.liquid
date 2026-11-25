@@ -1,0 +1,60 @@
+{%- render 'setu-seller-page', collection: collection, show_banner: block.settings.show_banner, show_description: block.settings.show_description, show_min: block.settings.show_min, show_rating: block.settings.show_rating, heading_tag: block.settings.heading_tag -%}
+
+{% schema %}
+{
+  "name": "Seller page header",
+  "target": "section",
+  "stylesheet": "setu-vendor.css",
+  "enabled_on": {
+    "templates": [
+      "collection"
+    ]
+  },
+  "settings": [
+    {
+      "type": "paragraph",
+      "content": "Shows only on a seller's own collection."
+    },
+    {
+      "type": "select",
+      "id": "heading_tag",
+      "label": "Seller name is",
+      "options": [
+        {
+          "value": "h1",
+          "label": "The page's main heading"
+        },
+        {
+          "value": "h2",
+          "label": "A sub-heading"
+        }
+      ],
+      "default": "h2"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_banner",
+      "label": "Show the seller's banner",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_description",
+      "label": "Show the seller's description",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_min",
+      "label": "Show minimum order value",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_rating",
+      "label": "Show seller rating",
+      "default": true
+    }
+  ]
+}
+{% endschema %}
