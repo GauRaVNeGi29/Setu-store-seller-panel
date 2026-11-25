@@ -124,13 +124,15 @@ order value. The cart already reads the minimum from there. Business documents n
   which customer is signed in; the buyer's orders are read from Shopify (`orders(query: "customer_id:…")`) and matched
   against the seller's shipped order lines, so nothing about who bought what is taken from the browser. The app has to be
   running for Feedback to load; the rest of the page doesn't depend on it.
-- **Shipping times** on the seller page: *Processing time* (the days the seller needs to make or ready an order, a range
-  the seller sets under My brand → Brand details; the team can change it on the vendor's page), *Delivery time* (one range
-  for the whole store, set by the team on the app's **Dashboard**) and *Arrives in*, the two added end to end
-  (10–15 + 5–7 → 15–22 days). Processing time is copied to the seller's entry (`processing_days_min`, `processing_days_max`).
-  Delivery time is kept as two app-data metafields on the app's installation (`setu_seller.delivery_days_min` / `_max`),
-  which only this app can change and which Liquid reads as `app.metafields.setu_seller.…`. If only one of the two is
-  known, only that one is shown, with no total.
+- **Under the seller's name, two lines:** rating · city and country · joining date · number of products, then
+  `Rs. 1,000.00 minimum · Arrives Dec 10 – Dec 17`.
+- **Arrival dates:** today + the seller's *processing time* + the store's *delivery time*, shown only as dates (the day
+  counts themselves are not shown). Processing time is the days the seller needs to make or ready an order, a range the
+  seller sets under My brand → Brand details (the team can change it on the vendor's page); it is copied to the seller's
+  entry (`processing_days_min`, `processing_days_max`). Delivery time is one range for the whole store, set by the team on
+  the app's **Dashboard** and kept as two app-data metafields on the app's installation
+  (`setu_seller.delivery_days_min` / `_max`), which only this app can change and which Liquid reads as
+  `app.metafields.setu_seller.…`. No date is shown unless both are known.
 - Blocks for the theme editor: *All brands* and *Seller page header*.
 - Limits: 250 sellers on the Brands page; up to 12 products per seller row.
 - Checks: `npm run test:storefront` renders the real snippets with LiquidJS and mock data and drives them in Chromium.

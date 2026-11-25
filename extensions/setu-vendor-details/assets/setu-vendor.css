@@ -573,39 +573,29 @@
 }
 
 /* ------------------------------------------------------------------ Seller facts and Feedback */
-.setu-seller__facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 18px;
+/* Two lines under the name, items separated by a middle dot that stays with the item before it. */
+.setu-seller__meta {
   margin: 0;
   padding: 0;
   list-style: none;
+}
+.setu-seller__meta li {
+  display: inline-block;
+  vertical-align: baseline;
+}
+.setu-seller__meta li:not(:last-child)::after {
+  content: "\00b7";
+  margin-inline: 8px;
+  color: var(--setu-muted);
+}
+.setu-seller__meta--about {
   font-size: 0.875em;
   color: var(--setu-muted);
 }
-/* Shipping times: three figures in a row; the total (what the buyer waits) reads strongest. */
-.setu-seller__times {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 28px;
-  margin: 14px 0 0;
-  padding: 12px 0 0;
-  border-top: 1px solid var(--setu-line, rgba(0, 0, 0, 0.1));
+.setu-seller__meta .setu-stars {
+  font-size: 1em;
+  vertical-align: baseline;
 }
-.setu-seller--banner .setu-seller__times { margin-inline: 20px; }
-@media screen and (max-width: 749px) {
-  .setu-seller--banner .setu-seller__times { margin-inline: 12px; }
-}
-.setu-seller__time { margin: 0; }
-.setu-seller__time dt {
-  font-size: 0.8125em;
-  color: var(--setu-muted);
-}
-.setu-seller__time dd {
-  margin: 2px 0 0;
-  font-variant-numeric: tabular-nums;
-}
-.setu-seller__time--total dd { font-weight: 600; }
 .setu-seller__feedback-btn,
 .setu-feedback__more,
 .setu-feedback__send {

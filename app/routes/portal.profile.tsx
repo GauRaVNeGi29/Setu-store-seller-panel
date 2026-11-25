@@ -286,7 +286,7 @@ export default function Profile() {
               error={err.minimumOrderValue} hint="The smallest order a retailer can place with you, in rupees. Shown as “Min” beside your name and applied in the cart." />
             <DayRangeField name="processingDays" label="Processing time" required
               min={val("processingDaysMin", d.processingDaysMin?.toString())} max={val("processingDaysMax", d.processingDaysMax?.toString())}
-              error={err.processingDays} hint="How many days you need to make or ready an order before it ships, as a range, e.g. 10 to 15. Shown on your seller page, where the delivery time is added to it." />
+              error={err.processingDays} hint="How many days you need to make or ready an order before it ships, as a range, e.g. 10 to 15. Your seller page uses it, with the delivery time, to show buyers the dates their order will arrive." />
             <FileField name="logoFile" label="Brand logo" current={d.logoFile} accept={FILE_RULES.logo.accept} hint={FILE_RULES.logo.hint}
               error={err.logoFile} removable image />
             <FileField name="bannerFile" label="Brand banner" current={d.bannerFile} accept={FILE_RULES.banner.accept} hint={FILE_RULES.banner.hint}

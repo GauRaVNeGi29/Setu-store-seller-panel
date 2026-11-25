@@ -91,7 +91,7 @@ export default function Dashboard() {
       <s-section heading="Delivery time">
         <s-paragraph>
           How many days a shipment takes to reach the buyer once the seller hands it over. It is one range for the whole store.
-          Each seller page shows it, added to that seller&apos;s processing time, as the total time until the order arrives.
+          It is added to each seller&apos;s processing time, and the seller page shows the result as dates: when an order placed today arrives.
         </s-paragraph>
         {result && !result.ok && <s-banner tone="critical">{result.error}</s-banner>}
         {delivery.error && !(result?.ok && result.onStore) && (
@@ -121,10 +121,10 @@ export default function Dashboard() {
             <>
               Now: <b>{daysText(delivery.range)}</b>
               {delivery.updatedBy && delivery.updatedAt && <> · set by {delivery.updatedBy} on {new Date(delivery.updatedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}</>}
-              . A seller who needs {daysText(example)} to ready an order shows &ldquo;Arrives in {daysText(totalDays(example, delivery.range)!)}&rdquo;.
+              . For a seller who needs {daysText(example)} to ready an order, buyers see the dates {daysText(totalDays(example, delivery.range)!)} from today, such as &ldquo;Arrives Dec 10 – Dec 17&rdquo;.
             </>
           ) : (
-            <>Not set. Seller pages show only the seller&apos;s processing time until you set it. Leave both boxes empty and save to remove it again.</>
+            <>Not set. Seller pages show no arrival dates until you set it. Leave both boxes empty and save to remove it again.</>
           )}
         </s-paragraph>
       </s-section>
@@ -132,6 +132,7 @@ export default function Dashboard() {
       <s-section heading="Shipping times by seller">
         <s-paragraph>
           Each seller sets their processing time (days to make or ready an order) in the vendor portal, under My brand. You can change it on the vendor&apos;s page.
+          Buyers don&apos;t see these numbers, only the arrival dates they add up to.
         </s-paragraph>
         {vendors.length === 0 ? (
           <s-paragraph>No vendor has portal access yet.</s-paragraph>
@@ -142,7 +143,7 @@ export default function Dashboard() {
                 <th style={cell}>Seller</th>
                 <th style={cell}>Processing time</th>
                 <th style={cell}>Delivery time</th>
-                <th style={cell}>Total shown to buyers</th>
+                <th style={cell}>Arrives after</th>
               </tr>
             </thead>
             <tbody>

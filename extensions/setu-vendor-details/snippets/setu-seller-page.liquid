@@ -1,6 +1,6 @@
 {%- doc -%}
   The seller header for a seller's product listing page: banner, logo, name,
-  short description, minimum order, rating, shipping times and description. Renders nothing
+  short description, minimum order, rating, arrival dates and description. Renders nothing
   unless the collection is a seller's own collection (the one linked on the
   seller's marketplace_seller entry).
 
@@ -10,7 +10,7 @@
   @param {boolean} [show_min] - show the minimum order value
   @param {boolean} [show_rating] - show the rating once the seller has reviews
   @param {boolean} [show_facts] - show city and country, joining date and number of products
-  @param {boolean} [show_times] - show the seller's processing time, the store's delivery time and the total
+  @param {boolean} [show_times] - show when an order placed today arrives (the seller's processing time plus the store's delivery time)
   @param {boolean} [show_feedback] - show the Feedback button and the block it opens (reviews and the review form)
   @param {string} [heading_tag] - tag for the seller's name: 'h1', 'h2' or 'p'
 {%- enddoc -%}
@@ -90,8 +90,11 @@
       </span>
       <div class="setu-seller__text">
         <{{ tag }} class="setu-seller__name">{{ name | escape }}</{{ tag }}>
-        {%- if show_facts != false -%}
-          <ul class="setu-seller__facts">
+        {%- capture about_items -%}
+          {%- if show_rating != false and review_count > 0 -%}
+            <li>{%- render 'setu-stars', rating: seller.rating.value, count: seller.review_count.value -%}</li>
+          {%- endif -%}
+          {%- if show_facts != false -%}
             {%- if location != blank -%}
               <li>{{ location | escape }}</li>
             {%- endif -%}
@@ -100,23 +103,41 @@
               <li>{{ 'setu_vendor.joined' | t: date: joined_text }}</li>
             {%- endif -%}
             <li>{{ 'setu_vendor.product_count' | t: count: collection.all_products_count }}</li>
-          </ul>
+          {%- endif -%}
+        {%- endcapture -%}
+        {%- if about_items != blank -%}
+          <ul class="setu-seller__meta setu-seller__meta--about">{{ about_items }}</ul>
+        {%- endif -%}
+        {%- capture terms_items -%}
+          {%- if show_min != false and mov != blank and mov > 0 -%}
+            {%- assign mov_cents = mov | times: 100 | round -%}
+            <li class="setu-seller__min"><span class="money">{{ mov_cents | money }}</span> {{ 'setu_vendor.minimum_after' | t }}</li>
+          {%- endif -%}
+          {%- if show_times != false and has_processing and has_delivery -%}
+            {%- liquid
+              # Today plus the seller's processing time plus the store's delivery time, as dates.
+              assign now_s = 'now' | date: '%s' | plus: 0
+              assign from_s = p_min | plus: d_min | times: 86400 | plus: now_s
+              assign to_s = p_max | plus: d_max | times: 86400 | plus: now_s
+              assign from_text = from_s | date: '%b %-d'
+              assign to_text = to_s | date: '%b %-d'
+            -%}
+            <li class="setu-seller__arrives">
+              {%- if from_text == to_text -%}
+                {{- 'setu_vendor.arrives_by' | t: date: to_text -}}
+              {%- else -%}
+                {{- 'setu_vendor.arrives_between' | t: from: from_text, to: to_text -}}
+              {%- endif -%}
+            </li>
+          {%- endif -%}
+        {%- endcapture -%}
+        {%- if terms_items != blank -%}
+          <ul class="setu-seller__meta setu-seller__meta--terms">{{ terms_items }}</ul>
         {%- endif -%}
         {%- if tagline != blank -%}
           <p class="setu-seller__tagline">{{ tagline | escape }}</p>
         {%- endif -%}
-        {%- if show_rating != false -%}
-          {%- render 'setu-stars', rating: seller.rating.value, count: seller.review_count.value -%}
-        {%- endif -%}
       </div>
-      {%- if show_min != false and mov != blank and mov > 0 -%}
-        {%- assign mov_cents = mov | times: 100 | round -%}
-        <span class="setu-vendor-hd__min setu-seller__min">
-          <span class="setu-vendor-sr">{{ 'setu_vendor.minimum_order' | t }}</span>
-          <span aria-hidden="true">{{ 'setu_vendor.min' | t }}</span>
-          <span class="money">{{ mov_cents | money }}</span>
-        </span>
-      {%- endif -%}
       {%- if show_feedback != false -%}
         <button type="button" class="setu-seller__feedback-btn" data-setu-feedback-open aria-expanded="false" aria-controls="SetuFeedback">
           {{- 'setu_vendor.feedback' | t -}}
@@ -124,34 +145,6 @@
         </button>
       {%- endif -%}
     </div>
-    {%- if show_times != false -%}
-      {%- if has_processing or has_delivery -%}
-        <dl class="setu-seller__times">
-          {%- if has_processing -%}
-            <div class="setu-seller__time">
-              <dt>{{ 'setu_vendor.processing_time' | t }}</dt>
-              <dd>{% render 'setu-days', min: p_min, max: p_max %}</dd>
-            </div>
-          {%- endif -%}
-          {%- if has_delivery -%}
-            <div class="setu-seller__time">
-              <dt>{{ 'setu_vendor.delivery_time' | t }}</dt>
-              <dd>{% render 'setu-days', min: d_min, max: d_max %}</dd>
-            </div>
-          {%- endif -%}
-          {%- if has_processing and has_delivery -%}
-            {%- liquid
-              assign t_min = p_min | plus: d_min
-              assign t_max = p_max | plus: d_max
-            -%}
-            <div class="setu-seller__time setu-seller__time--total">
-              <dt>{{ 'setu_vendor.arrives_in' | t }}</dt>
-              <dd>{% render 'setu-days', min: t_min, max: t_max %}</dd>
-            </div>
-          {%- endif -%}
-        </dl>
-      {%- endif -%}
-    {%- endif -%}
     {%- if show_description != false and description != blank -%}
       <p class="setu-seller__about">{{ description | escape | newline_to_br }}</p>
     {%- endif -%}

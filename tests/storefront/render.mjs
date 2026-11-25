@@ -60,9 +60,8 @@ const urban = sellers[0].collection.value, ashnur = sellers[1].collection.value,
 const rings = { id: 5, handle: "rings", title: "Rings", url: "/collections/rings", products_count: 2, all_products_count: 2, products: [urban.products[0], ashnur.products[0]] }; rings.products.first = rings.products[0];
 const other = { id: 6, handle: "urban-store", title: "Urban Store", url: "/collections/x", products_count: 1, all_products_count: 1, products: [ashnur.products[0]] }; other.products.first = other.products[0];
 sellerPage(urban, "seller-urban-buyer.html", { first_name: "Asha" });
-// Shipping times: no delivery time set on the store; switched off in the theme; a seller with neither.
+// Arrival date: no delivery time set on the store; switched off in the theme; one-day delivery.
 sellerPage(urban, "seller-urban-nodelivery.html", null, { app: NO_APP_DATA });
 sellerPage(urban, "seller-urban-notimes.html", null, { show_times: false });
-sellerPage(pyramid, "seller-empty-nodelivery.html", null, { app: NO_APP_DATA });
 sellerPage(ashnur, "seller-ashnur-oneday.html", null, { app: delivery(1, 1) });
 console.log(JSON.stringify({ urban: sellerPage(urban, "seller-urban.html") > 0, ashnur: sellerPage(ashnur, "seller-ashnur.html") > 0, emptySeller: sellerPage(pyramid, "seller-empty.html") > 0, categoryCollection: sellerPage(rings, "not-seller.html"), sameHandleDifferentCollection: sellerPage(other, "not-seller-2.html"), rows: (brands.match(/data-setu-brand /g) || []).length }));

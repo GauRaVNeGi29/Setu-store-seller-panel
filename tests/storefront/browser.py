@@ -1,7 +1,10 @@
 """Storefront check, step 2: opens the pages made by render.mjs in Chromium (desktop and phone)
 and checks the Brands list (sort, search, pages, product rows) and the seller page header."""
-import asyncio, functools, http.server, json, os, sys, threading, urllib.parse
+import asyncio, datetime, functools, http.server, json, os, sys, threading, urllib.parse
 from playwright.async_api import async_playwright
+
+# "Dec 10": the date so many days from today, as the seller page writes it.
+day = lambda n: (datetime.date.today() + datetime.timedelta(days=n)).strftime("%b %-d")
 OUT = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else ".cache/storefront")
 res = []
 # The pages are served over http so the Feedback block can call its address; the app's answers are stood in for below.
@@ -102,17 +105,17 @@ async def main():
             await p.goto(f"{BASE}/seller-urban.html"); await p.wait_for_selector(".setu-seller")
             h1 = await p.eval_on_selector_all("h1", "els => els.map(e => [e.textContent.trim(), e.hidden, !!e.closest('.setu-seller')])")
             body = " ".join((await p.inner_text(".setu-seller")).split())
-            check(f"[{label}] seller page: header at the top of the page with banner, name, tagline, Min, rating, description", await p.evaluate("document.querySelector('#MainContent').firstElementChild.classList.contains('setu-seller-header')") and await p.locator(".setu-seller__banner img").count() == 1 and all(x in body for x in ["Urban Store", "Handmade in small batches", "Rs. 1,000.00", "4.5 (2)", "cast and finished by hand"]), body)
+            check(f"[{label}] seller page: header at the top of the page with banner, name, tagline, minimum, rating, description", await p.evaluate("document.querySelector('#MainContent').firstElementChild.classList.contains('setu-seller-header')") and await p.locator(".setu-seller__banner img").count() == 1 and all(x in body for x in ["Urban Store", "Handmade in small batches", "Rs. 1,000.00", "4.5 (2)", "cast and finished by hand"]), body)
             check(f"[{label}] seller page: the theme's own title is hidden, the seller's name is the one heading", sorted(h1) == sorted([["Urban Store", True, False], ["Urban Store", False, True]]), str(h1))
             check(f"[{label}] seller page: no sideways scroll", await p.evaluate("document.documentElement.scrollWidth") <= vp["width"])
             await p.screenshot(path=f"{OUT}/seller-{label}.png", full_page=True)
-            facts = await p.eval_on_selector_all(".setu-seller__facts li", "els => els.map(e => e.textContent.trim())")
-            check(f"[{label}] seller page: city and country, joining date and number of products under the name", facts == ["Ludhiana, India", "Joined March 2026", "10 products"], str(facts))
-            times = "els => els.map(e => [e.querySelector('dt').textContent.trim(), e.querySelector('dd').textContent.trim()])"
-            t = await p.eval_on_selector_all(".setu-seller__time", times)
-            check(f"[{label}] seller page: processing time, delivery time and the two added up", t == [["Processing time", "10–15 days"], ["Delivery time", "5–7 days"], ["Arrives in", "15–22 days"]], str(t))
-            box = await p.evaluate("(() => { const d = document.querySelector('.setu-seller__times').getBoundingClientRect(), a = document.querySelector('.setu-seller__about').getBoundingClientRect(), b = document.querySelector('.setu-seller__body').getBoundingClientRect(); return [d.top >= b.bottom - 1, d.bottom <= a.top + 1, d.left >= 0, d.right <= innerWidth] })()")
-            check(f"[{label}] seller page: the times sit between the name row and the description, inside the page", all(box), str(box))
+            about = await p.eval_on_selector_all(".setu-seller__meta--about li", "els => els.map(e => e.textContent.trim())")
+            check(f"[{label}] seller page, line 1 under the name: rating, city and country, joining date, number of products", len(about) == 4 and about[0].endswith("4.5 (2)") and about[1:] == ["Ludhiana, India", "Joined March 2026", "10 products"], str(about))
+            terms = await p.eval_on_selector_all(".setu-seller__meta--terms li", "els => els.map(e => e.textContent.trim())")
+            check(f"[{label}] seller page, line 2: the minimum, then the dates an order placed today arrives (today + 15 to 22 days)", terms == ["Rs. 1,000.00 minimum", f"Arrives {day(15)} – {day(22)}"], str(terms))
+            box = await p.evaluate("(() => { const r = (s) => document.querySelector(s).getBoundingClientRect(); const n = r('.setu-seller__name'), a = r('.setu-seller__meta--about'), t = r('.setu-seller__meta--terms'), m = r('.setu-seller__min'); return [a.top >= n.bottom - 1, t.top >= a.bottom - 1, Math.abs(m.left - n.left) < 2, t.right <= innerWidth] })()")
+            check(f"[{label}] seller page: the minimum sits under the name, lined up with it, not in the right corner", all(box) and await p.locator(".setu-vendor-hd__min").count() == 0, str(box))
+            check(f"[{label}] seller page: processing and delivery times are not spelled out", not any(x in body for x in ["Processing time", "Delivery time", "days"]), body)
 
             # ---- Feedback, as a visitor who isn't signed in
             app = FakeApp(); await p.route("**/apps/setu-seller/reviews**", app.handle)
@@ -163,19 +166,18 @@ async def main():
 
             await p.goto(f"{BASE}/seller-ashnur.html"); await p.wait_for_selector(".setu-seller")
             check(f"[{label}] seller without a banner or description still gets a header", await p.locator(".setu-seller__banner").count() == 0 and "Ashnur Candles" in await p.inner_text(".setu-seller"))
-            t = await p.eval_on_selector_all(".setu-seller__time", times)
-            check(f"[{label}] a seller whose two numbers are the same shows one figure", t == [["Processing time", "7 days"], ["Delivery time", "5–7 days"], ["Arrives in", "12–14 days"]], str(t))
+            terms = await p.eval_on_selector_all(".setu-seller__meta--terms li", "els => els.map(e => e.textContent.trim())")
+            check(f"[{label}] another seller: its own minimum and dates (today + 12 to 14 days)", terms == ["Rs. 10,000.00 minimum", f"Arrives {day(12)} – {day(14)}"], str(terms))
             await p.screenshot(path=f"{OUT}/seller-plain-{label}.png")
             for page_name, want, what in [
-                ("seller-urban-nodelivery.html", [["Processing time", "10–15 days"]], "no delivery time set: only the seller's processing time, no total"),
-                ("seller-empty.html", [["Delivery time", "5–7 days"]], "a seller without a processing time: only the delivery time, no total"),
-                ("seller-empty-nodelivery.html", [], "neither known: nothing is shown"),
-                ("seller-urban-notimes.html", [], "switched off in the theme: nothing is shown"),
-                ("seller-ashnur-oneday.html", [["Processing time", "7 days"], ["Delivery time", "1 day"], ["Arrives in", "8 days"]], "one day reads '1 day'"),
+                ("seller-urban-nodelivery.html", ["Rs. 1,000.00 minimum"], "no delivery time set: no arrival date"),
+                ("seller-empty.html", ["Rs. 9,574.00 minimum"], "a seller without a processing time: no arrival date"),
+                ("seller-urban-notimes.html", ["Rs. 1,000.00 minimum"], "switched off in the theme: no arrival date"),
+                ("seller-ashnur-oneday.html", ["Rs. 10,000.00 minimum", f"Arrives by {day(8)}"], "both ends the same: one date"),
             ]:
                 await p.goto(f"{BASE}/{page_name}"); await p.wait_for_selector(".setu-seller")
-                t = await p.eval_on_selector_all(".setu-seller__time", times)
-                check(f"[{label}] shipping times, {what}", t == want and (bool(want) or await p.locator(".setu-seller__times").count() == 0), str(t))
+                terms = await p.eval_on_selector_all(".setu-seller__meta--terms li", "els => els.map(e => e.textContent.trim())")
+                check(f"[{label}] arrival date, {what}", terms == want, str(terms))
             await p.goto(f"{BASE}/not-seller.html"); await p.wait_for_timeout(300)
             check(f"[{label}] an ordinary collection gets no header and keeps its title", await p.locator(".setu-seller").count() == 0 and await p.locator(".setu-seller-header").count() == 0 and await p.is_visible("h1"))
             await ctx.close()
