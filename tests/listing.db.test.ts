@@ -194,7 +194,7 @@ describe("store listing", () => {
     const { s, graphql, deps } = fakeStore();
     const v = await vendorWith("Urban Store");
     expect((await syncListing(db, graphql, shop, v.id, deps)).ok).toBe(true);
-    expect(s.addedFields).toEqual(["display_name", "short_description", "description", "logo", "banner", "location", "joined_on", "rating", "review_count"]);
+    expect(s.addedFields).toEqual(["display_name", "short_description", "description", "logo", "banner", "location", "joined_on", "rating", "review_count", "processing_days_min", "processing_days_max"]);
     expect(SELLER_FIELDS.find((f) => f.key === "logo")?.validations).toEqual([{ name: "file_type_options", value: '["Image"]' }]);
     await syncListing(db, graphql, shop, v.id, deps);
     expect(s.ops.filter((o) => o === "SetuSellerDefinitionUpdate")).toHaveLength(1);
@@ -218,10 +218,24 @@ describe("store listing", () => {
   it("writes the app's minimum, but not when it's the same amount written differently", async () => {
     const { s, graphql, deps } = fakeStore();
     const v = await vendorWith("Urban Store", { minimumOrderValue: "1000" });
-    expect(await syncListing(db, graphql, shop, v.id, deps)).toMatchObject({ changed: ["display_name", "location", "joined_on"] }); // 1000.0 = 1000.00
+    expect(await syncListing(db, graphql, shop, v.id, deps)).toMatchObject({ changed: ["display_name", "location", "joined_on"] }); // 1000.0 = 1000.00; no processing time, so nothing to write for it
     await db.vendor.update({ where: { id: v.id }, data: { minimumOrderValue: "2500.5" } });
     expect(await syncListing(db, graphql, shop, v.id, deps)).toMatchObject({ changed: ["minimum_order_value"] });
     expect(s.entries.get("urban-store")?.fields.minimum_order_value).toBe("2500.50");
+  });
+
+  it("writes the seller's processing time, leaves it alone when unchanged, and clears it when removed", async () => {
+    const { s, graphql, deps } = fakeStore();
+    const v = await vendorWith("Urban Store", { processingDaysMin: 10, processingDaysMax: 15 });
+    expect((await syncListing(db, graphql, shop, v.id, deps) as { changed: string[] }).changed).toEqual(expect.arrayContaining(["processing_days_min", "processing_days_max"]));
+    expect(s.entries.get("urban-store")?.fields).toMatchObject({ processing_days_min: "10", processing_days_max: "15" });
+    expect(await syncListing(db, graphql, shop, v.id, deps)).toMatchObject({ changed: [] });
+    await db.vendor.update({ where: { id: v.id }, data: { processingDaysMax: 20 } });
+    expect(await syncListing(db, graphql, shop, v.id, deps)).toMatchObject({ changed: ["processing_days_max"] });
+    await db.vendor.update({ where: { id: v.id }, data: { processingDaysMin: null, processingDaysMax: null } });
+    expect(await syncListing(db, graphql, shop, v.id, deps)).toMatchObject({ changed: ["processing_days_min", "processing_days_max"] });
+    expect(Object.keys(s.entries.get("urban-store")?.fields ?? {})).not.toEqual(expect.arrayContaining(["processing_days_min"]));
+    expect(s.entries.get("urban-store")?.fields.processing_days_max).toBeUndefined();
   });
 
   it("shows the city and country (never the street), and the day the seller joined, in India's calendar", async () => {
@@ -418,7 +432,7 @@ describe("pages", () => {
     const su = await signUp(db, { name: "Owner", email: "owner@urban.example", password: "Strong-test-password-1", phone: "+91 98765 43210" }, { shop });
     if (!su.ok) throw new Error("sign-up failed");
     const fd = new FormData();
-    for (const [k, val] of Object.entries({ intent: "brand", minimumOrderValue: "1500", shortDescription: "Brass, made by hand", description: "We cast everything in Moradabad." })) fd.set(k, val);
+    for (const [k, val] of Object.entries({ intent: "brand", minimumOrderValue: "1500", processingDaysMin: "10", processingDaysMax: "15", shortDescription: "Brass, made by hand", description: "We cast everything in Moradabad." })) fd.set(k, val);
     const r = await run(profile.action, new Request("https://portal.test/portal/profile", { method: "POST", headers: { Cookie: `${COOKIE_NAME}=${encodeURIComponent(su.token)}` }, body: fd }));
     expect(r.location).toBe("/portal/profile?saved=brand");
     expect(s.entries.get("urban-store")?.fields).toMatchObject({ minimum_order_value: "1500.00", short_description: "Brass, made by hand", description: "We cast everything in Moradabad." });

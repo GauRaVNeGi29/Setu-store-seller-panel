@@ -41,6 +41,7 @@ import {
   BRAND_FIELDS, BRAND_FILES, BRAND_TEXT, BUSINESS_FIELDS, BUSINESS_FILES, BUSINESS_TEXT, FIELD_LABEL, FILE_FIELD_KIND, SHORT_DESCRIPTION_MAX,
   fileInputName, missingDetails, type BrandField, type BusinessField, type FileField,
 } from "./fields";
+import { cleanDayRange, rangeOf } from "./shipping";
 import { checkUpload, deleteFilesIfUnused, fileInfo, isFilePicked, storeFile, type FileCheck, type FileInfo } from "../files/files.server";
 export { BRAND_FIELDS, BUSINESS_FIELDS, FIELD_LABEL, type BrandField, type BusinessField };
 
@@ -63,7 +64,10 @@ export function cleanBrand(raw: Input, requireAll = true) {
   if (v.shortDescription.length > SHORT_DESCRIPTION_MAX) errors.shortDescription = `Keep it to ${SHORT_DESCRIPTION_MAX} characters.`;
   if (!v.minimumOrderValue && requireAll) errors.minimumOrderValue = "Enter your minimum order value in rupees.";
   else if (v.minimumOrderValue && !MONEY.test(v.minimumOrderValue)) errors.minimumOrderValue = "Enter an amount in rupees, e.g. 5000.";
-  return { v, errors };
+  const p = cleanDayRange(clip(get(raw, "processingDaysMin"), 6), clip(get(raw, "processingDaysMax"), 6), "processing time");
+  if (p.error) errors.processingDays = p.error;
+  else if (!p.range && requireAll) errors.processingDays = "Enter how many days you need to make or ready an order, e.g. 10 and 15.";
+  return { v, errors, processing: p.range };
 }
 
 /** Business text. */
@@ -124,14 +128,15 @@ export async function updateSellerDetails(db: PrismaClient, me: Me, raw: Input):
 
 export async function updateBrand(db: PrismaClient, me: Me, raw: Input): Promise<Result> {
   if (!canEdit(me)) return DENIED;
-  const { v, errors } = cleanBrand(raw);
+  const { v, errors, processing } = cleanBrand(raw);
   const files = await checkFiles(raw, BRAND_FILES);
   Object.assign(errors, files.errors);
   if (Object.keys(errors).length) return { ok: false, error: "Check the highlighted fields.", errors };
 
   const current = await db.vendor.findUniqueOrThrow({ where: { id: me.vendor.id }, select: { logoFileId: true, bannerFileId: true } });
-  const data: Record<string, string | null> = {
+  const data: Record<string, string | number | null> = {
     description: textOrNull(v.description), shortDescription: textOrNull(v.shortDescription), minimumOrderValue: textOrNull(v.minimumOrderValue),
+    processingDaysMin: processing?.min ?? null, processingDaysMax: processing?.max ?? null,
   };
   for (const f of BRAND_FILES) {
     const c = files.checked[f];
@@ -229,6 +234,7 @@ export async function vendorDetails(db: PrismaClient, shop: string, vendorId: st
     gstFile: file(v.gstFileId), iecFile: file(v.iecFileId), adCodeFile: file(v.adCodeFileId),
     description: v.description, shortDescription: v.shortDescription,
     minimumOrderValue: v.minimumOrderValue ? v.minimumOrderValue.toFixed(2) : null,
+    processingDaysMin: v.processingDaysMin, processingDaysMax: v.processingDaysMax,
     logoFile: file(v.logoFileId), bannerFile: file(v.bannerFileId),
   };
   return { ...d, missing: missingDetails(d) };
@@ -374,7 +380,7 @@ export async function adminUpdateDetails(db: PrismaClient, shop: string, vendorI
   const errors: Record<string, string> = { ...b.errors, ...s.errors };
   if (!displayName) errors.displayName = "Enter the brand name.";
   if (Object.keys(errors).length) return { ok: false, error: Object.values(errors).join(" "), errors };
-  const data: Record<string, string | null> = { displayName };
+  const data: Record<string, string | number | null> = { displayName, processingDaysMin: b.processing?.min ?? null, processingDaysMax: b.processing?.max ?? null };
   for (const f of BRAND_TEXT) data[f] = textOrNull(b.v[f]);
   for (const f of BUSINESS_TEXT) data[f] = textOrNull(s.v[f]);
   await db.vendor.update({ where: { id: vendor.id }, data });
@@ -409,6 +415,7 @@ export async function listAllVendors(db: PrismaClient, shop: string) {
       city: [v.city, v.state].filter(Boolean).join(", "),
       store: v.storeSyncError ? "error" : v.storeSyncedAt ? "ok" : "never",
       rating: ratingOf.get(v.id) ?? null,
+      processing: rangeOf(v.processingDaysMin, v.processingDaysMax),
     };
   });
 }

@@ -1,6 +1,6 @@
 {%- doc -%}
   The seller header for a seller's product listing page: banner, logo, name,
-  short description, minimum order, rating and description. Renders nothing
+  short description, minimum order, rating, shipping times and description. Renders nothing
   unless the collection is a seller's own collection (the one linked on the
   seller's marketplace_seller entry).
 
@@ -10,6 +10,7 @@
   @param {boolean} [show_min] - show the minimum order value
   @param {boolean} [show_rating] - show the rating once the seller has reviews
   @param {boolean} [show_facts] - show city and country, joining date and number of products
+  @param {boolean} [show_times] - show the seller's processing time, the store's delivery time and the total
   @param {boolean} [show_feedback] - show the Feedback button and the block it opens (reviews and the review form)
   @param {string} [heading_tag] - tag for the seller's name: 'h1', 'h2' or 'p'
 {%- enddoc -%}
@@ -54,6 +55,20 @@
     assign location = seller.location.value
     assign joined = seller.joined_on.value
     assign review_count = seller.review_count.value | default: 0
+    # Shipping times, in days. Processing is the seller's own; delivery is one
+    # setting for the whole store, kept by the app. Each needs both ends.
+    assign p_min = seller.processing_days_min.value
+    assign p_max = seller.processing_days_max.value
+    assign d_min = app.metafields.setu_seller.delivery_days_min.value
+    assign d_max = app.metafields.setu_seller.delivery_days_max.value
+    assign has_processing = false
+    if p_min != blank and p_max != blank and p_max > 0 and p_max >= p_min
+      assign has_processing = true
+    endif
+    assign has_delivery = false
+    if d_min != blank and d_max != blank and d_max > 0 and d_max >= d_min
+      assign has_delivery = true
+    endif
     assign root = routes.root_url
     if root == '/'
       assign root = ''
@@ -109,6 +124,34 @@
         </button>
       {%- endif -%}
     </div>
+    {%- if show_times != false -%}
+      {%- if has_processing or has_delivery -%}
+        <dl class="setu-seller__times">
+          {%- if has_processing -%}
+            <div class="setu-seller__time">
+              <dt>{{ 'setu_vendor.processing_time' | t }}</dt>
+              <dd>{% render 'setu-days', min: p_min, max: p_max %}</dd>
+            </div>
+          {%- endif -%}
+          {%- if has_delivery -%}
+            <div class="setu-seller__time">
+              <dt>{{ 'setu_vendor.delivery_time' | t }}</dt>
+              <dd>{% render 'setu-days', min: d_min, max: d_max %}</dd>
+            </div>
+          {%- endif -%}
+          {%- if has_processing and has_delivery -%}
+            {%- liquid
+              assign t_min = p_min | plus: d_min
+              assign t_max = p_max | plus: d_max
+            -%}
+            <div class="setu-seller__time setu-seller__time--total">
+              <dt>{{ 'setu_vendor.arrives_in' | t }}</dt>
+              <dd>{% render 'setu-days', min: t_min, max: t_max %}</dd>
+            </div>
+          {%- endif -%}
+        </dl>
+      {%- endif -%}
+    {%- endif -%}
     {%- if show_description != false and description != blank -%}
       <p class="setu-seller__about">{{ description | escape | newline_to_br }}</p>
     {%- endif -%}

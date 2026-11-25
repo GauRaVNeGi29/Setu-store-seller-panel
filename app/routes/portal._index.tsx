@@ -12,6 +12,7 @@ import { CHART_GREEN, CHART_MADDER, CHART_TURMERIC, RankedBars, SalesChart, Stat
 import { day, inr } from "../lib/portal/format";
 import { IconBox } from "../lib/portal/icons";
 import { plural, Status } from "../lib/portal/ui";
+import { daysText, rangeOf } from "../lib/vendors/shipping";
 
 /**
  * Dashboard – the seller's home. Everything in brief:
@@ -44,6 +45,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     brand: details && {
       name: details.displayName, logoId: details.logoFile?.id ?? null, missing: details.missing,
       minimumOrderValue: details.minimumOrderValue, shortDescription: details.shortDescription,
+      processing: rangeOf(details.processingDaysMin, details.processingDaysMax),
     },
     change: { pending: !!change.pending, declined: !change.pending && change.last?.status === "rejected" },
     people,
@@ -157,6 +159,10 @@ export default function Dashboard() {
             <div>
               <dt>Minimum order</dt>
               <dd>{brand?.minimumOrderValue ? inr(brand.minimumOrderValue) : <Link to="/portal/profile?edit=brand">Add</Link>}</dd>
+            </div>
+            <div>
+              <dt>Processing time</dt>
+              <dd>{brand?.processing ? daysText(brand.processing) : <Link to="/portal/profile?edit=brand">Add</Link>}</dd>
             </div>
             <div>
               <dt>Reviews</dt>

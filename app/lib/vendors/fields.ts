@@ -35,10 +35,13 @@ export const SHORT_DESCRIPTION_MAX = 160;
 export function missingDetails(v: {
   companyName?: string | null; addressLine?: string | null; city?: string | null; state?: string | null; postalCode?: string | null;
   minimumOrderValue?: string | null;
+  /** Checked only when given (undefined leaves it out). */
+  processingDaysMin?: number | null;
 }): string[] {
   const out: string[] = [];
   if (!v.companyName) out.push("company name");
   if (!v.addressLine || !v.city || !v.state || !v.postalCode) out.push("business address");
   if (!v.minimumOrderValue) out.push("minimum order value");
+  if (v.processingDaysMin === null) out.push("processing time");
   return out;
 }

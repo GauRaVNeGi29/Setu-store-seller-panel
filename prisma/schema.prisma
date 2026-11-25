@@ -154,6 +154,8 @@ model Vendor {
   minimumOrderValue Decimal? @db.Decimal(12, 2) // INR, as given by the vendor; copied to the store, where the cart applies it
   logoFileId        String?
   bannerFileId      String?
+  processingDaysMin Int? // days the vendor needs to make or ready an order, as a range; both set or both empty
+  processingDaysMax Int?
 
   // The vendor's public listing on the store (the marketplace_seller metaobject entry)
   storeEntryHandle  String? // handle of the entry the app keeps up to date
@@ -418,4 +420,19 @@ model VendorReview {
 
   @@unique([shop, vendorId, customerId])
   @@index([shop, vendorId, status, createdAt])
+}
+
+/// Settings the Setu Store team changes in the Shopify app, one row per shop.
+model ShopSetting {
+  shop String @id
+
+  // Days a shipment takes to reach the buyer once the vendor hands it over, as a range.
+  // Shown on seller pages and added to the vendor's processing time. Both set or both empty.
+  deliveryDaysMin Int?
+  deliveryDaysMax Int?
+  deliveryError   String? // why the last copy to the store failed; cleared on success
+
+  updatedBy String? // "admin:<team member>"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

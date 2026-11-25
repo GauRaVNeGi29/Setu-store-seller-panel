@@ -303,14 +303,14 @@ async def main():
         # ------------------------------------------------------------ orders page reminder
         await go(owner, "/portal")
         check("My brand", "orders page reminds a new vendor to complete their profile",
-              "Complete your profile" in await text(owner) and "company name, business address and minimum order value" in await text(owner))
+              "Complete your profile" in await text(owner) and "company name, business address, minimum order value and processing time" in await text(owner))
 
         # ------------------------------------------------------------ my brand: three sections
         await go(owner, "/portal/profile")
         heads = await owner.eval_on_selector_all("section.vp-panel h2", "els => els.map(e => e.textContent)")
         check("My brand", "has Seller details, Business details and Brand details", heads == ["Seller details", "Business details", "Brand details"], str(heads))
         body = await text(owner)
-        check("My brand", "required details not yet added are marked", body.count("Required – not added yet") == 3)
+        check("My brand", "required details not yet added are marked", body.count("Required – not added yet") == 4)
 
         # seller details
         await owner.click("a[href$='?edit=seller']"); await owner.wait_for_url("**edit=seller"); await owner.wait_for_selector("#phone")
@@ -326,6 +326,14 @@ async def main():
         await owner.click("a[href$='?edit=brand']"); await owner.wait_for_url("**edit=brand"); await owner.wait_for_selector("#minimumOrderValue")
         await owner.fill("#minimumOrderValue", ""); await owner.click("button:has-text('Save brand details')")
         check("Brand details", "minimum order value is required (stopped before sending)", await owner.evaluate("!document.querySelector('#minimumOrderValue').checkValidity()"))
+        await owner.fill("#minimumOrderValue", "1500"); await owner.click("button:has-text('Save brand details')")
+        check("Brand details", "processing time is required (stopped before sending)", await owner.evaluate("!document.querySelector('#processingDaysMin').checkValidity() && !document.querySelector('#processingDaysMax').checkValidity()"))
+        await owner.fill("#processingDaysMin", "15"); await owner.fill("#processingDaysMax", "10")
+        await submit(owner, "button:has-text('Save brand details')")
+        check("Brand details", "a processing time that runs backwards is refused, and what was typed is kept",
+              "can't be smaller than the first" in await text(owner) and await owner.input_value("#processingDaysMin") == "15" and await owner.input_value("#minimumOrderValue") == "1500")
+        await owner.screenshot(path=f"{SHOTS}/brand-form.png", full_page=True)
+        await owner.fill("#processingDaysMin", "10"); await owner.fill("#processingDaysMax", "15")
         await owner.set_input_files("#logoFile", files=[{"name": "logo.svg", "mimeType": "image/svg+xml", "buffer": SVG}])
         await owner.fill("#minimumOrderValue", "1500")
         await submit(owner, "button:has-text('Save brand details')")
@@ -338,6 +346,7 @@ async def main():
         await submit(owner, "button:has-text('Save brand details')")
         body = await text(owner)
         check("Brand details", "description, short description and minimum save at once", "Brand details saved." in body and "1,500" in body and "since 2017" in body)
+        check("Brand details", "processing time shows as a range of days", "Processing time" in body and "10–15 days" in body)
         imgs = await owner.eval_on_selector_all(".vp-brandpreview img", "els => els.map(e => e.naturalWidth)")
         check("Brand details", "logo and banner upload and show as a preview", len(imgs) == 2 and all(w > 0 for w in imgs), str(imgs))
         await owner.screenshot(path=f"{SHOTS}/brand.png", full_page=True)

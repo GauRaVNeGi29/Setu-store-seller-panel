@@ -11,14 +11,15 @@ import { updateStoreListing } from "../lib/storefront/update.server";
 import { FILE_RULES } from "../lib/files/rules";
 import { BUSINESS_FIELDS, BUSINESS_FILES, FIELD_LABEL, SHORT_DESCRIPTION_MAX, fileInputName, type BusinessField } from "../lib/vendors/fields";
 import { inr } from "../lib/portal/format";
-import { Field, FileField, FileLink, type PortalFile } from "../lib/portal/ui";
+import { DayRangeField, Field, FileField, FileLink, type PortalFile } from "../lib/portal/ui";
+import { daysText, rangeOf } from "../lib/vendors/shipping";
 
 /**
  * My brand, in three parts:
  *  - Seller details: the signed-in person's own name and phone (saved at once); email fixed; password by email link.
  *  - Business details: company name, address, GST / IEC / AD code documents. Sent to the Setu Store team;
  *    the current details stay until they approve.
- *  - Brand details: description, short description, minimum order value, logo, banner. Saved at once.
+ *  - Brand details: description, short description, minimum order value, processing time, logo, banner. Saved at once.
  * Business and brand need an owner or "view and edit" staff. Editing opens with ?edit=…, so it works without JavaScript.
  */
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -124,6 +125,7 @@ export default function Profile() {
   // When a business request is waiting, editing starts from the requested values.
   const requested = (f: BusinessField, now: string | null) => val(f, pending?.changes[f] ? pending.changes[f]!.to : now);
   const busyFor = (intent: string) => busy && nav.formData?.get("intent") === intent;
+  const processing = rangeOf(d.processingDaysMin, d.processingDaysMax);
   const isFile = (f: BusinessField) => (BUSINESS_FILES as readonly string[]).includes(f);
   const cell = (f: BusinessField, v: string | null) =>
     isFile(f) ? (v && files[v] ? <FileLink file={files[v]} /> : "–") : v || "–";
@@ -282,6 +284,9 @@ export default function Profile() {
               hint="A few sentences: what you make, how, and what makes it yours. Shown under Brand details on your product pages." />
             <Field name="minimumOrderValue" label="Minimum order value (₹)" required inputMode="decimal" defaultValue={val("minimumOrderValue", d.minimumOrderValue)}
               error={err.minimumOrderValue} hint="The smallest order a retailer can place with you, in rupees. Shown as “Min” beside your name and applied in the cart." />
+            <DayRangeField name="processingDays" label="Processing time" required
+              min={val("processingDaysMin", d.processingDaysMin?.toString())} max={val("processingDaysMax", d.processingDaysMax?.toString())}
+              error={err.processingDays} hint="How many days you need to make or ready an order before it ships, as a range, e.g. 10 to 15. Shown on your seller page, where the delivery time is added to it." />
             <FileField name="logoFile" label="Brand logo" current={d.logoFile} accept={FILE_RULES.logo.accept} hint={FILE_RULES.logo.hint}
               error={err.logoFile} removable image />
             <FileField name="bannerFile" label="Brand banner" current={d.bannerFile} accept={FILE_RULES.banner.accept} hint={FILE_RULES.banner.hint}
@@ -305,6 +310,7 @@ export default function Profile() {
               ["Short description", d.shortDescription],
               ["Description", d.description],
               ["Minimum order value", d.minimumOrderValue ? inr(d.minimumOrderValue) : null, true],
+              ["Processing time", processing ? daysText(processing) : null, true],
               ["Brand logo", d.logoFile && <FileLink file={d.logoFile} />],
               ["Brand banner", d.bannerFile && <FileLink file={d.bannerFile} />],
             ]} />

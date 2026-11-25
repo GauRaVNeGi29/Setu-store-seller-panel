@@ -37,7 +37,7 @@
     {% if block.settings.seller_page == 'auto' %}data-auto="top"{% endif %}
     {% if block.settings.seller_hide_title %}data-hide-title="{{ collection.title | escape }}"{% endif %}
   >
-    {%- render 'setu-seller-page', collection: collection, show_banner: block.settings.seller_banner, show_description: block.settings.seller_description, show_min: block.settings.show_min, show_rating: block.settings.show_rating, show_facts: block.settings.seller_facts, show_feedback: block.settings.seller_feedback, heading_tag: seller_heading -%}
+    {%- render 'setu-seller-page', collection: collection, show_banner: block.settings.seller_banner, show_description: block.settings.seller_description, show_min: block.settings.show_min, show_rating: block.settings.show_rating, show_facts: block.settings.seller_facts, show_times: block.settings.seller_times, show_feedback: block.settings.seller_feedback, heading_tag: seller_heading -%}
   </template>
 {%- endif -%}
 
@@ -204,6 +204,13 @@
       "type": "checkbox",
       "id": "seller_facts",
       "label": "Show city and country, joining date and number of products",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "seller_times",
+      "label": "Show processing time, delivery time and when the order arrives",
+      "info": "Processing time comes from each seller. Delivery time is set on the app's Dashboard.",
       "default": true
     },
     {

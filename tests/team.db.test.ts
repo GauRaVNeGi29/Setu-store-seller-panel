@@ -4,7 +4,7 @@ import { COOKIE_NAME, TEAM_VIEW_MS, createInviteLink, createTeamHandoff, getIden
 import { addVendorUser, enableVendor, setVendorStatus } from "../app/lib/vendors/vendors.server";
 import {
   addStaff, adminUpdateUser, changeRequestState, listAllVendors, ownerRemoveStaff, ownerUpdateStaff,
-  requestBusinessChange, reviewBusinessChange, updateBrand, withdrawBusinessChange, type Me,
+  requestBusinessChange, reviewBusinessChange, updateBrand, vendorDetails, withdrawBusinessChange, type Me,
 } from "../app/lib/vendors/team.server";
 import * as profile from "../app/routes/portal.profile";
 import * as team from "../app/routes/portal.team";
@@ -103,8 +103,8 @@ describe("brand details", () => {
     const editor = await staff(o, "edit@ashnur.example", "edit");
     const viewer = await staff(o, "view@ashnur.example", "view");
 
-    expect(await updateBrand(db, o, { description: "By owner", shortDescription: "Candles", minimumOrderValue: "2,500" })).toEqual({ ok: true });
-    expect(await updateBrand(db, editor.me, { description: "By editor", minimumOrderValue: "2500" })).toEqual({ ok: true });
+    expect(await updateBrand(db, o, { description: "By owner", shortDescription: "Candles", minimumOrderValue: "2,500", processingDaysMin: "10", processingDaysMax: "15" })).toEqual({ ok: true });
+    expect(await updateBrand(db, editor.me, { description: "By editor", minimumOrderValue: "2500", processingDaysMin: "10", processingDaysMax: "15" })).toEqual({ ok: true });
     expect((await updateBrand(db, viewer.me, { description: "By viewer", minimumOrderValue: "1" })).ok).toBe(false);
     const v = await db.vendor.findFirstOrThrow({ where: { shop, vendorName: "Ashnur" } });
     expect([v.description, v.shortDescription, v.minimumOrderValue?.toFixed(2)]).toEqual(["By editor", null, "2500.00"]);
@@ -122,15 +122,32 @@ describe("brand details", () => {
     expect((await updateBrand(db, o, { minimumOrderValue: "100", shortDescription: "x".repeat(161) })).ok).toBe(false);
   });
 
+  it("processing time is required: two whole numbers of days, the second not smaller than the first", async () => {
+    const { me: o } = await owner("Ashnur", "o@ashnur.example");
+    const brand = (min?: string, max?: string) => updateBrand(db, o, { minimumOrderValue: "100", ...(min === undefined ? {} : { processingDaysMin: min }), ...(max === undefined ? {} : { processingDaysMax: max }) });
+    for (const [a, b] of [[undefined, undefined], ["", ""], ["10", ""], ["", "15"], ["15", "10"], ["1.5", "3"], ["ten", "15"], ["-2", "5"], ["0", "0"], ["10", "366"], ["1e1", "20"]] as [string?, string?][]) {
+      const r = await brand(a, b);
+      expect([r.ok, !r.ok && !!r.errors?.processingDays], `${a}–${b}`).toEqual([false, true]);
+    }
+    const saved = async () => { const v = await db.vendor.findUniqueOrThrow({ where: { id: o.vendor.id } }); return [v.processingDaysMin, v.processingDaysMax]; };
+    expect(await saved()).toEqual([null, null]);
+    expect(await brand(" 10 ", "15")).toEqual({ ok: true });
+    expect(await saved()).toEqual([10, 15]);
+    expect(await brand("7", "7")).toEqual({ ok: true });
+    expect(await saved()).toEqual([7, 7]);
+    expect(await brand("0", "2")).toEqual({ ok: true }); // ready to ship the same day
+    expect((await vendorDetails(db, shop, o.vendor.id))?.missing).not.toContain("processing time");
+  });
+
   it("logo and banner upload, show up, can be replaced and removed", async () => {
     const { me: o, vendor, cookie } = await owner("Ashnur", "o@ashnur.example");
-    const r = await run(profile.action, multipart("/portal/profile", cookie, fd({ intent: "brand", minimumOrderValue: "1000", logoFile: file(PNG(), "logo.png", "image/png"), bannerFile: file(PNG(), "banner.png", "image/png") })));
+    const r = await run(profile.action, multipart("/portal/profile", cookie, fd({ intent: "brand", minimumOrderValue: "1000", processingDaysMin: "10", processingDaysMax: "15", logoFile: file(PNG(), "logo.png", "image/png"), bannerFile: file(PNG(), "banner.png", "image/png") })));
     expect(r.location).toBe("/portal/profile?saved=brand");
     let v = await db.vendor.findUniqueOrThrow({ where: { id: vendor.id } });
     expect(v.logoFileId && v.bannerFileId).toBeTruthy();
     const firstLogo = v.logoFileId!;
 
-    await updateBrand(db, o, fd({ minimumOrderValue: "1000", logoFile: file(PNG(), "logo-2.png", "image/png"), remove_bannerFile: "1" }));
+    await updateBrand(db, o, fd({ minimumOrderValue: "1000", processingDaysMin: "10", processingDaysMax: "15", logoFile: file(PNG(), "logo-2.png", "image/png"), remove_bannerFile: "1" }));
     v = await db.vendor.findUniqueOrThrow({ where: { id: vendor.id } });
     expect(v.logoFileId).not.toBe(firstLogo);
     expect(v.bannerFileId).toBeNull();
@@ -154,9 +171,9 @@ describe("files", () => {
       expect(r.ok).toBe(false);
       if (!r.ok) expect(r.errors?.[field]).toBeTruthy();
     }
-    const logo = await updateBrand(db, o, fd({ minimumOrderValue: "1", logoFile: file(svg, "logo.svg", "image/svg+xml") }));
+    const logo = await updateBrand(db, o, fd({ minimumOrderValue: "1", processingDaysMin: "10", processingDaysMax: "15", logoFile: file(svg, "logo.svg", "image/svg+xml") }));
     expect(logo.ok).toBe(false);
-    const pdfLogo = await updateBrand(db, o, fd({ minimumOrderValue: "1", logoFile: file(PDF(), "logo.pdf", "application/pdf") }));
+    const pdfLogo = await updateBrand(db, o, fd({ minimumOrderValue: "1", processingDaysMin: "10", processingDaysMax: "15", logoFile: file(PDF(), "logo.pdf", "application/pdf") }));
     expect(pdfLogo.ok).toBe(false);
     expect(await db.vendorFile.count({ where: { vendorId: vendor.id } })).toBe(0);
     expect(await db.vendorChangeRequest.count({ where: { vendorId: vendor.id } })).toBe(0);
@@ -336,7 +353,7 @@ describe("team controls in Shopify admin", () => {
     await staff(o, "s@ashnur.example", "view");
     await requestBusinessChange(db, o, ADDRESS);
     const [row] = await listAllVendors(db, shop);
-    expect(row).toMatchObject({ vendorName: "Ashnur", people: 2, staff: 1, active: 2, pendingChange: true, owners: ["Owner"], missing: ["company name", "business address", "minimum order value"] });
+    expect(row).toMatchObject({ vendorName: "Ashnur", people: 2, staff: 1, active: 2, pendingChange: true, owners: ["Owner"], missing: ["company name", "business address", "minimum order value", "processing time"] });
   });
 });
 

@@ -1,0 +1,11 @@
+{%- doc -%}
+  A number of days as words: "10–15 days", or "7 days" when both ends are the same.
+
+  @param {number} min - the shorter end of the range, in days
+  @param {number} max - the longer end of the range, in days
+{%- enddoc -%}
+{%- if min == max -%}
+  {{- 'setu_vendor.days' | t: count: max -}}
+{%- else -%}
+  {{- 'setu_vendor.days_range' | t: from: min, to: max -}}
+{%- endif -%}
