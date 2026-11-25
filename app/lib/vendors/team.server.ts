@@ -393,6 +393,8 @@ export async function listAllVendors(db: PrismaClient, shop: string) {
       commissions: { orderBy: [{ effectiveFrom: "desc" }, { createdAt: "desc" }], take: 1, select: { ratePercent: true } },
     },
   });
+  const ratings = await db.vendorReview.groupBy({ by: ["vendorId"], where: { shop, status: "published" }, _avg: { rating: true }, _count: { _all: true } });
+  const ratingOf = new Map(ratings.map((r) => [r.vendorId, { average: (Math.round((r._avg.rating ?? 0) * 10) / 10).toFixed(1), count: r._count._all }]));
   return vendors.map((v) => {
     const count = (s: string) => v.users.filter((u) => u.status === s).length;
     const owners = v.users.filter((u) => u.role === "owner");
@@ -406,6 +408,7 @@ export async function listAllVendors(db: PrismaClient, shop: string) {
       missing: missingDetails({ ...v, minimumOrderValue: v.minimumOrderValue?.toFixed(2) ?? null }),
       city: [v.city, v.state].filter(Boolean).join(", "),
       store: v.storeSyncError ? "error" : v.storeSyncedAt ? "ok" : "never",
+      rating: ratingOf.get(v.id) ?? null,
     };
   });
 }

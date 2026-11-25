@@ -95,6 +95,7 @@ export default function AllVendors() {
                 <th style={cell}>Owner</th>
                 <th style={cell}>People</th>
                 <th style={cell}>Commission</th>
+                <th style={cell}>Rating</th>
                 <th style={cell}>Status</th>
                 <th style={cell}>Needs attention</th>
               </tr>
@@ -123,6 +124,7 @@ export default function AllVendors() {
                       <br /><small style={{ color: "#666" }}>{v.active} active{v.deactivated ? ` · ${v.deactivated} deactivated` : ""}</small>
                     </td>
                     <td style={cell}>{v.commission !== null ? `${Number(v.commission)}%` : <span style={{ color: "#8a5a12" }}>Not set</span>}</td>
+                    <td style={cell}>{v.rating ? <>{v.rating.average} / 5<br /><small style={{ color: "#666" }}>{v.rating.count} review{v.rating.count === 1 ? "" : "s"}</small></> : <span style={{ color: "#666" }}>–</span>}</td>
                     <td style={cell}>{v.status === "active" ? "Active" : <b>Paused</b>}</td>
                     <td style={cell}>{flags.length ? flags.map((f) => <div key={f}><s-badge tone="warning">{f}</s-badge></div>) : <span style={{ color: "#666" }}>–</span>}</td>
                   </tr>

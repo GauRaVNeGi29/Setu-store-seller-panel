@@ -171,6 +171,7 @@ model Vendor {
   changeRequests VendorChangeRequest[]
   files          VendorFile[]
   commissions    VendorCommission[]
+  reviews        VendorReview[]
 
   @@unique([shop, vendorName])
 }
@@ -376,4 +377,39 @@ model VendorCommission {
   createdAt     DateTime @default(now())
 
   @@index([vendorId, effectiveFrom])
+}
+
+enum ReviewStatus {
+  published // counted in the rating and shown to buyers
+  hidden // taken down by the Setu Store team; the vendor still sees it, marked as hidden
+}
+
+/// A buyer's rating of a vendor. Only a buyer with a shipped order from that
+/// vendor can leave one, and each buyer has one review per vendor (they can
+/// change it). The vendor never sees who the buyer is.
+model VendorReview {
+  id       String @id @default(cuid())
+  shop     String
+  vendorId String
+  vendor   Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  customerId BigInt // Shopify customer; never shown to the vendor or on the storefront
+  orderId    BigInt // the order that proved the purchase
+  orderName  String // "#1003"
+  authorName String // what is shown with the review: a first name, or "Verified buyer"
+
+  rating  Int // 1–5
+  comment String? @db.Text
+
+  status       ReviewStatus @default(published)
+  hiddenBy     String? // "admin:<team member>"
+  hiddenAt     DateTime?
+  hiddenReason String?
+
+  createdAt DateTime  @default(now())
+  editedAt  DateTime? // when the buyer last changed it
+  updatedAt DateTime  @updatedAt
+
+  @@unique([shop, vendorId, customerId])
+  @@index([shop, vendorId, status, createdAt])
 }

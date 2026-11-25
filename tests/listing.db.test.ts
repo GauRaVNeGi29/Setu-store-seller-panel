@@ -161,7 +161,7 @@ describe("store listing", () => {
     const { s, graphql, deps } = fakeStore();
     const v = await vendorWith("Urban Store");
     expect((await syncListing(db, graphql, shop, v.id, deps)).ok).toBe(true);
-    expect(s.addedFields).toEqual(["display_name", "short_description", "description", "logo", "banner"]);
+    expect(s.addedFields).toEqual(["display_name", "short_description", "description", "logo", "banner", "rating", "review_count"]);
     expect(SELLER_FIELDS.find((f) => f.key === "logo")?.validations).toEqual([{ name: "file_type_options", value: '["Image"]' }]);
     await syncListing(db, graphql, shop, v.id, deps);
     expect(s.ops.filter((o) => o === "SetuSellerDefinitionUpdate")).toHaveLength(1);

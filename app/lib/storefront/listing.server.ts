@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import type { AdminGraphql } from "../orders/sync.server";
+import { reviewSummary } from "../reviews/reviews.server";
 
 /**
  * The vendor's public listing on the store.
@@ -12,6 +13,8 @@ import type { AdminGraphql } from "../orders/sync.server";
  *  - vendor_name, display_name, short_description, description, logo and
  *    banner are written from the app. An empty value in the app clears it on
  *    the store.
+ *  - rating and review_count come from the vendor's published reviews, and
+ *    are empty until there is one.
  *  - minimum_order_value is written only when the app has one, so a value
  *    already set on the store is never blanked by a vendor who hasn't filled
  *    in their brand details yet.
@@ -36,6 +39,8 @@ export const SELLER_FIELDS: FieldDef[] = [
   { key: "description", name: "Description", type: "multi_line_text_field", description: "Set by the Setu Store Seller Panel app." },
   { key: "logo", name: "Logo", type: "file_reference", validations: IMAGE_ONLY, description: "Set by the Setu Store Seller Panel app." },
   { key: "banner", name: "Banner", type: "file_reference", validations: IMAGE_ONLY, description: "Set by the Setu Store Seller Panel app." },
+  { key: "rating", name: "Rating (out of 5)", type: "number_decimal", description: "Average of buyers' reviews. Set by the Setu Store Seller Panel app." },
+  { key: "review_count", name: "Number of reviews", type: "number_integer", description: "Set by the Setu Store Seller Panel app." },
 ];
 
 export type ListingDeps = {
@@ -275,6 +280,7 @@ export async function ensureStoreImage(
 // ---------------------------------------------------------------------------
 
 const sameDecimal = (a: string, b: string) => a !== "" && b !== "" && Number(a) === Number(b);
+const NUMBERS = new Set(["minimum_order_value", "rating", "review_count"]);
 
 /**
  * Brings the vendor's store entry in line with the app. Writes only fields
@@ -308,6 +314,9 @@ export async function syncListing(
       banner: await imageId(vendor.bannerFileId, "banner"),
     };
     if (vendor.minimumOrderValue != null) want.minimum_order_value = vendor.minimumOrderValue.toFixed(2);
+    const reviews = await reviewSummary(db, shop, vendor.id);
+    want.rating = reviews.average ?? "";
+    want.review_count = reviews.count ? String(reviews.count) : "";
 
     const { metaobjectByHandle: entry } = await call<{ metaobjectByHandle: { id: string; fields: { key: string; value: string | null }[] } | null }>(
       graphql, ENTRY_QUERY, { handle: { type: SELLER_TYPE, handle } },
@@ -315,7 +324,7 @@ export async function syncListing(
     const have = Object.fromEntries((entry?.fields ?? []).map((f) => [f.key, f.value ?? ""]));
     const changed = Object.keys(want).filter((k) => {
       const now = have[k] ?? "";
-      if (k === "minimum_order_value" && sameDecimal(now, want[k])) return false;
+      if (NUMBERS.has(k) && sameDecimal(now, want[k])) return false;
       return now !== want[k] && !(entry === null && want[k] === "");
     });
 

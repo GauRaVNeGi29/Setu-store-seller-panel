@@ -32,6 +32,7 @@ Custom Shopify app that will give Setu Store's vendors a secure place to see the
 | Sign-up approval (team) | `app/routes/app.signups.tsx` |
 | Vendor portal pages | `app/routes/portal*.tsx`, `app/lib/portal/data.server.ts` |
 | Store listing (vendor details for the theme) | `app/lib/storefront/`, `extensions/setu-vendor-details/` |
+| Reviews (rules, seller page, team controls) | `app/lib/reviews/`, `app/routes/portal.reviews.tsx`, `app/routes/app.vendor.tsx` |
 | Tests (76): order mapping, sync, passwords, sign-up, approval, reset, sessions, vendor isolation through the real pages | `tests/` |
 
 ## First-time setup on your PC
@@ -68,6 +69,16 @@ Custom Shopify app that will give Setu Store's vendors a secure place to see the
 5. **Forgot password:** `/portal/forgot` → the page shows the reset link (development only) → choose a new password.
 
 What vendors never see: other vendors' items, an order's grand total, the buyer's name, email, phone or address. Applicants waiting for approval see no order data at all.
+
+## Reviews
+
+Buyers rate a seller from 1 to 5 stars, with an optional comment. Code: `app/lib/reviews/`.
+
+- **Who can review:** only a buyer with a shipped, not-cancelled order from that seller. One review per buyer per seller; sending another replaces it.
+- **Seller portal:** *Reviews* shows the rating, a breakdown by stars and every review. Sellers can read but not change them, and never see who the buyer is (only the name the buyer chose, and the order number).
+- **Shopify app:** the vendor page lists the reviews; the team can hide one with a reason (the seller sees the reason) or show it again. Hidden reviews aren't counted. *All vendors* shows each rating.
+- **Store listing:** the average and the number of reviews are copied to the seller's Marketplace seller entry (`rating`, `review_count`) for the theme.
+- **Not built yet:** the storefront form where buyers leave a review. Until then, `npm run reviews:sample` adds clearly labelled sample reviews on the development store only (`npm run reviews:sample -- remove` takes them out).
 
 ## Vendor details on the storefront (product page)
 
