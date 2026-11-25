@@ -324,6 +324,9 @@ async def main():
 
         # brand details with logo + banner
         await owner.click("a[href$='?edit=brand']"); await owner.wait_for_url("**edit=brand"); await owner.wait_for_selector("#minimumOrderValue")
+        await owner.fill("#processingDaysMin", "10"); await owner.fill("#processingDaysMax", "15")
+        await owner.locator("#s3").scroll_into_view_if_needed(); await owner.locator("section[aria-labelledby=s3]").screenshot(path=f"{SHOTS}/brand-form.png")
+        await owner.fill("#processingDaysMin", ""); await owner.fill("#processingDaysMax", "")
         await owner.fill("#minimumOrderValue", ""); await owner.click("button:has-text('Save brand details')")
         check("Brand details", "minimum order value is required (stopped before sending)", await owner.evaluate("!document.querySelector('#minimumOrderValue').checkValidity()"))
         await owner.fill("#minimumOrderValue", "1500"); await owner.click("button:has-text('Save brand details')")
@@ -332,7 +335,6 @@ async def main():
         await submit(owner, "button:has-text('Save brand details')")
         check("Brand details", "a processing time that runs backwards is refused, and what was typed is kept",
               "can't be smaller than the first" in await text(owner) and await owner.input_value("#processingDaysMin") == "15" and await owner.input_value("#minimumOrderValue") == "1500")
-        await owner.screenshot(path=f"{SHOTS}/brand-form.png", full_page=True)
         await owner.fill("#processingDaysMin", "10"); await owner.fill("#processingDaysMax", "15")
         await owner.set_input_files("#logoFile", files=[{"name": "logo.svg", "mimeType": "image/svg+xml", "buffer": SVG}])
         await owner.fill("#minimumOrderValue", "1500")
