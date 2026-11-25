@@ -33,14 +33,17 @@ const sellers = NAMES.map((name, i) => {
   const collection = i === 8 ? null : { id: 1000 + i, handle, title: name, url: "/collections/" + handle, products_count: n, all_products_count: n, products };
   if (collection) collection.products.first = products[0];
   const f = (v) => ({ value: v });
-  return { system: { handle }, vendor_name: f(name), display_name: f(i === 1 ? "Ashnur Candles" : name), short_description: f(i % 2 ? "" : "Handmade in small batches"), description: f(i === 0 ? "Urban Store makes statement jewellery for boutiques.\nEvery piece is cast and finished by hand in Ludhiana." : ""), logo: f(i % 3 === 2 ? null : { src: swatch(COLORS[i % COLORS.length], "logo") }), banner: f(i === 0 ? { src: swatch("#c9b79c", "") } : null), minimum_order_value: f(i === 4 ? null : [1000, 10000, 9574, 2500][i % 4]), collection: f(collection), rating: f(i < 2 ? [4.5, 3.7][i] : null), review_count: f(i < 2 ? [2, 14][i] : null), location: f(i === 0 ? "Ludhiana, India" : i === 1 ? "India" : null), joined_on: f(i < 2 ? "2026-03-14" : null) };
+  return { system: { handle }, vendor_name: f(name), display_name: f(i === 1 ? "Ashnur Candles" : name), short_description: f(i % 2 ? "" : "Handmade in small batches"), description: f(i === 0 ? "Urban Store makes statement jewellery for boutiques.\nEvery piece is cast and finished by hand in Ludhiana." : ""), logo: f(i % 3 === 2 ? null : { src: swatch(COLORS[i % COLORS.length], "logo") }), banner: f(i === 0 ? { src: swatch("#c9b79c", "") } : null), minimum_order_value: f(i === 4 ? null : [1000, 10000, 9574, 2500][i % 4]), collection: f(collection), rating: f(i < 2 ? [4.5, 3.7][i] : null), review_count: f(i < 2 ? [2, 14][i] : null), location: f(i === 0 ? "Ludhiana, India" : i === 1 ? "India" : null), joined_on: f(i < 2 ? "2026-03-14" : null), processing_days_min: f(i < 2 ? [10, 7][i] : null), processing_days_max: f(i < 2 ? [15, 7][i] : null) };
 });
 const marketplace_seller = { values: sellers };
 for (const s of sellers) marketplace_seller[s.system.handle] = s;
 const shop = { metaobjects: { marketplace_seller } };
 const routes = { root_url: "/", account_login_url: "/account/login" };
-// shop, routes and customer are global in Shopify: visible inside rendered snippets too.
-const render = (name, vars) => engine.parseAndRenderSync(snippet(name), vars, { globals: { shop, routes, customer: vars.customer ?? null } });
+// The store's delivery time: app-data metafields, read in Liquid as app.metafields.setu_seller.*
+const delivery = (min, max) => ({ metafields: { setu_seller: { delivery_days_min: { value: min }, delivery_days_max: { value: max } } } });
+const NO_APP_DATA = { metafields: {} };
+// shop, routes, customer and app are global in Shopify: visible inside rendered snippets too.
+const render = (name, vars) => engine.parseAndRenderSync(snippet(name), vars, { globals: { shop, routes, customer: vars.customer ?? null, app: vars.app ?? delivery(5, 7) } });
 
 const css = fs.readFileSync(path.join(EXT, "assets/setu-vendor.css"), "utf8");
 const js = ["setu-vendor.js", "setu-brands.js", "setu-feedback.js"].map((f) => fs.readFileSync(path.join(EXT, "assets", f), "utf8")).join("</script><script>");
@@ -52,9 +55,14 @@ fs.writeFileSync(path.join(OUT, "brands.html"), page("Brands", `<div class="sect
 fs.writeFileSync(path.join(OUT, "brands-auto.html"), page("Brands", `<div class="section page-width-content"><h1>Brands</h1></div>`, `<template id="setu-all-brands-tpl" data-auto="end">${brands}</template>`));
 fs.writeFileSync(path.join(OUT, "brands-nojs.html"), page("Brands", `<div class="section"><h1>Brands</h1>${render("setu-brands", { per_page: 10, wide: false })}</div>`, "").replace(/<script>[\s\S]*<\/script>/, ""));
 const grid = `<div class="section"><div class="grid">${"<div></div>".repeat(8)}</div></div>`;
-const sellerPage = (c, name, customer = null) => { const html = render("setu-seller-page", { collection: c, heading_tag: "h1", customer }); fs.writeFileSync(path.join(OUT, name), page(c.title, `<div class="section"><h1>${c.title}</h1></div>${grid}`, `<template id="setu-seller-header-tpl" data-auto="top" data-hide-title="${c.title}">${html}</template>`)); return html.trim().length; };
+const sellerPage = (c, name, customer = null, more = {}) => { const html = render("setu-seller-page", { collection: c, heading_tag: "h1", customer, ...more }); fs.writeFileSync(path.join(OUT, name), page(c.title, `<div class="section"><h1>${c.title}</h1></div>${grid}`, `<template id="setu-seller-header-tpl" data-auto="top" data-hide-title="${c.title}">${html}</template>`)); return html.trim().length; };
 const urban = sellers[0].collection.value, ashnur = sellers[1].collection.value, pyramid = sellers[2].collection.value;
 const rings = { id: 5, handle: "rings", title: "Rings", url: "/collections/rings", products_count: 2, all_products_count: 2, products: [urban.products[0], ashnur.products[0]] }; rings.products.first = rings.products[0];
 const other = { id: 6, handle: "urban-store", title: "Urban Store", url: "/collections/x", products_count: 1, all_products_count: 1, products: [ashnur.products[0]] }; other.products.first = other.products[0];
 sellerPage(urban, "seller-urban-buyer.html", { first_name: "Asha" });
+// Shipping times: no delivery time set on the store; switched off in the theme; a seller with neither.
+sellerPage(urban, "seller-urban-nodelivery.html", null, { app: NO_APP_DATA });
+sellerPage(urban, "seller-urban-notimes.html", null, { show_times: false });
+sellerPage(pyramid, "seller-empty-nodelivery.html", null, { app: NO_APP_DATA });
+sellerPage(ashnur, "seller-ashnur-oneday.html", null, { app: delivery(1, 1) });
 console.log(JSON.stringify({ urban: sellerPage(urban, "seller-urban.html") > 0, ashnur: sellerPage(ashnur, "seller-ashnur.html") > 0, emptySeller: sellerPage(pyramid, "seller-empty.html") > 0, categoryCollection: sellerPage(rings, "not-seller.html"), sameHandleDifferentCollection: sellerPage(other, "not-seller-2.html"), rows: (brands.match(/data-setu-brand /g) || []).length }));

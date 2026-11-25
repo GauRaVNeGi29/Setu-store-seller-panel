@@ -33,6 +33,7 @@ Custom Shopify app that will give Setu Store's vendors a secure place to see the
 | Vendor portal pages | `app/routes/portal*.tsx`, `app/lib/portal/data.server.ts` |
 | Store listing (vendor details, seller collections, Brands page) | `app/lib/storefront/`, `extensions/setu-vendor-details/`, `tests/storefront/` |
 | Reviews (rules, seller page, team controls) | `app/lib/reviews/`, `app/routes/portal.reviews.tsx`, `app/routes/app.vendor.tsx` |
+| Dashboard and store settings (delivery time) | `app/routes/app._index.tsx`, `app/lib/settings/`, `app/lib/vendors/shipping.ts` |
 | Tests (76): order mapping, sync, passwords, sign-up, approval, reset, sessions, vendor isolation through the real pages | `tests/` |
 
 ## First-time setup on your PC
@@ -51,7 +52,7 @@ Custom Shopify app that will give Setu Store's vendors a secure place to see the
    ```bash
    npm run dev              # shopify app dev; pick seller-panel-dev.myshopify.com when asked
    ```
-   Open the app from the dev store admin. On first open it copies all orders; the **Vendors and orders** page should show:
+   Open the app from the dev store admin. On first open it copies all orders. The app opens on the **Dashboard**; the **Vendors and orders** page should show:
 
    | Vendor | Orders | Units sold | Gross | Refunded | Net | Units to ship |
    | --- | --- | --- | --- | --- | --- | --- |
@@ -123,6 +124,13 @@ order value. The cart already reads the minimum from there. Business documents n
   which customer is signed in; the buyer's orders are read from Shopify (`orders(query: "customer_id:…")`) and matched
   against the seller's shipped order lines, so nothing about who bought what is taken from the browser. The app has to be
   running for Feedback to load; the rest of the page doesn't depend on it.
+- **Shipping times** on the seller page: *Processing time* (the days the seller needs to make or ready an order, a range
+  the seller sets under My brand → Brand details; the team can change it on the vendor's page), *Delivery time* (one range
+  for the whole store, set by the team on the app's **Dashboard**) and *Arrives in*, the two added end to end
+  (10–15 + 5–7 → 15–22 days). Processing time is copied to the seller's entry (`processing_days_min`, `processing_days_max`).
+  Delivery time is kept as two app-data metafields on the app's installation (`setu_seller.delivery_days_min` / `_max`),
+  which only this app can change and which Liquid reads as `app.metafields.setu_seller.…`. If only one of the two is
+  known, only that one is shown, with no total.
 - Blocks for the theme editor: *All brands* and *Seller page header*.
 - Limits: 250 sellers on the Brands page; up to 12 products per seller row.
 - Checks: `npm run test:storefront` renders the real snippets with LiquidJS and mock data and drives them in Chromium.

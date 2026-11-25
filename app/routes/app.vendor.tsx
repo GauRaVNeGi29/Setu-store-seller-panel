@@ -568,6 +568,15 @@ export default function Vendor() {
                     </label>
                   ))}
                 </div>
+                <fieldset style={{ border: 0, padding: 0, margin: "12px 0 0" }}>
+                  <legend style={{ padding: 0, marginBottom: 4 }}>Processing time (days the vendor needs to make or ready an order)</legend>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input name="processingDaysMin" type="number" min={0} max={365} step={1} aria-label="Processing time: from, in days" defaultValue={profile.processingDaysMin ?? ""} style={{ ...input, width: 90 }} />
+                    <span>to</span>
+                    <input name="processingDaysMax" type="number" min={1} max={365} step={1} aria-label="Processing time: to, in days" defaultValue={profile.processingDaysMax ?? ""} style={{ ...input, width: 90 }} />
+                    <span>days</span>
+                  </div>
+                </fieldset>
                 <label style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 12 }}>
                   <span>Description</span>
                   <textarea name="description" defaultValue={profile.description ?? ""} rows={4} style={input} />

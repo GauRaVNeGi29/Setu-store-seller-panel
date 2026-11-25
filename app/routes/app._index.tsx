@@ -5,134 +5,177 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
-import { recentActivity, vendorOverview } from "../lib/orders/admin.server";
-import { fullSync } from "../lib/orders/sync.server";
-import { portalStatusByVendor } from "../lib/vendors/vendors.server";
+import { resendDeliveryTime, saveDeliveryTime, teamDashboard } from "../lib/settings/settings.server";
 import { portalBaseUrl } from "../lib/portal/context.server";
+import { daysText, totalDays } from "../lib/vendors/shipping";
 
 /**
- * Stage 1 home: every vendor that appears on an order, with totals worked out
- * from the app's own copy of the order lines. The team uses this to check the
- * data matches Shopify before any vendor gets access.
+ * The app's home: what is waiting for the team, the store-wide settings
+ * (delivery time), each seller's shipping times, and links to the other pages.
  */
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
-  const [overview, activity, portal] = await Promise.all([
-    vendorOverview(db, session.shop),
-    recentActivity(db, session.shop),
-    portalStatusByVendor(db, session.shop),
-  ]);
-  const vendors = overview.vendors.map((v) => {
-    const p = portal.get(v.vendorName);
-    return { ...v, portal: p ? `${p.status === "active" ? "Active" : "Paused"} · ${p.users} ${p.users === 1 ? "person" : "people"}` : "Not set up" };
-  });
-  return { ...overview, vendors, activity, portalUrl: portalBaseUrl(request) };
+  return { ...(await teamDashboard(db, session.shop)), portalUrl: portalBaseUrl(request) };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { session, admin } = await authenticate.admin(request);
   const form = await request.formData();
-  if (form.get("intent") !== "resync") return { error: "Unknown action" };
+  const intent = form.get("intent");
   const actor = `admin:${session.onlineAccessInfo?.associated_user?.email ?? "staff"}`;
-  try {
-    const result = await fullSync(db, admin.graphql, session.shop, actor);
-    return { ok: true, orders: result.orders };
-  } catch (e) {
-    return { error: (e as Error).message };
+  if (intent === "delivery_time") {
+    return saveDeliveryTime(db, admin.graphql, session.shop, { min: String(form.get("deliveryDaysMin") ?? ""), max: String(form.get("deliveryDaysMax") ?? "") }, actor);
   }
+  if (intent === "delivery_resend") return resendDeliveryTime(db, admin.graphql, session.shop);
+  return { ok: false as const, error: "Unknown action" };
 };
 
-const inr = (v: string) => `₹${Number(v).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) : "never");
 const cell = { padding: 6, borderBottom: "1px solid #eee" } as const;
+const input = { padding: 6, border: "1px solid #ccc", borderRadius: 6, font: "inherit", width: 90 } as const;
+const vendorHref = (vendorName: string) => `/app/vendor?name=${encodeURIComponent(vendorName)}`;
 
-export default function Index() {
-  const data = useLoaderData<typeof loader>();
+type Named = { name: string; vendorName: string };
+
+/** "3 vendors have …: A, B, C" with each name linked to the vendor. */
+function Waiting({ list, one, many }: { list: Named[]; one: string; many: string }) {
+  if (list.length === 0) return null;
+  return (
+    <li style={{ marginBottom: 6 }}>
+      {list.length} {list.length === 1 ? one : many}:{" "}
+      {list.map((v, i) => (
+        <span key={v.vendorName}>
+          {i > 0 && ", "}
+          <s-link href={vendorHref(v.vendorName)}>{v.name}</s-link>
+        </span>
+      ))}
+    </li>
+  );
+}
+
+export default function Dashboard() {
+  const { delivery, attention, numbers, vendors, portalUrl } = useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
   const shopify = useAppBridge();
-  const busy = fetcher.state !== "idle";
+  const busy = (intent: string) => fetcher.state !== "idle" && fetcher.formData?.get("intent") === intent;
+  const result = fetcher.data;
 
   useEffect(() => {
-    const r = fetcher.data;
-    if (r && "ok" in r) shopify.toast.show(`Resynced ${r.orders} orders`);
-  }, [fetcher.data, shopify]);
+    if (result?.ok && result.onStore) shopify.toast.show(result.range ? "Delivery time saved" : "Delivery time removed");
+  }, [result, shopify]);
+
+  const waiting = attention.signups + attention.businessChanges.length + attention.noCommission.length + attention.missingDetails.length
+    + attention.noProcessingTime.length + attention.storeNotUpdated.length;
+  const example = { min: 10, max: 15 };
 
   return (
-    <s-page heading="Vendors and orders">
-      <s-section heading="Sync status">
+    <s-page heading="Dashboard">
+      <s-section heading="Needs your attention">
+        {waiting === 0 ? (
+          <s-paragraph>Nothing is waiting for you.</s-paragraph>
+        ) : (
+          <ul style={{ margin: 0, paddingLeft: 18 }}>
+            {attention.signups > 0 && (
+              <li style={{ marginBottom: 6 }}>
+                <s-link href="/app/signups">{attention.signups} {attention.signups === 1 ? "sign-up is" : "sign-ups are"} waiting for approval</s-link>
+              </li>
+            )}
+            <Waiting list={attention.businessChanges} one="vendor has business changes to review" many="vendors have business changes to review" />
+            <Waiting list={attention.noCommission} one="vendor has no commission rate" many="vendors have no commission rate" />
+            <Waiting list={attention.noProcessingTime} one="vendor hasn't given a processing time" many="vendors haven't given a processing time" />
+            <Waiting list={attention.missingDetails} one="vendor has details missing" many="vendors have details missing" />
+            <Waiting list={attention.storeNotUpdated} one="vendor's store listing isn't up to date" many="vendors' store listings aren't up to date" />
+          </ul>
+        )}
+      </s-section>
+
+      <s-section heading="Delivery time">
         <s-paragraph>
-          {data.orderCount} orders copied · last full sync {when(data.lastFullSyncAt)}. New and changed orders arrive automatically within a few seconds.
+          How many days a shipment takes to reach the buyer once the seller hands it over. It is one range for the whole store.
+          Each seller page shows it, added to that seller&apos;s processing time, as the total time until the order arrives.
         </s-paragraph>
-        {data.lastError && <s-banner tone="critical">Last sync error: {data.lastError}</s-banner>}
-        {fetcher.data && "error" in fetcher.data && <s-banner tone="critical">{fetcher.data.error}</s-banner>}
-        <fetcher.Form method="post">
-          <input type="hidden" name="intent" value="resync" />
-          <s-button type="submit" {...(busy ? { loading: true } : {})}>Resync all orders</s-button>
+        {result && !result.ok && <s-banner tone="critical">{result.error}</s-banner>}
+        {delivery.error && !(result?.ok && result.onStore) && (
+          <s-banner tone="warning">
+            The delivery time is saved here, but the store doesn&apos;t show it yet. {delivery.error}
+            <fetcher.Form method="post" style={{ marginTop: 8 }}>
+              <input type="hidden" name="intent" value="delivery_resend" />
+              <s-button type="submit" {...(busy("delivery_resend") ? { loading: true } : {})}>Send to the store again</s-button>
+            </fetcher.Form>
+          </s-banner>
+        )}
+        <fetcher.Form method="post" key={`${delivery.range?.min}-${delivery.range?.max}`}>
+          <input type="hidden" name="intent" value="delivery_time" />
+          <fieldset style={{ border: 0, padding: 0, margin: "8px 0" }}>
+            <legend style={{ padding: 0, marginBottom: 4, fontWeight: 600 }}>Delivery time, in days</legend>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <input name="deliveryDaysMin" type="number" min={0} max={365} step={1} aria-label="Delivery time: from, in days" defaultValue={delivery.range?.min ?? ""} style={input} />
+              <span>to</span>
+              <input name="deliveryDaysMax" type="number" min={1} max={365} step={1} aria-label="Delivery time: to, in days" defaultValue={delivery.range?.max ?? ""} style={input} />
+              <span>days</span>
+              <s-button type="submit" variant="primary" {...(busy("delivery_time") ? { loading: true } : {})}>Save</s-button>
+            </div>
+          </fieldset>
         </fetcher.Form>
-      </s-section>
-
-      <s-section heading="Vendor portal">
         <s-paragraph>
-          Sellers sign in at <b>{data.portalUrl}/portal/login</b>. Open a vendor below to view their portal as they see it.
+          {delivery.range ? (
+            <>
+              Now: <b>{daysText(delivery.range)}</b>
+              {delivery.updatedBy && delivery.updatedAt && <> · set by {delivery.updatedBy} on {new Date(delivery.updatedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}</>}
+              . A seller who needs {daysText(example)} to ready an order shows &ldquo;Arrives in {daysText(totalDays(example, delivery.range)!)}&rdquo;.
+            </>
+          ) : (
+            <>Not set. Seller pages show only the seller&apos;s processing time until you set it. Leave both boxes empty and save to remove it again.</>
+          )}
         </s-paragraph>
-        <s-button href={`${data.portalUrl}/portal/login`} target="_blank">Open sign-in page</s-button>
       </s-section>
 
-      <s-section heading="Vendors">
-        {data.vendors.length === 0 ? (
-          <s-paragraph>No orders yet.</s-paragraph>
+      <s-section heading="Shipping times by seller">
+        <s-paragraph>
+          Each seller sets their processing time (days to make or ready an order) in the vendor portal, under My brand. You can change it on the vendor&apos;s page.
+        </s-paragraph>
+        {vendors.length === 0 ? (
+          <s-paragraph>No vendor has portal access yet.</s-paragraph>
         ) : (
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
-                <th style={cell}>Vendor</th>
-                <th style={cell}>Orders</th>
-                <th style={cell}>Units sold</th>
-                <th style={cell}>Gross (₹)</th>
-                <th style={cell}>Refunded (₹)</th>
-                <th style={cell}>Net (₹)</th>
-                <th style={cell}>Units to ship</th>
-                <th style={cell}>Open orders</th>
-                <th style={cell}>Portal access</th>
+                <th style={cell}>Seller</th>
+                <th style={cell}>Processing time</th>
+                <th style={cell}>Delivery time</th>
+                <th style={cell}>Total shown to buyers</th>
               </tr>
             </thead>
             <tbody>
-              {data.vendors.map((v) => (
-                <tr key={v.vendorName || "__none__"}>
-                  <td style={cell}>
-                    <s-link href={`/app/vendor?name=${encodeURIComponent(v.vendorName)}`}>{v.vendorName || "(no vendor)"}</s-link>
-                  </td>
-                  <td style={cell}>{v.orders}</td>
-                  <td style={cell}>{v.units}</td>
-                  <td style={cell}>{inr(v.gross)}</td>
-                  <td style={cell}>{inr(v.refunded)}</td>
-                  <td style={cell}>{inr(v.net)}</td>
-                  <td style={cell}>{v.unitsToShip}</td>
-                  <td style={cell}>{v.openOrders}</td>
-                  <td style={cell}>{v.portal}</td>
-                </tr>
-              ))}
+              {vendors.map((v) => {
+                const total = totalDays(v.processing, delivery.range);
+                return (
+                  <tr key={v.id}>
+                    <td style={cell}><s-link href={vendorHref(v.vendorName)}>{v.name}</s-link></td>
+                    <td style={cell}>{v.processing ? daysText(v.processing) : <span style={{ color: "#8a5a12" }}>Not given</span>}</td>
+                    <td style={cell}>{delivery.range ? daysText(delivery.range) : <span style={{ color: "#666" }}>Not set</span>}</td>
+                    <td style={cell}>{total ? <b>{daysText(total)}</b> : <span style={{ color: "#666" }}>–</span>}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
+      </s-section>
+
+      <s-section heading="At a glance">
         <s-paragraph>
-          Gross is after discounts and before refunds; cancelled orders add nothing. Shipping and taxes are not split by vendor yet.
+          {numbers.vendors} {numbers.vendors === 1 ? "vendor" : "vendors"} with portal access ({numbers.active} active{numbers.paused ? `, ${numbers.paused} paused` : ""})
+          {" · "}{numbers.reviews} published {numbers.reviews === 1 ? "review" : "reviews"}{numbers.hiddenReviews ? `, ${numbers.hiddenReviews} hidden` : ""}
         </s-paragraph>
       </s-section>
 
-      <s-section heading="Recent activity">
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-          <tbody>
-            {data.activity.map((a) => (
-              <tr key={a.id}>
-                <td style={cell}>{when(a.at)}</td>
-                <td style={cell}>{a.action}</td>
-                <td style={cell}>{a.target ?? ""}</td>
-                <td style={cell}>{a.actor}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <s-section heading="Go to">
+        <ul style={{ margin: 0, paddingLeft: 18 }}>
+          <li><s-link href="/app/orders">Vendors and orders</s-link> – sales and units to ship for each vendor, and the order sync</li>
+          <li><s-link href="/app/vendors">All vendors</s-link> – people, commission, ratings and store listings</li>
+          <li><s-link href="/app/signups">Sign-ups</s-link> – approve or decline new sellers</li>
+          <li><s-link href={`${portalUrl}/portal/login`} target="_blank">Vendor portal sign-in page</s-link> – where sellers sign in</li>
+        </ul>
       </s-section>
     </s-page>
   );

@@ -25,6 +25,14 @@
     "previous_page": "Previous page",
     "next_page": "Next page",
     "joined": "Joined {{ date }}",
+    "processing_time": "Processing time",
+    "delivery_time": "Delivery time",
+    "arrives_in": "Arrives in",
+    "days": {
+      "one": "{{ count }} day",
+      "other": "{{ count }} days"
+    },
+    "days_range": "{{ from }}–{{ to }} days",
     "feedback": "Feedback",
     "fb_title": "Feedback on {{ name }}",
     "fb_loading": "Loading reviews…",

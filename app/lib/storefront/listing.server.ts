@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import type { AdminGraphql } from "../orders/sync.server";
 import { reviewSummary } from "../reviews/reviews.server";
+import { rangeOf } from "../vendors/shipping";
 
 /**
  * The vendor's public listing on the store.
@@ -17,6 +18,9 @@ import { reviewSummary } from "../reviews/reviews.server";
  *    are empty until there is one.
  *  - location is the vendor's city and country (never the street address);
  *    joined_on is the day the vendor was added to the seller panel.
+ *  - processing_days_min and processing_days_max are the days the vendor
+ *    needs to make or ready an order. The store's delivery time is not kept
+ *    here: it is one setting for the whole store (see lib/settings).
  *  - minimum_order_value is written only when the app has one, so a value
  *    already set on the store is never blanked by a vendor who hasn't filled
  *    in their brand details yet.
@@ -50,6 +54,8 @@ export const SELLER_FIELDS: FieldDef[] = [
   { key: "joined_on", name: "Joined Setu Store on", type: "date", description: "Set by the Setu Store Seller Panel app." },
   { key: "rating", name: "Rating (out of 5)", type: "number_decimal", description: "Average of buyers' reviews. Set by the Setu Store Seller Panel app." },
   { key: "review_count", name: "Number of reviews", type: "number_integer", description: "Set by the Setu Store Seller Panel app." },
+  { key: "processing_days_min", name: "Processing time: from (days)", type: "number_integer", description: "Days the seller needs to make or ready an order. Set by the Setu Store Seller Panel app." },
+  { key: "processing_days_max", name: "Processing time: to (days)", type: "number_integer", description: "Set by the Setu Store Seller Panel app." },
 ];
 
 export type ListingDeps = {
@@ -403,7 +409,7 @@ export async function ensureStoreImage(
 /** The calendar day in India, as YYYY-MM-DD. */
 const istDate = (d: Date) => new Date(d.getTime() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
 const sameDecimal = (a: string, b: string) => a !== "" && b !== "" && Number(a) === Number(b);
-const NUMBERS = new Set(["minimum_order_value", "rating", "review_count"]);
+const NUMBERS = new Set(["minimum_order_value", "rating", "review_count", "processing_days_min", "processing_days_max"]);
 
 /**
  * Brings the vendor's store entry in line with the app. Writes only fields
@@ -442,6 +448,9 @@ export async function syncListing(
     const reviews = await reviewSummary(db, shop, vendor.id);
     want.rating = reviews.average ?? "";
     want.review_count = reviews.count ? String(reviews.count) : "";
+    const processing = rangeOf(vendor.processingDaysMin, vendor.processingDaysMax);
+    want.processing_days_min = processing ? String(processing.min) : "";
+    want.processing_days_max = processing ? String(processing.max) : "";
 
     const { metaobjectByHandle: entry } = await call<{ metaobjectByHandle: { id: string; fields: { key: string; value: string | null }[] } | null }>(
       graphql, ENTRY_QUERY, { handle: { type: SELLER_TYPE, handle } },

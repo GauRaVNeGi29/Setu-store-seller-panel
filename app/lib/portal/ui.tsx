@@ -99,6 +99,36 @@ export function Field({ name, label, type = "text", error, hint, required, autoC
   );
 }
 
+/**
+ * Two whole numbers of days, "from" and "to" (e.g. 10 to 15). One group label,
+ * with the hint and error read out for both inputs.
+ */
+export function DayRangeField({ name, label, min, max, error, hint, required }: {
+  name: string; label: string; min: string; max: string; error?: string; hint?: string; required?: boolean;
+}) {
+  const describedBy = [error ? `${name}-error` : null, hint ? `${name}-hint` : null].filter(Boolean).join(" ") || undefined;
+  const input = (suffix: "Min" | "Max", value: string, what: string) => (
+    <input id={`${name}${suffix}`} name={`${name}${suffix}`} className="vp-input" type="number" inputMode="numeric" min={suffix === "Min" ? 0 : 1} max={365} step={1}
+      required={required} defaultValue={value} aria-label={`${label}: ${what}`} aria-invalid={error ? true : undefined} aria-describedby={describedBy} />
+  );
+  return (
+    <fieldset className="vp-field vp-range">
+      <legend>
+        {label}
+        {!required && <span className="vp-optional"> (optional)</span>}
+      </legend>
+      <div className="vp-range-row">
+        {input("Min", min, "from, in days")}
+        <span aria-hidden="true">to</span>
+        {input("Max", max, "to, in days")}
+        <span aria-hidden="true">days</span>
+      </div>
+      {hint && <p id={`${name}-hint`} className="vp-hint">{hint}</p>}
+      {error && <p id={`${name}-error`} className="vp-field-error">{error}</p>}
+    </fieldset>
+  );
+}
+
 export function DevEmailPreview({ preview }: { preview?: { subject: string; link?: string } }) {
   if (!preview) return null;
   return (

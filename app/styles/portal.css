@@ -317,6 +317,10 @@ textarea.vp-input { min-height: 96px; resize: vertical; }
 .vp-input:focus { outline: none; border-color: var(--green); box-shadow: 0 0 0 3px var(--green-wash); }
 .vp-input[aria-invalid="true"] { border-color: var(--madder); }
 .vp-hint { font-size: 13px; color: var(--ink-3); margin: 6px 0 0; }
+.vp-range { border: 0; padding: 0; margin-inline: 0; min-width: 0; }
+.vp-range legend { font-weight: 600; font-size: 14px; margin-bottom: 6px; padding: 0; }
+.vp-range-row { display: flex; align-items: center; gap: 10px; color: var(--ink-2, inherit); font-size: 14px; }
+.vp-range-row .vp-input { width: 88px; flex: none; }
 .vp-field-error { font-size: 13px; color: var(--madder); margin: 6px 0 0; font-weight: 600; }
 .vp-pw { position: relative; }
 .vp-pw .vp-input { padding-right: 76px; }
