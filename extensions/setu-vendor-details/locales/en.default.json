@@ -28,6 +28,8 @@
     "minimum_after": "minimum",
     "arrives_between": "Arrives {{ from }} – {{ to }}",
     "arrives_by": "Arrives by {{ date }}",
+    "show_more": "Show more",
+    "show_less": "Show less",
     "feedback": "Feedback",
     "fb_title": "Feedback on {{ name }}",
     "fb_loading": "Loading reviews…",

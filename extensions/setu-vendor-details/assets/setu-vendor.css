@@ -225,12 +225,52 @@
   margin: 0;
   color: var(--setu-muted);
 }
+/* The seller's description: a cream box across the header's full width. With
+   the script it opens two lines tall ("is-short") and a button unfolds it. */
 .setu-seller__about {
   margin: 16px 0 0;
-  max-width: 75ch;
+  padding: 14px 18px;
+  border: 1px solid var(--setu-about-line, #e7dcc5);
+  border-radius: 12px;
+  background: var(--setu-about-bg, #faf5ea);
 }
 .setu-seller--banner .setu-seller__about {
-  padding-inline: 20px;
+  margin-inline: 20px;
+}
+.setu-seller__about-text {
+  margin: 0;
+}
+.setu-seller__about.is-short .setu-seller__about-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+/* Folded, the paragraphs run on as one, so two lines hold two lines of words. */
+.setu-seller__about.is-short .setu-seller__about-text br {
+  display: none;
+}
+.setu-seller__about-toggle {
+  min-height: 24px;
+  margin: 8px 0 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.875em;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.setu-seller__about-toggle[hidden] {
+  display: none;
+}
+.setu-seller__about-toggle:focus-visible {
+  outline: 2px solid var(--color-foreground, currentColor);
+  outline-offset: 2px;
 }
 
 /* ------------------------------------------------------------------ Brands page */
@@ -561,8 +601,10 @@
   .setu-seller--banner .setu-seller__logo {
     margin-top: -44px;
   }
-  .setu-seller--banner .setu-seller__body,
   .setu-seller--banner .setu-seller__about {
+    margin-inline: 12px;
+  }
+  .setu-seller--banner .setu-seller__body {
     padding-inline: 12px;
   }
 }

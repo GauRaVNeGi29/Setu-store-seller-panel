@@ -46,7 +46,7 @@ const NO_APP_DATA = { metafields: {} };
 const render = (name, vars) => engine.parseAndRenderSync(snippet(name), vars, { globals: { shop, routes, customer: vars.customer ?? null, app: vars.app ?? delivery(5, 7) } });
 
 const css = fs.readFileSync(path.join(EXT, "assets/setu-vendor.css"), "utf8");
-const js = ["setu-vendor.js", "setu-brands.js", "setu-feedback.js"].map((f) => fs.readFileSync(path.join(EXT, "assets", f), "utf8")).join("</script><script>");
+const js = ["setu-vendor.js", "setu-brands.js", "setu-feedback.js", "setu-about.js"].map((f) => fs.readFileSync(path.join(EXT, "assets", f), "utf8")).join("</script><script>");
 const page = (title, main, templates) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>
 <style>:root{--color-background:#fff;--color-foreground:#4a4a4a}body{margin:0;font:14px/1.5 Georgia,serif;color:#4a4a4a;background:#fff}header,footer{padding:20px 40px;border-bottom:1px solid #eee}footer{background:#e9e4e0;margin-top:40px}h1{font-weight:400;font-size:40px;margin:0}.section{padding:40px 40px 0;max-width:1400px;margin:0 auto;box-sizing:border-box}.page-width-content{padding-bottom:80px}.rte{max-width:42rem}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}.grid div{aspect-ratio:1;background:#f3f3f3}@media(max-width:749px){.section{padding:24px 16px 0}.grid{grid-template-columns:repeat(2,1fr)}}</style>
 <style>${css}</style></head><body><header>Seller Panel Dev</header><main id="MainContent">${main}</main><footer>Footer</footer>${templates}<script>${js}</script></body></html>`;
@@ -60,6 +60,10 @@ const urban = sellers[0].collection.value, ashnur = sellers[1].collection.value,
 const rings = { id: 5, handle: "rings", title: "Rings", url: "/collections/rings", products_count: 2, all_products_count: 2, products: [urban.products[0], ashnur.products[0]] }; rings.products.first = rings.products[0];
 const other = { id: 6, handle: "urban-store", title: "Urban Store", url: "/collections/x", products_count: 1, all_products_count: 1, products: [ashnur.products[0]] }; other.products.first = other.products[0];
 sellerPage(urban, "seller-urban-buyer.html", { first_name: "Asha" });
+// A long description in several paragraphs (folds to two lines), on a page with a banner and on one without; and without the script.
+const LONG = "Ashnur: Handcrafted Candles, Made to Be Remembered\n\nAshnur makes handcrafted candles that do more than light up a room. Founded by makers with deep candle-making expertise, the studio hand-pours every candle in small batches. That keeps the quality consistent, piece after piece.\n\nThe collection includes sculpted floral blooms such as peonies, roses, lotus, daisies and sunflowers. There are also elegant jar and glass candles, modern ribbed and classic pillars, wooden urli and boat centrepieces, and festive collections for Diwali and Christmas.\n\nClean burning · Cruelty-free · Handmade in small batches · Custom hampers · Ships worldwide";
+for (const [i, name] of [[0, "seller-urban-long.html"], [1, "seller-ashnur-long.html"]]) { const was = sellers[i].description; sellers[i].description = { value: LONG }; sellerPage(sellers[i].collection.value, name); sellers[i].description = was; }
+fs.writeFileSync(path.join(OUT, "seller-ashnur-long-nojs.html"), fs.readFileSync(path.join(OUT, "seller-ashnur-long.html"), "utf8").replace(/<script>[\s\S]*<\/script>/, "").replace(/<template[^>]*>([\s\S]*)<\/template>/, "$1"));
 // Arrival date: no delivery time set on the store; switched off in the theme; one-day delivery.
 sellerPage(urban, "seller-urban-nodelivery.html", null, { app: NO_APP_DATA });
 sellerPage(urban, "seller-urban-notimes.html", null, { show_times: false });

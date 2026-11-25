@@ -6,8 +6,9 @@
  *   .setu-all-brands                                (the Brands page)
  * A placeholder is filled again if the theme re-renders it (for example when
  * the buyer picks another variant). The seller header and the Brands list add
- * their own placeholder when the theme has none. setu-brands.js and
- * setu-feedback.js then run the Brands list and the Feedback block.
+ * their own placeholder when the theme has none. setu-brands.js,
+ * setu-feedback.js and setu-about.js then run the Brands list, the Feedback
+ * block and the seller's description box.
  */
 (function () {
   var PARTS = [
@@ -56,7 +57,7 @@
         filled = true;
       }
     });
-    // setu-brands.js and setu-feedback.js start what was just put on the page.
+    // setu-brands.js, setu-feedback.js and setu-about.js start what was just put on the page.
     if (filled) document.dispatchEvent(new CustomEvent("setu:filled"));
   }
 

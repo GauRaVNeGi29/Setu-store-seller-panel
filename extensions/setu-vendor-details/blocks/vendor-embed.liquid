@@ -32,6 +32,9 @@
   {%- if block.settings.seller_feedback -%}
     <script src="{{ 'setu-feedback.js' | asset_url }}" defer></script>
   {%- endif -%}
+  {%- if block.settings.seller_description -%}
+    <script src="{{ 'setu-about.js' | asset_url }}" defer></script>
+  {%- endif -%}
   <template
     id="setu-seller-header-tpl"
     {% if block.settings.seller_page == 'auto' %}data-auto="top"{% endif %}

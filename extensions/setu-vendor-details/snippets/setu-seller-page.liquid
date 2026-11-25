@@ -146,7 +146,12 @@
       {%- endif -%}
     </div>
     {%- if show_description != false and description != blank -%}
-      <p class="setu-seller__about">{{ description | escape | newline_to_br }}</p>
+      <div class="setu-seller__about" data-setu-about>
+        <p class="setu-seller__about-text" id="SetuAbout" data-setu-about-text>{{ description | escape | newline_to_br }}</p>
+        <button type="button" class="setu-seller__about-toggle" data-setu-about-toggle data-more="{{ 'setu_vendor.show_more' | t | escape }}" data-less="{{ 'setu_vendor.show_less' | t | escape }}" aria-expanded="false" aria-controls="SetuAbout" hidden>
+          {{- 'setu_vendor.show_more' | t -}}
+        </button>
+      </div>
     {%- endif -%}
     {%- if show_feedback != false -%}
       {%- assign reviews_url = root | append: '/apps/setu-seller/reviews' -%}

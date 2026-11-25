@@ -1,4 +1,7 @@
 {%- render 'setu-seller-page', collection: collection, show_banner: block.settings.show_banner, show_description: block.settings.show_description, show_min: block.settings.show_min, show_rating: block.settings.show_rating, show_facts: block.settings.show_facts, show_times: block.settings.show_times, show_feedback: block.settings.show_feedback, heading_tag: block.settings.heading_tag -%}
+{%- if block.settings.show_description -%}
+  <script src="{{ 'setu-about.js' | asset_url }}" defer></script>
+{%- endif -%}
 
 {% schema %}
 {

@@ -133,6 +133,9 @@ order value. The cart already reads the minimum from there. Business documents n
   the app's **Dashboard** and kept as two app-data metafields on the app's installation
   (`setu_seller.delivery_days_min` / `_max`), which only this app can change and which Liquid reads as
   `app.metafields.setu_seller.…`. No date is shown unless both are known.
+- **Description box** on the seller page: the seller's full description in a bordered cream box across the header's width.
+  It opens two lines tall with *Show more*, and *Show less* folds it again (`setu-about.js`). A description that fits in two
+  lines gets no button; without the script the whole description shows.
 - Blocks for the theme editor: *All brands* and *Seller page header*.
 - Limits: 250 sellers on the Brands page; up to 12 products per seller row.
 - Checks: `npm run test:storefront` renders the real snippets with LiquidJS and mock data and drives them in Chromium.
