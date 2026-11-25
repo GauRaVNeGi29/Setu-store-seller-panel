@@ -31,7 +31,7 @@ Custom Shopify app that will give Setu Store's vendors a secure place to see the
 | Sign-up, sign-in, password reset, sessions | `app/lib/portal/auth.server.ts`, `app/routes/portal_.*.tsx` |
 | Sign-up approval (team) | `app/routes/app.signups.tsx` |
 | Vendor portal pages | `app/routes/portal*.tsx`, `app/lib/portal/data.server.ts` |
-| Store listing (vendor details for the theme) | `app/lib/storefront/`, `extensions/setu-vendor-details/` |
+| Store listing (vendor details, seller collections, Brands page) | `app/lib/storefront/`, `extensions/setu-vendor-details/`, `tests/storefront/` |
 | Reviews (rules, seller page, team controls) | `app/lib/reviews/`, `app/routes/portal.reviews.tsx`, `app/routes/app.vendor.tsx` |
 | Tests (76): order mapping, sync, passwords, sign-up, approval, reset, sessions, vendor isolation through the real pages | `tests/` |
 
@@ -99,6 +99,25 @@ order value. The cart already reads the minimum from there. Business documents n
   <div class="setu-vendor-description"></div>   <!-- description and "Shop all from …" -->
   ```
   It also offers *Vendor header* and *Vendor description* blocks for the theme editor.
+
+### Brands page and seller product pages
+
+- **Seller's product page** = a collection of the seller's products, linked on the seller's Marketplace seller entry (`collection`).
+  A collection already on the entry is never changed. When the entry has none, the listing update links one: an existing
+  collection with the seller's handle that holds exactly the seller's products, or a new automatic collection
+  ("Vendor is X"), published to the online store. Needs the `write_products` and `write_publications` scopes.
+- **Seller header** on that collection page: banner, logo, name, short description, Min, rating, description. By default the
+  app embed adds it at the top of the page and hides the theme's own collection title there; or place
+  `<div class="setu-seller-header"></div>` yourself (setting *Seller header on a seller's collection*).
+- **Brands page**: every seller with logo, name, minimum, rating and a row of products ending in "View all N products";
+  sort, search and pages run in the browser. It shows on the page whose handle is set in the embed (default `brands`):
+  ```html
+  <div class="setu-all-brands"></div>
+  ```
+  With no placeholder on that page, the list adds itself at the end of the page content.
+- Blocks for the theme editor: *All brands* and *Seller page header*.
+- Limits: 250 sellers on the Brands page; up to 12 products per seller row.
+- Checks: `npm run test:storefront` renders the real snippets with LiquidJS and mock data and drives them in Chromium.
 
 **Turning it on (dev store):**
 1. `npm run dev -- --theme 189269180525` (the theme that holds the placeholders; without `--theme` the CLI uploads

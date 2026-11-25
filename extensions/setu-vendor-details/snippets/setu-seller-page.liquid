@@ -1,0 +1,89 @@
+{%- doc -%}
+  The seller header for a seller's product listing page: banner, logo, name,
+  short description, minimum order, rating and description. Renders nothing
+  unless the collection is a seller's own collection (the one linked on the
+  seller's marketplace_seller entry).
+
+  @param {collection} collection - the collection being viewed
+  @param {boolean} [show_banner] - show the seller's banner image
+  @param {boolean} [show_description] - show the seller's description
+  @param {boolean} [show_min] - show the minimum order value
+  @param {boolean} [show_rating] - show the rating once the seller has reviews
+  @param {string} [heading_tag] - tag for the seller's name: 'h1', 'h2' or 'p'
+{%- enddoc -%}
+{%- liquid
+  assign seller = nil
+  if collection != blank
+    # Two cheap lookups before any loop: by the collection's handle, then by the
+    # vendor of its first product. Only an empty collection needs the loop.
+    assign candidate = shop.metaobjects.marketplace_seller[collection.handle]
+    if candidate != nil and candidate.collection.value.id == collection.id
+      assign seller = candidate
+    endif
+    if seller == nil
+      assign first_vendor = collection.products.first.vendor
+      if first_vendor != blank
+        assign vendor_handle = first_vendor | handleize
+        assign candidate = shop.metaobjects.marketplace_seller[vendor_handle]
+        if candidate != nil and candidate.collection.value.id == collection.id
+          assign seller = candidate
+        endif
+      endif
+    endif
+    if seller == nil and collection.products_count == 0
+      for entry in shop.metaobjects.marketplace_seller.values
+        if entry.collection.value.id == collection.id
+          assign seller = entry
+          break
+        endif
+      endfor
+    endif
+  endif
+-%}
+{%- if seller != nil -%}
+  {%- liquid
+    assign name = seller.display_name.value | default: seller.vendor_name.value
+    assign tagline = seller.short_description.value
+    assign description = seller.description.value
+    assign logo = seller.logo.value
+    assign banner = seller.banner.value
+    assign mov = seller.minimum_order_value.value
+    assign tag = heading_tag | default: 'h2'
+  -%}
+  <div class="setu-vendor setu-seller{% if show_banner != false and banner != blank %} setu-seller--banner{% endif %}" data-setu-vendor="seller">
+    {%- if show_banner != false and banner != blank -%}
+      <div class="setu-seller__banner">
+        {{- banner | image_url: width: 2400 | image_tag: widths: '750, 1100, 1500, 2000, 2400', sizes: '100vw', alt: '', loading: 'eager', fetchpriority: 'high', class: 'setu-seller__banner-img' -}}
+      </div>
+    {%- endif -%}
+    <div class="setu-seller__body">
+      <span class="setu-seller__logo">
+        {%- if logo != blank -%}
+          {{- logo | image_url: width: 288 | image_tag: widths: '96, 192, 288', sizes: '96px', width: 96, height: 96, alt: '', loading: 'eager', class: 'setu-seller__logo-img' -}}
+        {%- else -%}
+          <span class="setu-seller__initial" aria-hidden="true">{{ name | slice: 0 | upcase | escape }}</span>
+        {%- endif -%}
+      </span>
+      <div class="setu-seller__text">
+        <{{ tag }} class="setu-seller__name">{{ name | escape }}</{{ tag }}>
+        {%- if tagline != blank -%}
+          <p class="setu-seller__tagline">{{ tagline | escape }}</p>
+        {%- endif -%}
+        {%- if show_rating != false -%}
+          {%- render 'setu-stars', rating: seller.rating.value, count: seller.review_count.value -%}
+        {%- endif -%}
+      </div>
+      {%- if show_min != false and mov != blank and mov > 0 -%}
+        {%- assign mov_cents = mov | times: 100 | round -%}
+        <span class="setu-vendor-hd__min setu-seller__min">
+          <span class="setu-vendor-sr">{{ 'setu_vendor.minimum_order' | t }}</span>
+          <span aria-hidden="true">{{ 'setu_vendor.min' | t }}</span>
+          <span class="money">{{ mov_cents | money }}</span>
+        </span>
+      {%- endif -%}
+    </div>
+    {%- if show_description != false and description != blank -%}
+      <p class="setu-seller__about">{{ description | escape | newline_to_br }}</p>
+    {%- endif -%}
+  </div>
+{%- endif -%}

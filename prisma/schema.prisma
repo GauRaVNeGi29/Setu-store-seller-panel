@@ -155,9 +155,10 @@ model Vendor {
   bannerFileId      String?
 
   // The vendor's public listing on the store (the marketplace_seller metaobject entry)
-  storeEntryHandle String? // handle of the entry the app keeps up to date
-  storeSyncedAt    DateTime? // last successful update
-  storeSyncError   String? // why the last update failed; cleared on success
+  storeEntryHandle  String? // handle of the entry the app keeps up to date
+  storeSyncedAt     DateTime? // last successful update
+  storeSyncError    String? // why the last update failed; cleared on success
+  storeCollectionId String? // the collection of this vendor's products that the app linked to the entry
 
   // No longer shown (kept so nothing already saved is lost)
   phone       String?
