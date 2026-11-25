@@ -4,6 +4,8 @@ export const AUTHOR_MAX = 40;
 export const ANONYMOUS_AUTHOR = "Verified buyer";
 export const HIDE_REASON_MAX = 300;
 export const REVIEWS_PER_PAGE = 20;
+/** Reviews loaded at a time on the store's seller page. */
+export const PUBLIC_PAGE = 10;
 export const STARS = [5, 4, 3, 2, 1] as const;
 
 export type ReviewSummary = {

@@ -9,6 +9,8 @@
   @param {boolean} [show_description] - show the seller's description
   @param {boolean} [show_min] - show the minimum order value
   @param {boolean} [show_rating] - show the rating once the seller has reviews
+  @param {boolean} [show_facts] - show city and country, joining date and number of products
+  @param {boolean} [show_feedback] - show the Feedback button and the block it opens (reviews and the review form)
   @param {string} [heading_tag] - tag for the seller's name: 'h1', 'h2' or 'p'
 {%- enddoc -%}
 {%- liquid
@@ -49,6 +51,13 @@
     assign banner = seller.banner.value
     assign mov = seller.minimum_order_value.value
     assign tag = heading_tag | default: 'h2'
+    assign location = seller.location.value
+    assign joined = seller.joined_on.value
+    assign review_count = seller.review_count.value | default: 0
+    assign root = routes.root_url
+    if root == '/'
+      assign root = ''
+    endif
   -%}
   <div class="setu-vendor setu-seller{% if show_banner != false and banner != blank %} setu-seller--banner{% endif %}" data-setu-vendor="seller">
     {%- if show_banner != false and banner != blank -%}
@@ -66,6 +75,18 @@
       </span>
       <div class="setu-seller__text">
         <{{ tag }} class="setu-seller__name">{{ name | escape }}</{{ tag }}>
+        {%- if show_facts != false -%}
+          <ul class="setu-seller__facts">
+            {%- if location != blank -%}
+              <li>{{ location | escape }}</li>
+            {%- endif -%}
+            {%- if joined != blank -%}
+              {%- assign joined_text = joined | date: '%B %Y' -%}
+              <li>{{ 'setu_vendor.joined' | t: date: joined_text }}</li>
+            {%- endif -%}
+            <li>{{ 'setu_vendor.product_count' | t: count: collection.all_products_count }}</li>
+          </ul>
+        {%- endif -%}
         {%- if tagline != blank -%}
           <p class="setu-seller__tagline">{{ tagline | escape }}</p>
         {%- endif -%}
@@ -81,9 +102,19 @@
           <span class="money">{{ mov_cents | money }}</span>
         </span>
       {%- endif -%}
+      {%- if show_feedback != false -%}
+        <button type="button" class="setu-seller__feedback-btn" data-setu-feedback-open aria-expanded="false" aria-controls="SetuFeedback">
+          {{- 'setu_vendor.feedback' | t -}}
+          {%- if review_count > 0 %} ({{ review_count }}){% endif -%}
+        </button>
+      {%- endif -%}
     </div>
     {%- if show_description != false and description != blank -%}
       <p class="setu-seller__about">{{ description | escape | newline_to_br }}</p>
+    {%- endif -%}
+    {%- if show_feedback != false -%}
+      {%- assign reviews_url = root | append: '/apps/setu-seller/reviews' -%}
+      {%- render 'setu-feedback', seller: seller, name: name, return_url: collection.url, url: reviews_url -%}
     {%- endif -%}
   </div>
 {%- endif -%}

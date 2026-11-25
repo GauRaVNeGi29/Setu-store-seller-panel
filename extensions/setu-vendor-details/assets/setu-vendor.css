@@ -571,3 +571,216 @@
     scroll-behavior: auto;
   }
 }
+
+/* ------------------------------------------------------------------ Seller facts and Feedback */
+.setu-seller__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.875em;
+  color: var(--setu-muted);
+}
+.setu-seller__feedback-btn,
+.setu-feedback__more,
+.setu-feedback__send {
+  height: 40px;
+  padding: 0 18px;
+  border: 1px solid var(--setu-line);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.875em;
+  cursor: pointer;
+}
+.setu-seller__feedback-btn[aria-expanded="true"],
+.setu-feedback__send {
+  border-color: var(--color-foreground, currentColor);
+  background: var(--color-foreground, currentColor);
+  color: var(--color-background, #fff);
+}
+.setu-seller__feedback-btn:focus-visible,
+.setu-feedback__more:focus-visible,
+.setu-feedback__send:focus-visible,
+.setu-feedback__field :focus-visible {
+  outline: 2px solid var(--color-foreground, currentColor);
+  outline-offset: 2px;
+}
+.setu-feedback__send:disabled,
+.setu-feedback__more:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.setu-feedback {
+  margin-top: 20px;
+  padding: 20px;
+  border: 1px solid var(--setu-line);
+  border-radius: 14px;
+}
+.setu-feedback[hidden],
+.setu-feedback [hidden] {
+  display: none;
+}
+.setu-feedback:focus {
+  outline: none;
+}
+.setu-feedback__title {
+  margin: 0 0 12px;
+  font-family: var(--font-heading--family, inherit);
+  font-weight: var(--font-heading--weight, 400);
+  font-size: 1.5em;
+  line-height: 1.2;
+}
+.setu-feedback__status,
+.setu-feedback__note {
+  margin: 0;
+  color: var(--setu-muted);
+}
+.setu-feedback__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin: 0;
+}
+.setu-feedback__list {
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.setu-feedback__item {
+  padding: 14px 0;
+  border-top: 1px solid var(--setu-line);
+}
+.setu-feedback__item:first-child {
+  border-top: 0;
+}
+
+.setu-feedback__text {
+  margin: 8px 0 0;
+  max-width: 75ch;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.setu-feedback__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 16px;
+  margin: 8px 0 0;
+  font-size: 0.8125em;
+  color: var(--setu-muted);
+}
+.setu-feedback__more {
+  margin-top: 4px;
+}
+.setu-feedback__write {
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 10px;
+  background: var(--setu-soft);
+}
+.setu-feedback__form {
+  display: grid;
+  gap: 14px;
+  max-width: 520px;
+}
+.setu-feedback__form-title {
+  margin: 0;
+  font: inherit;
+  font-size: 1.125em;
+  font-weight: 600;
+}
+.setu-feedback__stars {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.setu-feedback__stars legend,
+.setu-feedback__field > span {
+  display: block;
+  margin-bottom: 6px;
+  padding: 0;
+  font-size: 0.875em;
+}
+.setu-feedback__star-row {
+  display: inline-flex;
+}
+.setu-feedback__star {
+  position: relative;
+  padding: 0 3px;
+  font-family: Arial, "Segoe UI Symbol", sans-serif;
+  font-size: 30px;
+  line-height: 1;
+  color: var(--setu-line);
+  cursor: pointer;
+}
+.setu-feedback__star input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+/* Every star up to the chosen (or hovered) one is filled. */
+.setu-feedback__star:has(input:checked),
+.setu-feedback__star:has(~ .setu-feedback__star input:checked),
+.setu-feedback__star-row:hover .setu-feedback__star:hover,
+.setu-feedback__star-row:hover .setu-feedback__star:has(~ .setu-feedback__star:hover) {
+  color: #b7791f;
+}
+.setu-feedback__star-row:hover .setu-feedback__star:hover ~ .setu-feedback__star {
+  color: var(--setu-line);
+}
+.setu-feedback__star:has(input:focus-visible) {
+  outline: 2px solid var(--color-foreground, currentColor);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.setu-feedback__field {
+  display: block;
+}
+.setu-feedback__field select,
+.setu-feedback__field textarea,
+.setu-feedback__field input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--setu-line);
+  border-radius: 8px;
+  background: var(--color-background, #fff);
+  color: inherit;
+  font: inherit;
+}
+.setu-feedback__field small {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.8125em;
+  color: var(--setu-muted);
+}
+.setu-feedback__error {
+  margin: 0;
+  color: #a63a32;
+}
+.setu-feedback__thanks {
+  margin: 12px 0 0;
+  color: #2c6b3f;
+}
+.setu-feedback__send {
+  justify-self: start;
+}
+.setu-seller--banner .setu-feedback {
+  margin-inline: 20px;
+}
+@media screen and (max-width: 749px) {
+  .setu-feedback {
+    padding: 14px;
+  }
+  .setu-seller--banner .setu-feedback {
+    margin-inline: 12px;
+  }
+}

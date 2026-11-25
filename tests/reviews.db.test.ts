@@ -9,9 +9,24 @@ import fixture from "./fixtures/dev-orders-2026-11-20.json";
  *   #1003  both vendors, nothing shipped       #1005  cancelled
  * So a buyer of #1004 can review Urban Store and nobody can review Ashnur yet.
  */
+// What Shopify's app proxy tells the app: which shop, and (inside the request's query) which signed-in customer.
+const proxy = vi.hoisted(() => ({ shop: "seller-panel-dev.myshopify.com" as string | null, orders: {} as Record<string, string[]>, down: false, asked: [] as string[] }));
 vi.mock("../app/shopify.server", () => ({
   unauthenticated: { admin: async () => { throw new Error("not used"); } },
   authenticate: {
+    public: {
+      appProxy: async () => ({
+        session: proxy.shop ? { shop: proxy.shop } : undefined,
+        admin: {
+          graphql: async (_q: string, o: { variables: { query: string } }) => {
+            if (proxy.down) throw new Error("Shopify is unreachable");
+            proxy.asked.push(o.variables.query);
+            const id = o.variables.query.replace("customer_id:", "");
+            return { json: async () => ({ data: { orders: { nodes: (proxy.orders[id] ?? []).map((n) => ({ id: `gid://shopify/Order/${n}` })) } } }) };
+          },
+        },
+      }),
+    },
     admin: async () => ({ session: { shop: "seller-panel-dev.myshopify.com", onlineAccessInfo: { associated_user: { email: "team@setustore.test" } } }, admin: {} }),
   },
 }));
@@ -26,6 +41,7 @@ const { syncListing, resetDefinitionCache } = await import("../app/lib/storefron
 const reviewsPage = await import("../app/routes/portal.reviews");
 const dashboard = await import("../app/routes/portal._index");
 const vendorPage = await import("../app/routes/app.vendor");
+const storefront = await import("../app/routes/proxy.reviews");
 
 const db = new PrismaClient();
 const shop = "seller-panel-dev.myshopify.com";
@@ -289,5 +305,120 @@ describe("team's review controls", () => {
     expect((await run(vendorPage.action, admin("/app/vendor", { name: "Ashnur", intent: "show_review", reviewId: id }))).data).toMatchObject({ ok: false });
     expect((await post({ intent: "show_review", reviewId: id })).data).toMatchObject({ ok: true, message: "Review shown again" });
     expect(await reviewSummary(db, shop, urban)).toMatchObject({ count: 2 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Storefront (through Shopify's app proxy)
+// ---------------------------------------------------------------------------
+
+describe("storefront reviews", () => {
+  // Buyer 501 bought #1004 (Urban Store shipped) and #1001; buyer 777 only #1001 (not shipped).
+  const get = async (query: string) => {
+    const r = (await storefront.loader({ request: new Request(`https://app.test/proxy/reviews?shop=${shop}&${query}`), params: {}, context: {} } as never)) as Response;
+    return { status: r.status, body: await r.json() };
+  };
+  const post = async (query: string, fields: Record<string, string>, method = "POST") => {
+    try {
+      const r = (await storefront.action({ request: new Request(`https://app.test/proxy/reviews?shop=${shop}&${query}`, { method, body: new URLSearchParams(fields) }), params: {}, context: {} } as never)) as Response;
+      return { status: r.status, body: await r.json() };
+    } catch (e) {
+      if (e instanceof Response) return { status: e.status, body: await e.json() };
+      throw e;
+    }
+  };
+  beforeEach(async () => {
+    Object.assign(proxy, { shop, orders: { "501": [String(O.n1004), String(O.n1001)], "777": [String(O.n1001)] }, down: false, asked: [] });
+    await db.vendor.update({ where: { id: urban }, data: { storeEntryHandle: "urban-store" } });
+    await db.vendor.update({ where: { id: ashnur }, data: { storeEntryHandle: "ashnur" } });
+  });
+
+  it("anyone can read a seller's published reviews; nothing identifies the buyer or the order", async () => {
+    await review({ customerId: 9001n, rating: 5, comment: "Lovely." });
+    await review({ customerId: 9002n, rating: 1, comment: "Hidden one" });
+    const bad = await db.vendorReview.findFirstOrThrow({ where: { shop, customerId: 9002n } });
+    await setReviewHidden(db, shop, urban, bad.id, true, "admin:x", "spam");
+
+    const r = await get("seller=urban-store");
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ ok: true, more: false, summary: { count: 1, average: "5.0" }, me: { signedIn: false } });
+    expect(r.body.reviews).toEqual([{ rating: 5, comment: "Lovely.", author: "Meera", date: expect.any(String), edited: false, item: null }]);
+    const raw = JSON.stringify(r.body);
+    for (const secret of ["9001", "customerId", "#1004", "orderId", "Hidden one"]) expect(raw).not.toContain(secret);
+    expect(proxy.asked).toEqual([]); // a signed-out visitor costs no call to Shopify
+
+    expect((await get("seller=ashnur")).body).toMatchObject({ ok: true, reviews: [], summary: { count: 0, average: null } });
+    expect((await get("seller=nobody")).status).toBe(404);
+    expect((await get("")).status).toBe(404);
+  });
+
+  it("tells a signed-in buyer whether they can review, and about which items", async () => {
+    const yes = (await get("seller=urban-store&logged_in_customer_id=501")).body.me;
+    expect(yes).toMatchObject({ signedIn: true, canReview: true, review: null });
+    expect(yes.items.length).toBe(2);
+    expect(yes.items[0]).toEqual({ id: expect.stringMatching(/^\d+$/), title: expect.any(String) });
+    expect(proxy.asked).toEqual(["customer_id:501"]);
+
+    // Same buyer, other seller: #1004's Ashnur items haven't shipped.
+    expect((await get("seller=ashnur&logged_in_customer_id=501")).body.me).toMatchObject({ signedIn: true, canReview: false, items: [] });
+    expect((await get("seller=urban-store&logged_in_customer_id=777")).body.me).toMatchObject({ signedIn: true, canReview: false, items: [] });
+    // A made-up customer number in the browser's own request can't be forged past Shopify's signature; a malformed one is ignored.
+    expect((await get("seller=urban-store&logged_in_customer_id=abc")).body.me).toEqual({ signedIn: false });
+  });
+
+  it("says so when Shopify can't be asked, instead of guessing", async () => {
+    proxy.down = true;
+    expect((await get("seller=urban-store&logged_in_customer_id=501")).body.me).toEqual({ signedIn: true, canReview: false, unknown: true });
+    expect(await post("logged_in_customer_id=501", { seller: "urban-store", rating: "5" })).toMatchObject({ status: 503 });
+    expect(await db.vendorReview.count({ where: { shop } })).toBe(0);
+  });
+
+  it("a buyer leaves a review about an item they bought, then changes it", async () => {
+    const items = (await get("seller=urban-store&logged_in_customer_id=501")).body.me.items as { id: string; title: string }[];
+    const sent = await post("logged_in_customer_id=501", { seller: "urban-store", rating: "4", comment: "  Sturdy and well finished. ", name: " Asha ", item: items[1].id });
+    expect(sent).toEqual({ status: 200, body: { ok: true, replaced: false } });
+    const saved = await db.vendorReview.findFirstOrThrow({ where: { shop, customerId: 501n } });
+    expect([saved.rating, saved.comment, saved.authorName, saved.productTitle, saved.orderName]).toEqual([4, "Sturdy and well finished.", "Asha", items[1].title, "#1004"]);
+
+    const after = (await get("seller=urban-store&logged_in_customer_id=501")).body;
+    expect(after.reviews[0]).toMatchObject({ rating: 4, author: "Asha", item: items[1].title });
+    expect(after.me.review).toEqual({ rating: 4, comment: "Sturdy and well finished.", name: "Asha", item: items[1].id, hidden: false });
+
+    expect(await post("logged_in_customer_id=501", { seller: "urban-store", rating: "5", comment: "", name: "", item: "" })).toEqual({ status: 200, body: { ok: true, replaced: true } });
+    const again = (await get("seller=urban-store")).body;
+    expect(again.summary).toMatchObject({ count: 1, average: "5.0" });
+    expect(again.reviews[0]).toMatchObject({ rating: 5, author: "Verified buyer", item: null, edited: true, comment: null });
+    expect((await vendorReviews(db, shop, urban)).reviews[0]).toMatchObject({ item: null, orderName: "#1004" });
+  });
+
+  it("refuses: signed out, no shipped order, someone else's item, a bad rating, an unknown seller, not POST", async () => {
+    const ok = { seller: "urban-store", rating: "5" };
+    expect(await post("", ok)).toMatchObject({ status: 401 });
+    expect(await post("logged_in_customer_id=777", ok)).toMatchObject({ status: 422, body: { ok: false, error: expect.stringContaining("shipped") } });
+    expect(await post("logged_in_customer_id=501", { seller: "ashnur", rating: "5" })).toMatchObject({ status: 422 });
+    const ashnurItem = (await db.vendorOrderLine.findFirstOrThrow({ where: { shop, vendorName: "Ashnur", productId: { not: null } } })).productId!.toString();
+    expect(await post("logged_in_customer_id=501", { ...ok, item: ashnurItem })).toMatchObject({ status: 422, body: { error: expect.stringContaining("items you bought") } });
+    expect(await post("logged_in_customer_id=501", { ...ok, item: "not-a-number" })).toMatchObject({ status: 422 });
+    for (const rating of ["0", "6", "", "4.5"]) expect(await post("logged_in_customer_id=501", { seller: "urban-store", rating })).toMatchObject({ status: 422 });
+    expect(await post("logged_in_customer_id=501", { seller: "nobody", rating: "5" })).toMatchObject({ status: 404 });
+    expect(await post("logged_in_customer_id=501", ok, "PUT")).toMatchObject({ status: 405 });
+    expect(await db.vendorReview.count({ where: { shop } })).toBe(0);
+  });
+
+  it("only works for the store the app is enabled for", async () => {
+    proxy.shop = "q0zr1f-0m.myshopify.com";
+    await expect(storefront.loader({ request: new Request("https://app.test/proxy/reviews?seller=urban-store"), params: {}, context: {} } as never)).rejects.toMatchObject({ status: 404 });
+    proxy.shop = null; // app not installed
+    expect(await post("logged_in_customer_id=501", { seller: "urban-store", rating: "5" })).toMatchObject({ status: 404 });
+  });
+
+  it("loads more reviews ten at a time, without asking Shopify again", async () => {
+    for (let i = 1; i <= 13; i++) await review({ customerId: BigInt(8000 + i), rating: 5, comment: `R${i}` });
+    const p1 = (await get("seller=urban-store&logged_in_customer_id=501")).body;
+    expect([p1.reviews.length, p1.more, p1.reviews[0].comment]).toEqual([10, true, "R13"]);
+    proxy.asked.length = 0;
+    const p2 = (await get("seller=urban-store&logged_in_customer_id=501&page=2")).body;
+    expect([p2.reviews.length, p2.more, "me" in p2]).toEqual([3, false, false]);
+    expect(proxy.asked).toEqual([]);
   });
 });

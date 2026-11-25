@@ -143,6 +143,7 @@ model Vendor {
   city         String?
   state        String?
   postalCode   String?
+  country      String  @default("India") // shown with the city on the seller's store page
   gstFileId    String? // VendorFile ids (private documents)
   iecFileId    String?
   adCodeFileId String?
@@ -401,6 +402,10 @@ model VendorReview {
 
   rating  Int // 1–5
   comment String? @db.Text
+
+  // The item the buyer says the review is about: one they bought from this vendor. Optional.
+  productId    BigInt?
+  productTitle String?
 
   status       ReviewStatus @default(published)
   hiddenBy     String? // "admin:<team member>"

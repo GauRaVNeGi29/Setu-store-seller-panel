@@ -194,7 +194,7 @@ describe("store listing", () => {
     const { s, graphql, deps } = fakeStore();
     const v = await vendorWith("Urban Store");
     expect((await syncListing(db, graphql, shop, v.id, deps)).ok).toBe(true);
-    expect(s.addedFields).toEqual(["display_name", "short_description", "description", "logo", "banner", "rating", "review_count"]);
+    expect(s.addedFields).toEqual(["display_name", "short_description", "description", "logo", "banner", "location", "joined_on", "rating", "review_count"]);
     expect(SELLER_FIELDS.find((f) => f.key === "logo")?.validations).toEqual([{ name: "file_type_options", value: '["Image"]' }]);
     await syncListing(db, graphql, shop, v.id, deps);
     expect(s.ops.filter((o) => o === "SetuSellerDefinitionUpdate")).toHaveLength(1);
@@ -205,10 +205,11 @@ describe("store listing", () => {
     const { s, graphql, deps } = fakeStore();
     const v = await vendorWith("Pyramid and Precious", { displayName: "Pyramid & Precious", shortDescription: "Handmade gemstone rings", description: "Made in Jaipur.\nSince 1998." });
     const r = await syncListing(db, graphql, shop, v.id, deps);
-    expect(r).toEqual({ ok: true, handle: "pyramid-and-precious", changed: ["display_name", "short_description", "description"] });
+    expect(r).toEqual({ ok: true, handle: "pyramid-and-precious", changed: ["display_name", "short_description", "description", "location", "joined_on"] });
     expect(s.entries.get("pyramid-and-precious")?.fields).toEqual({
       vendor_name: "Pyramid and Precious", minimum_order_value: "9574.0", collection: "gid://shopify/Collection/1", webkul_seller_id: "3027862",
       display_name: "Pyramid & Precious", short_description: "Handmade gemstone rings", description: "Made in Jaipur.\nSince 1998.",
+      location: "India", joined_on: expect.stringMatching(/^\d{4}-\d\d-\d\d$/),
     });
     const saved = await db.vendor.findUniqueOrThrow({ where: { id: v.id } });
     expect([saved.storeEntryHandle, saved.storeSyncError, saved.storeSyncedAt instanceof Date]).toEqual(["pyramid-and-precious", null, true]);
@@ -217,10 +218,22 @@ describe("store listing", () => {
   it("writes the app's minimum, but not when it's the same amount written differently", async () => {
     const { s, graphql, deps } = fakeStore();
     const v = await vendorWith("Urban Store", { minimumOrderValue: "1000" });
-    expect(await syncListing(db, graphql, shop, v.id, deps)).toMatchObject({ changed: ["display_name"] }); // 1000.0 = 1000.00
+    expect(await syncListing(db, graphql, shop, v.id, deps)).toMatchObject({ changed: ["display_name", "location", "joined_on"] }); // 1000.0 = 1000.00
     await db.vendor.update({ where: { id: v.id }, data: { minimumOrderValue: "2500.5" } });
     expect(await syncListing(db, graphql, shop, v.id, deps)).toMatchObject({ changed: ["minimum_order_value"] });
     expect(s.entries.get("urban-store")?.fields.minimum_order_value).toBe("2500.50");
+  });
+
+  it("shows the city and country (never the street), and the day the seller joined, in India's calendar", async () => {
+    const { s, graphql, deps } = fakeStore();
+    const v = await vendorWith("Urban Store", { addressLine: "14 Model Town", city: " Ludhiana ", state: "Punjab", postalCode: "141002", createdAt: new Date("2026-03-31T19:30:00Z") }); // 1 Apr, 01:00 in India
+    await syncListing(db, graphql, shop, v.id, deps);
+    const fields = s.entries.get("urban-store")!.fields;
+    expect([fields.location, fields.joined_on]).toEqual(["Ludhiana, India", "2026-04-01"]);
+    expect(JSON.stringify(fields)).not.toMatch(/Model Town|141002|Punjab/);
+    await db.vendor.update({ where: { id: v.id }, data: { country: "Nepal", city: null } });
+    await syncListing(db, graphql, shop, v.id, deps);
+    expect(s.entries.get("urban-store")!.fields.location).toBe("Nepal");
   });
 
   it("sends nothing when nothing changed", async () => {
@@ -251,7 +264,7 @@ describe("store listing", () => {
     await db.vendor.update({ where: { id: v.id }, data: { logoFileId: logo, bannerFileId: banner, gstFileId: gst } });
 
     const r = await syncListing(db, graphql, shop, v.id, deps);
-    expect(r).toMatchObject({ ok: true, changed: ["display_name", "logo", "banner"] });
+    expect(r).toMatchObject({ ok: true, changed: ["display_name", "logo", "banner", "location", "joined_on"] });
     expect(s.uploads.map((u) => u.fileName)).toEqual(["logo.png", "banner.png"]);
     const entry = { ...s.entries.get("urban-store")!.fields };
     expect(entry.logo).toMatch(/^gid:\/\/shopify\/MediaImage\//);
@@ -285,7 +298,7 @@ describe("store listing", () => {
     const v = await vendorWith("Ashnur", { minimumOrderValue: "5000", shortDescription: "Silver from Jaipur" });
     const r = await syncListing(db, graphql, shop, v.id, deps);
     expect(r).toMatchObject({ ok: true, handle: "ashnur" });
-    expect(s.entries.get("ashnur")?.fields).toEqual({ vendor_name: "Ashnur", display_name: "Ashnur", short_description: "Silver from Jaipur", minimum_order_value: "5000.00", collection: expect.stringMatching(/^gid:\/\/shopify\/Collection\//) });
+    expect(s.entries.get("ashnur")?.fields).toEqual({ vendor_name: "Ashnur", display_name: "Ashnur", short_description: "Silver from Jaipur", minimum_order_value: "5000.00", location: "India", joined_on: expect.any(String), collection: expect.stringMatching(/^gid:\/\/shopify\/Collection\//) });
     expect(s.upserts.at(-1)?.fields.map((f) => f.key)).not.toContain("description"); // empty values aren't sent for a new entry
   });
 

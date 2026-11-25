@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
-import { ANONYMOUS_AUTHOR, AUTHOR_MAX, COMMENT_MAX, HIDE_REASON_MAX, REVIEWS_PER_PAGE, type ReviewSummary } from "./rules";
+import { ANONYMOUS_AUTHOR, AUTHOR_MAX, COMMENT_MAX, HIDE_REASON_MAX, PUBLIC_PAGE, REVIEWS_PER_PAGE, type ReviewSummary } from "./rules";
 
 /**
  * Buyers' ratings of vendors.
@@ -26,6 +26,8 @@ export type ReviewInput = {
   comment?: unknown;
   /** Name to show with the review. Empty shows "Verified buyer". */
   authorName?: unknown;
+  /** The item the review is about: must be one the buyer bought from this vendor. Optional. */
+  productId?: unknown;
 };
 
 const text = (v: unknown) => (typeof v === "string" ? v : "").replace(/\r\n?/g, "\n").trim();
@@ -47,6 +49,25 @@ export async function eligibleOrder(db: PrismaClient, shop: string, vendorName: 
   return line;
 }
 
+/** The items from this vendor that have shipped to the buyer, newest order first: what a review can be "about". */
+export async function eligibleItems(db: PrismaClient, shop: string, vendorName: string, orderIds: bigint[]) {
+  if (!orderIds.length) return [];
+  const lines = await db.vendorOrderLine.findMany({
+    where: { shop, vendorName, orderId: { in: orderIds }, orderCancelled: false, fulfilledQuantity: { gt: 0 }, productId: { not: null } },
+    orderBy: [{ orderCreatedAt: "desc" }, { title: "asc" }],
+    select: { productId: true, title: true },
+  });
+  const seen = new Set<string>();
+  const items: { id: string; title: string }[] = [];
+  for (const l of lines) {
+    const id = l.productId!.toString();
+    if (seen.has(id)) continue;
+    seen.add(id);
+    items.push({ id, title: l.title });
+  }
+  return items;
+}
+
 /** Adds the buyer's review of a vendor, or replaces the one they already left. */
 export async function submitReview(db: PrismaClient, shop: string, input: ReviewInput): Promise<Result<{ id: string; replaced: boolean }>> {
   const vendor = await db.vendor.findFirst({ where: { id: input.vendorId, shop }, select: { id: true, vendorName: true, status: true } });
@@ -60,7 +81,17 @@ export async function submitReview(db: PrismaClient, shop: string, input: Review
   const order = await eligibleOrder(db, shop, vendor.vendorName, input.orderIds);
   if (!order) return { ok: false, error: "You can review a seller once an order from them has shipped." };
 
-  const data = { rating, comment: comment || null, authorName: displayAuthor(input.authorName), orderId: order.orderId, orderName: order.orderName };
+  let item: { id: string; title: string } | null = null;
+  const wanted = typeof input.productId === "string" || typeof input.productId === "bigint" ? String(input.productId).trim() : "";
+  if (wanted) {
+    item = (await eligibleItems(db, shop, vendor.vendorName, input.orderIds)).find((i) => i.id === wanted) ?? null;
+    if (!item) return { ok: false, error: "Choose one of the items you bought from this seller." };
+  }
+
+  const data = {
+    rating, comment: comment || null, authorName: displayAuthor(input.authorName), orderId: order.orderId, orderName: order.orderName,
+    productId: item ? BigInt(item.id) : null, productTitle: item?.title ?? null,
+  };
   const key = { shop_vendorId_customerId: { shop, vendorId: vendor.id, customerId: input.customerId } };
   const before = await db.vendorReview.findUnique({ where: key, select: { id: true } });
   // A review the team has hidden stays hidden when the buyer changes it.
@@ -100,6 +131,8 @@ export type ReviewRow = {
   orderName: string;
   createdAt: string;
   edited: boolean;
+  /** The item the buyer said the review is about, if they chose one. */
+  item: string | null;
   hidden: boolean;
   hiddenReason: string | null;
   hiddenBy: string | null;
@@ -117,7 +150,7 @@ export async function vendorReviews(db: PrismaClient, shop: string, vendorId: st
     db.vendorReview.findMany({
       where, orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       skip: (Math.max(1, page) - 1) * REVIEWS_PER_PAGE, take: REVIEWS_PER_PAGE,
-      select: { id: true, rating: true, comment: true, authorName: true, orderId: true, orderName: true, createdAt: true, editedAt: true, status: true, hiddenReason: true, hiddenBy: true },
+      select: { id: true, rating: true, comment: true, authorName: true, orderId: true, orderName: true, createdAt: true, editedAt: true, status: true, hiddenReason: true, hiddenBy: true, productTitle: true },
     }),
     reviewSummary(db, shop, vendorId),
   ]);
@@ -128,7 +161,7 @@ export async function vendorReviews(db: PrismaClient, shop: string, vendorId: st
       id: r.id, rating: r.rating, comment: r.comment, authorName: r.authorName,
       orderId: r.orderId.toString(), orderName: r.orderName,
       createdAt: r.createdAt.toISOString(),
-      edited: r.editedAt !== null,
+      edited: r.editedAt !== null, item: r.productTitle,
       hidden: r.status === "hidden", hiddenReason: r.hiddenReason, hiddenBy: r.hiddenBy,
     })),
   };
@@ -153,4 +186,49 @@ export async function setReviewHidden(
     db.auditLog.create({ data: { shop, actor, action: hide ? "review.hidden" : "review.shown", target: `vendor:${vendorId}`, detail: { reviewId: review.id, reason: why } } }),
   ]);
   return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Storefront
+// ---------------------------------------------------------------------------
+
+export type PublicReview = { rating: number; comment: string | null; author: string; date: string; edited: boolean; item: string | null };
+
+/** Published reviews for the store's seller page, newest first. Nothing that identifies the buyer or the order. */
+export async function publicReviews(db: PrismaClient, shop: string, vendorId: string, page = 1) {
+  const where = { shop, vendorId, status: "published" as const };
+  const p = Math.max(1, Math.floor(page) || 1);
+  const [rows, summary] = await Promise.all([
+    db.vendorReview.findMany({
+      where, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip: (p - 1) * PUBLIC_PAGE, take: PUBLIC_PAGE + 1,
+      select: { rating: true, comment: true, authorName: true, createdAt: true, editedAt: true, productTitle: true },
+    }),
+    reviewSummary(db, shop, vendorId),
+  ]);
+  return {
+    summary, page: p, more: rows.length > PUBLIC_PAGE,
+    reviews: rows.slice(0, PUBLIC_PAGE).map((r): PublicReview => ({
+      rating: r.rating, comment: r.comment, author: r.authorName, date: r.createdAt.toISOString(), edited: r.editedAt !== null, item: r.productTitle,
+    })),
+  };
+}
+
+/** What a signed-in buyer can do on a seller's page: whether they can review, about which items, and their own review. */
+export async function buyerState(db: PrismaClient, shop: string, vendor: { id: string; vendorName: string; status: string }, customerId: bigint, orderIds: bigint[]) {
+  const [order, items, mine] = await Promise.all([
+    vendor.status === "active" ? eligibleOrder(db, shop, vendor.vendorName, orderIds) : Promise.resolve(null),
+    eligibleItems(db, shop, vendor.vendorName, orderIds),
+    db.vendorReview.findUnique({
+      where: { shop_vendorId_customerId: { shop, vendorId: vendor.id, customerId } },
+      select: { rating: true, comment: true, authorName: true, productId: true, status: true },
+    }),
+  ]);
+  return {
+    canReview: !!order,
+    items: order ? items : [],
+    review: mine && {
+      rating: mine.rating, comment: mine.comment ?? "", name: mine.authorName === ANONYMOUS_AUTHOR ? "" : mine.authorName,
+      item: mine.productId?.toString() ?? "", hidden: mine.status === "hidden",
+    },
+  };
 }
