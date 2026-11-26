@@ -2,19 +2,20 @@
  * Setu Store vendor details: fills the theme's placeholders with the parts the
  * app embed rendered on the server into <template> elements:
  *   .setu-vendor-header, .setu-vendor-description   (product page)
- *   .setu-seller-header                             (a seller's collection page)
+ *   .setu-seller-header, .setu-seller-reviews       (a seller's collection page)
  *   .setu-all-brands                                (the Brands page)
  * A placeholder is filled again if the theme re-renders it (for example when
  * the buyer picks another variant). The seller header and the Brands list add
  * their own placeholder when the theme has none. setu-brands.js,
- * setu-feedback.js and setu-about.js then run the Brands list, the Feedback
- * block and the seller's description box.
+ * setu-reviews.js and setu-about.js then run the Brands list, the reviews
+ * and the seller's description box.
  */
 (function () {
   var PARTS = [
     { spot: "setu-vendor-header", tpl: "setu-vendor-header-tpl" },
     { spot: "setu-vendor-description", tpl: "setu-vendor-description-tpl" },
     { spot: "setu-seller-header", tpl: "setu-seller-header-tpl" },
+    { spot: "setu-seller-reviews", tpl: "setu-seller-reviews-tpl" },
     { spot: "setu-all-brands", tpl: "setu-all-brands-tpl" },
   ];
 
@@ -57,7 +58,7 @@
         filled = true;
       }
     });
-    // setu-brands.js, setu-feedback.js and setu-about.js start what was just put on the page.
+    // setu-brands.js, setu-reviews.js and setu-about.js start what was just put on the page.
     if (filled) document.dispatchEvent(new CustomEvent("setu:filled"));
   }
 

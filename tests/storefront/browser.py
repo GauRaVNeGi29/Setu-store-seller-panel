@@ -13,16 +13,18 @@ threading.Thread(target=_srv.serve_forever, daemon=True).start()
 BASE = f"http://127.0.0.1:{_srv.server_address[1]}"
 
 
+PAT = "**/apps/setu-seller/reviews**"
+
 class FakeApp:
     """Answers /apps/setu-seller/reviews the way app/routes/proxy.reviews.tsx does."""
-    def __init__(self, signed_in=False, can_review=False, fail=False):
-        self.signed_in, self.can_review, self.fail, self.posts, self.mine = signed_in, can_review, fail, [], None
-        self.reviews = [{"rating": 5, "comment": "Lovely finish, well packed.", "author": "Meera", "date": "2026-11-20T10:00:00Z", "edited": False, "item": "Sunburst Pearl Ring"},
+    def __init__(self, signed_in=False, can_review=False, fail=False, empty=False):
+        self.signed_in, self.can_review, self.fail, self.posts, self.mine, self.gets = signed_in, can_review, fail, [], None, []
+        self.reviews = [] if empty else [{"rating": 5, "comment": "Lovely finish, well packed.", "author": "Meera", "date": "2026-11-20T10:00:00Z", "edited": False, "item": "Sunburst Pearl Ring"},
                         {"rating": 4, "comment": "<img src=x onerror=\"document.title='hacked'\"> Good", "author": "Verified buyer", "date": "2026-11-18T10:00:00Z", "edited": True, "item": None}] \
-            + [{"rating": 3, "comment": f"Older {i}", "author": "Buyer", "date": "2026-10-01T10:00:00Z", "edited": False, "item": None} for i in range(10)]
+            + [{"rating": 3 if i else 1, "comment": f"Older {i}", "author": "Buyer", "date": "2026-10-01T10:00:00Z", "edited": False, "item": None} for i in range(10)]
     async def handle(self, route):
         req = route.request
-        q = urllib.parse.parse_qs(urllib.parse.urlparse(req.url).query)
+        q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlparse(req.url).query).items()}
         if self.fail:
             return await route.fulfill(status=500, content_type="application/json", body='{"ok":false}')
         if req.method == "POST":
@@ -31,9 +33,13 @@ class FakeApp:
             self.mine = {"rating": int(f["rating"]), "comment": f.get("comment", ""), "name": f.get("name", ""), "item": f.get("item", ""), "hidden": False}
             self.reviews.insert(0, {"rating": int(f["rating"]), "comment": f.get("comment") or None, "author": f.get("name") or "Verified buyer", "date": "2026-11-25T10:00:00Z", "edited": False, "item": "Molten Gold Studs" if f.get("item") == "22" else None})
             return await route.fulfill(content_type="application/json", body='{"ok":true,"replaced":false}')
-        page = int(q.get("page", ["1"])[0])
-        body = {"ok": True, "summary": {"count": len(self.reviews), "average": "4.5", "breakdown": {}}, "page": page, "more": page * 10 < len(self.reviews), "reviews": self.reviews[(page - 1) * 10: page * 10]}
-        if page == 1:
+        self.gets.append(q)
+        page, sort = int(q.get("page", "1")), q.get("sort", "newest")
+        rows = self.reviews if sort == "newest" else sorted(self.reviews, key=lambda r: r["rating"], reverse=sort == "highest")  # a stable sort: newest first within the same stars
+        n = len(rows)
+        body = {"ok": True, "summary": {"count": n, "average": f"{sum(r['rating'] for r in rows) / n:.1f}" if n else None, "breakdown": {str(k): sum(1 for r in rows if r["rating"] == k) for k in range(1, 6)}},
+                "page": page, "sort": sort, "more": page * 10 < n, "reviews": rows[(page - 1) * 10: page * 10]}
+        if page == 1 and q.get("only") != "list":
             body["me"] = {"signedIn": True, "canReview": self.can_review, "items": [{"id": "11", "title": "Sunburst Pearl Ring"}, {"id": "22", "title": "Molten Gold Studs"}] if self.can_review else [], "review": self.mine} if self.signed_in else {"signedIn": False}
         await route.fulfill(content_type="application/json", body=json.dumps(body))
 
@@ -48,6 +54,7 @@ async def main():
         for label, vp in [("desktop", {"width": 1440, "height": 900}), ("mobile", {"width": 390, "height": 844})]:
             ctx = await b.new_context(viewport=vp, device_scale_factor=1, has_touch=label == "mobile")
             p = await ctx.new_page(); p.on("pageerror", lambda e: errors.append(str(e))); p.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+            app = FakeApp(); await p.route(PAT, app.handle)  # seller pages ask the app for reviews; each reviews check below swaps in its own
             await p.goto(f"{BASE}/brands.html"); await p.wait_for_selector("[data-setu-ready]")
             n = await names(p)
             check(f"[{label}] 10 of 13 sellers on page 1, sorted A–Z", len(n) == 10 and n == sorted(n, key=str.lower) and n[0] == "Ashnur Candles", str(n))
@@ -123,52 +130,84 @@ async def main():
             vbox = await p.evaluate("(() => { const r = (q) => document.querySelector(q).getBoundingClientRect(); const v = r('.setu-seller__values'), t = r('.setu-seller__meta--terms'), n = r('.setu-seller__name'), a = r('.setu-seller__about'); const pills = [...document.querySelectorAll('.setu-seller__values li')].map(e => e.getBoundingClientRect()); return [v.top >= t.bottom - 1, v.bottom <= a.top + 1, Math.abs(v.left - n.left) < 2, pills.every(x => x.right <= innerWidth && x.left >= 0), document.documentElement.scrollWidth <= innerWidth] })()")
             check(f"[{label}] seller page: brand values sit under the minimum line, lined up with the name, above the description, and wrap inside the page", all(vbox), str(vbox))
 
-            # ---- Feedback, as a visitor who isn't signed in
-            app = FakeApp(); await p.route("**/apps/setu-seller/reviews**", app.handle)
-            btn, panel = p.locator("[data-setu-feedback-open]"), p.locator("#SetuFeedback")
-            check(f"[{label}] Feedback is closed until its button is pressed; the button shows the number of reviews", not await panel.is_visible() and (await btn.inner_text()).split() == ["Feedback", "(2)"] and await btn.get_attribute("aria-expanded") == "false")
-            await btn.click(); await p.wait_for_selector(".setu-feedback__item")
-            ft = " ".join((await panel.inner_text()).split())
-            check(f"[{label}] opening it loads the rating and the first 10 reviews with name, date and item", await btn.get_attribute("aria-expanded") == "true" and await p.locator(".setu-feedback__item").count() == 10 and all(x in ft for x in ["Feedback on Urban Store", "4.5 out of 5 from 12 reviews", "Lovely finish, well packed.", "Meera", "20 Nov 2026", "About: Sunburst Pearl Ring", "(edited)"]), ft[:400])
-            check(f"[{label}] review text is shown as text, never run as HTML", await p.locator(".setu-feedback__list img").count() == 0 and await p.title() != "hacked" and "<img src=x" in ft)
-            await p.click("[data-setu-fb-more]"); await p.wait_for_function("document.querySelectorAll('.setu-feedback__item').length === 12")
-            check(f"[{label}] 'See more reviews' adds the rest and then goes away", not await p.is_visible("[data-setu-fb-more]"))
-            link = p.locator(".setu-feedback__write a")
-            check(f"[{label}] signed out: a sign-in link that comes back to this page, and no form", await link.get_attribute("href") == "/account/login?return_to=%2Fcollections%2Furban-store" and await p.locator("[data-setu-fb-form]").count() == 0)
-            check(f"[{label}] no sideways scroll with Feedback open", await p.evaluate("document.documentElement.scrollWidth") <= vp["width"])
-            await p.screenshot(path=f"{OUT}/feedback-{label}.png", full_page=True)
-            await btn.click()
-            check(f"[{label}] pressing Feedback again closes it", not await panel.is_visible() and await btn.get_attribute("aria-expanded") == "false")
+            # ---- Ratings and reviews under the products, as a visitor who isn't signed in
+            await p.wait_for_selector(".setu-reviews__item")
+            sec = p.locator("#SetuReviews")
+            check(f"[{label}] no Feedback button in the header any more; the rating there is a link to the reviews", await p.locator("[data-setu-feedback-open], .setu-seller__feedback-btn").count() == 0 and "Feedback" not in body and await p.get_attribute(".setu-seller__meta--about a", "href") == "#SetuReviews" and "4.5 (2)" in await p.inner_text(".setu-seller__rating-link"))
+            place = await p.evaluate("(() => { const r = (q) => document.querySelector(q).getBoundingClientRect(); const s = r('#SetuReviews'), g = r('.grid'), f = r('footer'), m = document.querySelector('#MainContent'); return [s.top >= g.bottom, s.bottom <= f.top + 1, m.lastElementChild.classList.contains('setu-seller-reviews'), document.querySelectorAll('#SetuReviews').length] })()")
+            check(f"[{label}] 'Ratings and reviews' comes after the product listing, at the end of the page content, once", place == [True, True, True, 1] and (await p.inner_text(".setu-reviews__title")).strip() == "Ratings and reviews", str(place))
+            side = " ".join((await p.inner_text(".setu-reviews__side")).split())
+            bars = await p.eval_on_selector_all(".setu-reviews__bar", "els => els.map(e => [e.querySelector('.setu-reviews__bar-n').textContent, e.querySelector('.setu-reviews__bar-c').textContent, e.querySelector('.setu-reviews__bar-fill').style.width, e.getAttribute('aria-label')])")
+            check(f"[{label}] left side: the big rating, 'Brand rating (12 reviews)', and a bar with a count for each number of stars, 5 down to 1", side.startswith("★ 3.1 out of 5 Brand rating (12 reviews)") and bars == [["5", "1", "8%", "5-star reviews: 1"], ["4", "1", "8%", "4-star reviews: 1"], ["3", "9", "75%", "3-star reviews: 9"], ["2", "0", "0%", "2-star reviews: 0"], ["1", "1", "8%", "1-star reviews: 1"]], side[:80] + str(bars))
+            first = await p.evaluate("(() => { const li = document.querySelector('.setu-reviews__item'); return [li.querySelector('.setu-stars').getAttribute('aria-label'), li.querySelector('.setu-reviews__text').textContent, [...li.querySelectorAll('.setu-reviews__meta span')].map(e => e.textContent)] })()")
+            check(f"[{label}] right side: the first 10 reviews, each with stars, the words, then date, name and item", await p.locator(".setu-reviews__item").count() == 10 and first == ["5 out of 5 stars", "Lovely finish, well packed.", ["Nov 20, 2026", "Meera", "About: Sunburst Pearl Ring"]] and "(edited)" in await p.inner_text(".setu-reviews__list"), str(first))
+            check(f"[{label}] review text is shown as text, never run as HTML", await p.locator(".setu-reviews__list img").count() == 0 and await p.title() != "hacked" and "<img src=x" in await p.inner_text(".setu-reviews__list"))
+            cols = await p.evaluate("(() => { const r = (q) => document.querySelector(q).getBoundingClientRect(); const a = r('.setu-reviews__side'), b = r('.setu-reviews__main'), h = r('.setu-reviews__title'), s = r('[data-setu-rv-sort]'), g = r('.grid'); return { side: [a.left, a.top, a.right, a.bottom], main: [b.left, b.top, b.right], title: h.left, sortRight: s.right, sortTop: s.top, titleBottom: h.bottom, grid: [g.left, g.right] } })()")
+            if label == "desktop":
+                check(f"[{label}] two columns: rating on the left, reviews on the right, starting level; title and sort menu on one row; lined up with the products", abs(cols["side"][1] - cols["main"][1]) < 2 and cols["main"][0] >= cols["side"][2] + 40 and abs(cols["title"] - cols["grid"][0]) < 1 and abs(cols["sortRight"] - cols["grid"][1]) < 1 and cols["sortTop"] < cols["titleBottom"], str(cols))
+            else:
+                check(f"[{label}] on a phone: one column, the rating first and the reviews under it, inside the page", cols["main"][1] >= cols["side"][3] and abs(cols["side"][0] - cols["main"][0]) < 1 and cols["main"][2] <= vp["width"], str(cols))
+            await p.locator("#SetuReviews").scroll_into_view_if_needed(); await p.screenshot(path=f"{OUT}/reviews-{label}.png", full_page=True)
+            await p.click("[data-setu-rv-more]"); await p.wait_for_function("document.querySelectorAll('.setu-reviews__item').length === 12")
+            check(f"[{label}] 'Show more reviews' adds the rest and then goes away", not await p.is_visible("[data-setu-rv-more]"))
+            await p.select_option("[data-setu-rv-sort]", "highest"); await p.wait_for_function("document.querySelectorAll('.setu-reviews__item').length === 10 && !document.querySelector('.setu-reviews__list[aria-busy]')")
+            top = await p.eval_on_selector_all(".setu-reviews__item .setu-stars", "els => els.slice(0, 3).map(e => e.getAttribute('aria-label')[0])")
+            opts = await p.eval_on_selector_all("[data-setu-rv-sort] option", "els => els.map(e => e.textContent.trim())")
+            check(f"[{label}] the sort menu (Newest, Highest rated, Lowest rated) re-orders the list without asking about the buyer again", opts == ["Newest", "Highest rated", "Lowest rated"] and top == ["5", "4", "3"] and app.gets[-1] == {"seller": "urban-store", "sort": "highest", "only": "list"} and await p.is_visible("[data-setu-rv-more]"), str(top) + str(app.gets[-1]))
+            await p.select_option("[data-setu-rv-sort]", "lowest"); await p.wait_for_function("document.querySelector('.setu-reviews__item .setu-stars').getAttribute('aria-label')[0] === '1'")
+            await p.click("[data-setu-rv-more]"); await p.wait_for_function("document.querySelectorAll('.setu-reviews__item').length === 12")
+            check(f"[{label}] 'Show more' keeps the chosen order", app.gets[-1] == {"seller": "urban-store", "sort": "lowest", "page": "2"} and (await p.eval_on_selector_all(".setu-reviews__item .setu-stars", "els => els.map(e => e.getAttribute('aria-label')[0])"))[-2:] == ["4", "5"], str(app.gets[-1]))
+            link = p.locator(".setu-reviews__write a")
+            check(f"[{label}] signed out: a sign-in link that comes back to this page, and no form or 'Write a review' button", await link.get_attribute("href") == "/account/login?return_to=%2Fcollections%2Furban-store" and await p.locator("[data-setu-rv-form], [data-setu-rv-open]").count() == 0)
+            check(f"[{label}] no sideways scroll with the reviews on the page", await p.evaluate("document.documentElement.scrollWidth") <= vp["width"])
+
+            # ---- a long product listing: reviews load only when the buyer gets near them, or follows the rating link
+            await p.unroute(PAT); app = FakeApp(); await p.route(PAT, app.handle)
+            await p.goto(f"{BASE}/seller-urban-tall.html"); await p.wait_for_selector(".setu-seller"); await p.wait_for_timeout(300)
+            far = await p.evaluate("document.querySelector('#SetuReviews').getBoundingClientRect().top > innerHeight + 700")
+            waiting = " ".join((await p.inner_text(".setu-reviews__side")).split())
+            check(f"[{label}] far below the screen, nothing is asked of the app yet; the rating and count the store already knows are there", far and app.gets == [] and waiting.startswith("★ 4.5 out of 5 Brand rating (2 reviews)"), f"{far} {app.gets} {waiting[:60]}")
+            await p.click(".setu-seller__rating-link"); await p.wait_for_selector(".setu-reviews__item")
+            check(f"[{label}] following the rating link goes to the reviews and loads them, once", len(app.gets) == 1 and await p.evaluate("(() => { const t = document.querySelector('#SetuReviews').getBoundingClientRect().top; return t >= 0 && t < innerHeight })()"), str(app.gets))
 
             # ---- signed in, with a shipped order from this seller
-            await p.unroute("**/apps/setu-seller/reviews**"); app = FakeApp(signed_in=True, can_review=True); await p.route("**/apps/setu-seller/reviews**", app.handle)
-            await p.goto(f"{BASE}/seller-urban-buyer.html"); await p.wait_for_selector(".setu-seller")
-            await p.click("[data-setu-feedback-open]"); await p.wait_for_selector("[data-setu-fb-form]:not([hidden])")
-            opts = await p.eval_on_selector_all("[data-setu-fb-item] option", "els => els.map(e => e.textContent.trim())")
-            check(f"[{label}] a buyer sees the form: 5 stars, their items to choose from, their first name filled in", await p.locator("input[name=rating]").count() == 5 and opts == ["The seller in general", "Sunburst Pearl Ring", "Molten Gold Studs"] and await p.input_value("input[name=name]") == "Asha")
-            await p.click("[data-setu-fb-send]")
-            check(f"[{label}] sending without a rating asks for one and sends nothing", (await p.inner_text("[data-setu-fb-error]")).startswith("Choose a rating") and app.posts == [])
+            await p.unroute(PAT); app = FakeApp(signed_in=True, can_review=True); await p.route(PAT, app.handle)
+            await p.goto(f"{BASE}/seller-urban-buyer.html"); await p.wait_for_selector("[data-setu-rv-open]:not([hidden])")
+            opener = p.locator("[data-setu-rv-open]")
+            check(f"[{label}] a buyer sees 'Write a review' under the rating; the form stays shut until asked for", (await opener.inner_text()).strip() == "Write a review" and await opener.get_attribute("aria-expanded") == "false" and not await p.is_visible("[data-setu-rv-form]"))
+            await opener.click()
+            opts = await p.eval_on_selector_all("[data-setu-rv-item] option", "els => els.map(e => e.textContent.trim())")
+            check(f"[{label}] the form: 5 stars, their items to choose from, their first name filled in", await opener.get_attribute("aria-expanded") == "true" and await p.is_visible("[data-setu-rv-form]") and await p.locator("input[name=rating]").count() == 5 and opts == ["The seller in general", "Sunburst Pearl Ring", "Molten Gold Studs"] and await p.input_value("input[name=name]") == "Asha")
+            await p.click("[data-setu-rv-send]")
+            check(f"[{label}] sending without a rating asks for one and sends nothing", (await p.inner_text("[data-setu-rv-error]")).startswith("Choose a rating") and app.posts == [])
             await p.locator("input[name=rating][value='4']").check(force=True)
-            lit = await p.eval_on_selector_all(".setu-feedback__star", "els => els.map(e => getComputedStyle(e).color)")
-            check(f"[{label}] choosing 4 stars fills the first four", len(set(lit[:4])) == 1 and lit[4] != lit[0], str(lit))
-            await p.select_option("[data-setu-fb-item]", "22"); await p.fill("textarea[name=comment]", "Sturdy and well finished.")
-            await p.click("[data-setu-fb-send]"); await p.wait_for_selector("[data-setu-fb-thanks]:not([hidden])")
+            lit = await p.eval_on_selector_all(".setu-reviews__star", "els => els.map(e => getComputedStyle(e).color)")
+            check(f"[{label}] choosing 4 stars fills the first four, and the 'choose a rating' message goes away", len(set(lit[:4])) == 1 and lit[4] != lit[0] and not await p.is_visible("[data-setu-rv-error]"), str(lit))
+            await p.select_option("[data-setu-rv-item]", "22"); await p.fill("textarea[name=comment]", "Sturdy and well finished.")
+            await p.screenshot(path=f"{OUT}/reviews-form-{label}.png", full_page=True)
+            await p.click("[data-setu-rv-send]"); await p.wait_for_selector("[data-setu-rv-thanks]:not([hidden])")
             check(f"[{label}] the review is sent with the seller, rating, item, comment and name", app.posts == [{"rating": "4", "item": "22", "comment": "Sturdy and well finished.", "name": "Asha", "seller": "urban-store"}], str(app.posts))
-            await p.wait_for_function("document.querySelector('.setu-feedback__item .setu-feedback__text')?.textContent === 'Sturdy and well finished.'")
-            first = " ".join((await p.locator(".setu-feedback__item").first.inner_text()).split())
-            check(f"[{label}] after sending: thanks, the new review at the top, and the form becomes 'Change your review' with their answers", "Asha" in first and "About: Molten Gold Studs" in first and await p.inner_text("[data-setu-fb-form-title]") == "Change your review" and await p.input_value("textarea[name=comment]") == "Sturdy and well finished." and await p.locator("input[name=rating][value='4']").is_checked() and await p.input_value("[data-setu-fb-item]") == "22")
-            await p.screenshot(path=f"{OUT}/feedback-form-{label}.png", full_page=True)
+            await p.wait_for_function("document.querySelector('.setu-reviews__item .setu-reviews__text')?.textContent === 'Sturdy and well finished.'")
+            await p.wait_for_function("document.querySelector('[data-setu-rv-open]').textContent.trim() === 'Change your review'")
+            first = " ".join((await p.locator(".setu-reviews__item").first.inner_text()).split())
+            check(f"[{label}] after sending: thanks, the form shuts, the new review is at the top, the count goes up, and the button becomes 'Change your review'", "Asha" in first and "About: Molten Gold Studs" in first and not await p.is_visible("[data-setu-rv-form]") and "Brand rating (13 reviews)" in await p.inner_text(".setu-reviews__side") and await p.evaluate("document.activeElement.hasAttribute('data-setu-rv-open')"))
+            await opener.click()
+            check(f"[{label}] opening it again shows their answers ready to change", await p.inner_text("[data-setu-rv-form-title]") == "Change your review" and await p.input_value("textarea[name=comment]") == "Sturdy and well finished." and await p.locator("input[name=rating][value='4']").is_checked() and await p.input_value("[data-setu-rv-item]") == "22" and not await p.is_visible("[data-setu-rv-thanks]"))
 
-            # ---- signed in, nothing shipped from this seller; then the app not answering
-            await p.unroute("**/apps/setu-seller/reviews**"); app = FakeApp(signed_in=True, can_review=False); await p.route("**/apps/setu-seller/reviews**", app.handle)
-            await p.goto(f"{BASE}/seller-urban-buyer.html"); await p.wait_for_selector(".setu-seller")
-            await p.click("[data-setu-feedback-open]"); await p.wait_for_selector("[data-setu-fb-cannot]:not([hidden])")
-            check(f"[{label}] a buyer with nothing shipped from this seller is told why they can't review yet, with no form", "once an order from them has shipped" in await p.inner_text("[data-setu-fb-cannot]") and not await p.is_visible("[data-setu-fb-form]"))
-            await p.unroute("**/apps/setu-seller/reviews**"); app = FakeApp(fail=True); await p.route("**/apps/setu-seller/reviews**", app.handle)
-            await p.goto(f"{BASE}/seller-urban.html"); await p.wait_for_selector(".setu-seller")
-            await p.click("[data-setu-feedback-open]"); await p.wait_for_function("document.querySelector('[data-setu-fb-status]').textContent.includes('try again')")
-            check(f"[{label}] if the app doesn't answer, the block says so and the rest of the page is fine", await p.is_visible(".setu-seller__name") and not await p.is_visible("[data-setu-fb-write]"))
-            await p.unroute("**/apps/setu-seller/reviews**")
+            # ---- signed in, nothing shipped from this seller; a seller with no reviews; then the app not answering
+            await p.unroute(PAT); app = FakeApp(signed_in=True, can_review=False); await p.route(PAT, app.handle)
+            await p.goto(f"{BASE}/seller-urban-buyer.html"); await p.wait_for_selector("[data-setu-rv-cannot]:not([hidden])")
+            check(f"[{label}] a buyer with nothing shipped from this seller is told why they can't review yet, with no button or form", "once an order from them has shipped" in await p.inner_text("[data-setu-rv-cannot]") and not await p.is_visible("[data-setu-rv-form]") and not await p.is_visible("[data-setu-rv-open]"))
+            await p.unroute(PAT); app = FakeApp(empty=True); await p.route(PAT, app.handle)
+            await p.goto(f"{BASE}/seller-empty.html"); await p.wait_for_function("document.querySelector('[data-setu-rv-status]').textContent.includes('will show here')")
+            none = " ".join((await sec.inner_text()).split())
+            check(f"[{label}] a seller with no reviews: 'No reviews yet', a line saying whose reviews will show, and no rating, bars or sort menu", none.startswith("Ratings and reviews No reviews yet.") and not await p.is_visible("[data-setu-rv-score]") and not await p.is_visible("[data-setu-rv-bars]") and not await p.is_visible("[data-setu-rv-sort]") and await p.locator(".setu-reviews__item").count() == 0, none[:120])
+            await p.unroute(PAT); app = FakeApp(fail=True); await p.route(PAT, app.handle)
+            await p.goto(f"{BASE}/seller-urban.html"); await p.wait_for_function("document.querySelector('[data-setu-rv-status]').textContent.includes('try again')")
+            check(f"[{label}] if the app doesn't answer, the section says so, keeps the rating the store knows, and the rest of the page is fine", await p.is_visible(".setu-seller__name") and "Brand rating (2 reviews)" in await p.inner_text(".setu-reviews__side") and not await p.is_visible("[data-setu-rv-sort]"))
+            await p.goto(f"{BASE}/seller-urban-noreviews.html"); await p.wait_for_selector(".setu-seller")
+            check(f"[{label}] with reviews switched off in the theme: no section, and the rating in the header is plain text", await p.locator("#SetuReviews").count() == 0 and await p.locator(".setu-seller__rating-link").count() == 0 and "4.5 (2)" in await p.inner_text(".setu-seller__meta--about"))
+            await p.unroute(PAT); app = FakeApp(); await p.route(PAT, app.handle)
 
             await p.goto(f"{BASE}/seller-ashnur.html"); await p.wait_for_selector(".setu-seller")
             check(f"[{label}] seller without a banner or description still gets a header", await p.locator(".setu-seller__banner").count() == 0 and "Ashnur Candles" in await p.inner_text(".setu-seller"))

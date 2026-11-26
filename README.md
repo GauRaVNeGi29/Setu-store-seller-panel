@@ -118,12 +118,17 @@ order value. The cart already reads the minimum from there. Business documents n
   With no placeholder on that page, the list adds itself at the end of the page content.
 - **Seller facts** under the name: city and country (`location`), joining date (`joined_on`, the day the seller was added to
   the panel) and the number of products. The street address is never copied to the store.
-- **Feedback** on the seller page: a button opens a block with the seller's reviews and, for a signed-in buyer whose order
-  from the seller has shipped, a form (1–5 stars, optional item, comment, name to show). It talks to the app through the
+- **Ratings and reviews** under the seller's product listing (added to the end of the page content, or wherever the theme
+  has `<div class="setu-seller-reviews"></div>`; also the *Seller reviews* block). Left: the rating, "Brand rating (N
+  reviews)" and a bar with a count for each number of stars. Right: the reviews (stars, words, date • name • item), a sort
+  menu (Newest, Highest rated, Lowest rated; `&sort=`) and "Show more reviews". The rating in the seller header links to
+  it. Reviews are fetched when the buyer scrolls near them (`setu-reviews.js`). A signed-in buyer whose order
+  from the seller has shipped gets "Write a review" and a form (1–5 stars, optional item, comment, name to show;
+  `setu-review-form.js`). It talks to the app through the
   store's **app proxy** (needs the `write_app_proxy` scope): `/apps/setu-seller/reviews` → `app/routes/proxy.reviews.tsx`. Shopify signs the request and says
   which customer is signed in; the buyer's orders are read from Shopify (`orders(query: "customer_id:…")`) and matched
   against the seller's shipped order lines, so nothing about who bought what is taken from the browser. The app has to be
-  running for Feedback to load; the rest of the page doesn't depend on it.
+  running for the reviews to load; until then the section shows the rating and count the store already holds.
 - **Under the seller's name, two lines:** rating · city and country · joining date · number of products, then
   `Rs. 1,000.00 minimum · Arrives Dec 10 – Dec 17`.
 - **Arrival dates:** today + the seller's *processing time* + the store's *delivery time*, shown only as dates (the day

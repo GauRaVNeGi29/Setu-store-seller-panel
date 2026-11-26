@@ -15,3 +15,8 @@ export type ReviewSummary = {
   /** How many published reviews gave each number of stars. */
   breakdown: Record<1 | 2 | 3 | 4 | 5, number>;
 };
+
+/** The orders a buyer can read a seller's reviews in on the store. */
+export const REVIEW_SORTS = ["newest", "highest", "lowest"] as const;
+export type ReviewSort = (typeof REVIEW_SORTS)[number];
+export const reviewSort = (v: unknown): ReviewSort => (REVIEW_SORTS as readonly unknown[]).includes(v) ? (v as ReviewSort) : "newest";

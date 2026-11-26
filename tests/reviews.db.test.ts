@@ -352,6 +352,28 @@ describe("storefront reviews", () => {
     expect((await get("")).status).toBe(404);
   });
 
+  it("sorts by newest, highest or lowest rating, counts each star, and skips the buyer part when only the list is asked for", async () => {
+    const stars = [4, 5, 2, 5, 1];
+    for (let i = 0; i < stars.length; i++) {
+      await review({ customerId: BigInt(9100 + i), rating: stars[i], comment: `r${i}` });
+      await db.vendorReview.updateMany({ where: { shop, customerId: BigInt(9100 + i) }, data: { createdAt: new Date(Date.UTC(2026, 10, 1 + i)) } });
+    }
+    const order = async (q: string) => (await get(`seller=urban-store${q}`)).body.reviews.map((r: { comment: string }) => r.comment);
+    expect(await order("")).toEqual(["r4", "r3", "r2", "r1", "r0"]);
+    expect(await order("&sort=newest")).toEqual(["r4", "r3", "r2", "r1", "r0"]);
+    expect(await order("&sort=highest")).toEqual(["r3", "r1", "r0", "r2", "r4"]); // same stars: newest first
+    expect(await order("&sort=lowest")).toEqual(["r4", "r2", "r0", "r3", "r1"]);
+    expect(await order("&sort=%27%3B%20drop")).toEqual(["r4", "r3", "r2", "r1", "r0"]); // anything else means newest
+
+    const first = (await get("seller=urban-store&sort=highest&logged_in_customer_id=501")).body;
+    expect(first).toMatchObject({ sort: "highest", summary: { count: 5, average: "3.4", breakdown: { 1: 1, 2: 1, 3: 0, 4: 1, 5: 2 } }, me: { signedIn: true } });
+    proxy.asked.length = 0;
+    const again = (await get("seller=urban-store&sort=lowest&only=list&logged_in_customer_id=501")).body;
+    expect(again.me).toBeUndefined();
+    expect(again.summary.count).toBe(5);
+    expect(proxy.asked).toEqual([]); // re-sorting doesn't ask Shopify for the buyer's orders again
+  });
+
   it("tells a signed-in buyer whether they can review, and about which items", async () => {
     const yes = (await get("seller=urban-store&logged_in_customer_id=501")).body.me;
     expect(yes).toMatchObject({ signedIn: true, canReview: true, review: null });

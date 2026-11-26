@@ -5,11 +5,14 @@ import { isAllowedShop } from "../lib/guard.server";
 import type { AdminGraphql } from "../lib/orders/sync.server";
 import { gidToId } from "../lib/orders/map";
 import { buyerState, publicReviews, submitReview } from "../lib/reviews/reviews.server";
+import { reviewSort } from "../lib/reviews/rules";
 import { updateStoreListing } from "../lib/storefront/update.server";
 
 /**
  * Seller reviews for the storefront, reached through Shopify's app proxy:
- *   GET  /apps/setu-seller/reviews?seller=<entry handle>&page=1   published reviews, rating, and what this buyer can do
+ *   GET  /apps/setu-seller/reviews?seller=<entry handle>&page=1&sort=newest|highest|lowest
+ *                                                                 published reviews, rating, and what this buyer can do
+ *                                                                 (&only=list leaves the buyer part out: paging and re-sorting)
  *   POST /apps/setu-seller/reviews                                the signed-in buyer's review (seller, rating, comment, name, item)
  *
  * authenticate.public.appProxy checks Shopify's signature, so the shop and
@@ -55,8 +58,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const c = await context(request);
   const vendor = await findVendor(c.shop, c.url.searchParams.get("seller") ?? "");
   if (!vendor) return json({ ok: false, error: "This seller has no reviews page yet." }, 404);
-  const list = await publicReviews(db, c.shop, vendor.id, Number(c.url.searchParams.get("page")) || 1);
-  if (list.page > 1) return json({ ok: true, ...list }); // "show more" needs only the list
+  const list = await publicReviews(db, c.shop, vendor.id, Number(c.url.searchParams.get("page")) || 1, reviewSort(c.url.searchParams.get("sort")));
+  // "Show more" and re-sorting need only the list: no need to ask Shopify for the buyer's orders again.
+  if (list.page > 1 || c.url.searchParams.get("only") === "list") return json({ ok: true, ...list });
 
   let me: { signedIn: boolean; canReview?: boolean; unknown?: boolean; items?: { id: string; title: string }[]; review?: unknown } = { signedIn: false };
   if (c.customerId !== null) {

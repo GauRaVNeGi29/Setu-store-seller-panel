@@ -1,0 +1,22 @@
+{%- render 'setu-seller-page', part: 'reviews', collection: collection -%}
+{%- if customer -%}
+  <script src="{{ 'setu-review-form.js' | asset_url }}" defer></script>
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "Seller reviews",
+  "target": "section",
+  "stylesheet": "setu-vendor.css",
+  "javascript": "setu-reviews.js",
+  "enabled_on": {
+    "templates": ["collection"]
+  },
+  "settings": [
+    {
+      "type": "paragraph",
+      "content": "Ratings and reviews for the seller whose collection is being viewed. Place it under the product grid. Shows nothing on collections that aren't a seller's."
+    }
+  ]
+}
+{% endschema %}

@@ -8,6 +8,7 @@
     <div class="setu-vendor-description"></div>  the vendor's description
   A seller's collection page
     <div class="setu-seller-header"></div>       banner, logo, name, minimum, rating, description
+    <div class="setu-seller-reviews"></div>      ratings and reviews (added under the page content by itself when the theme has none)
     (added at the top of the page by itself when the setting is on)
   The Brands page
     <div class="setu-all-brands"></div>          every seller with a row of products
@@ -30,7 +31,13 @@
     endif
   -%}
   {%- if block.settings.seller_feedback -%}
-    <script src="{{ 'setu-feedback.js' | asset_url }}" defer></script>
+    <script src="{{ 'setu-reviews.js' | asset_url }}" defer></script>
+    {%- if customer -%}
+      <script src="{{ 'setu-review-form.js' | asset_url }}" defer></script>
+    {%- endif -%}
+    <template id="setu-seller-reviews-tpl" data-auto="bottom">
+      {%- render 'setu-seller-page', part: 'reviews', collection: collection -%}
+    </template>
   {%- endif -%}
   {%- if block.settings.seller_description -%}
     <script src="{{ 'setu-about.js' | asset_url }}" defer></script>
@@ -226,8 +233,8 @@
     {
       "type": "checkbox",
       "id": "seller_feedback",
-      "label": "Show Feedback (reviews and the review form)",
-      "info": "Buyers who have received an order from the seller can rate them. Needs the app to be running.",
+      "label": "Show ratings and reviews under the seller's products",
+      "info": "Added at the end of the page, or wherever the theme has <div class=\"setu-seller-reviews\"></div>. Buyers who have received an order from the seller can rate them. Needs the app to be running.",
       "default": true
     }
   ]

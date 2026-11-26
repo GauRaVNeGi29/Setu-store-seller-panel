@@ -1,0 +1,119 @@
+{%- doc -%}
+  "Ratings and reviews" for a seller, shown under the seller's product listing:
+  the rating and how many reviews gave each number of stars on one side, the
+  reviews on the other, with a sort menu. A signed-in buyer whose order from
+  the seller has shipped can write or change their review. setu-reviews.js
+  loads the reviews from the Setu Store Seller Panel app through the store's
+  app proxy; setu-review-form.js runs the form.
+
+  @param {metaobject} seller - the seller's marketplace_seller entry
+  @param {string} url - app proxy address of the reviews
+  @param {string} [return_url] - where to come back to after signing in
+{%- enddoc -%}
+{%- liquid
+  assign review_count = seller.review_count.value | default: 0
+  assign rating = seller.rating.value
+-%}
+<section id="SetuReviews" class="setu-vendor setu-reviews" data-setu-vendor="reviews" data-setu-reviews data-seller="{{ seller.system.handle | escape }}" data-url="{{ url | escape }}" aria-labelledby="SetuReviewsTitle">
+  <div class="setu-reviews__head">
+    <h2 class="setu-reviews__title" id="SetuReviewsTitle">{{ 'setu_vendor.rv_title' | t }}</h2>
+    <label class="setu-reviews__sort" data-setu-rv-sort-box hidden>
+      <span class="setu-vendor-sr">{{ 'setu_vendor.rv_sort' | t }}</span>
+      <select data-setu-rv-sort>
+        <option value="newest">{{ 'setu_vendor.rv_newest' | t }}</option>
+        <option value="highest">{{ 'setu_vendor.rv_highest' | t }}</option>
+        <option value="lowest">{{ 'setu_vendor.rv_lowest' | t }}</option>
+      </select>
+    </label>
+  </div>
+  <div class="setu-reviews__cols">
+    <div class="setu-reviews__side">
+      <p class="setu-reviews__score" data-setu-rv-score{% if review_count == 0 or rating == blank %} hidden{% endif %}>
+        <span class="setu-reviews__score-star" aria-hidden="true">★</span>
+        <span data-setu-rv-average>{{ rating }}</span>
+        <span class="setu-vendor-sr">{{ 'setu_vendor.rv_out_of_5' | t }}</span>
+      </p>
+      <p class="setu-reviews__count" data-setu-rv-count>
+        {%- if review_count == 1 -%}
+          {{- 'setu_vendor.rv_count_one' | t -}}
+        {%- elsif review_count > 1 -%}
+          {{- 'setu_vendor.rv_count' | t: count: review_count -}}
+        {%- else -%}
+          {{- 'setu_vendor.fb_none' | t -}}
+        {%- endif -%}
+      </p>
+      <ol class="setu-reviews__bars" data-setu-rv-bars hidden></ol>
+
+      <div class="setu-reviews__write" data-setu-rv-write>
+        {%- if customer -%}
+          <button type="button" class="setu-reviews__open" data-setu-rv-open aria-expanded="false" aria-controls="SetuReviewForm" hidden>{{ 'setu_vendor.rv_write' | t }}</button>
+          <form id="SetuReviewForm" class="setu-reviews__form" data-setu-rv-form hidden novalidate>
+            <h3 class="setu-reviews__form-title" data-setu-rv-form-title>{{ 'setu_vendor.fb_rate' | t }}</h3>
+            <p class="setu-reviews__note" data-setu-rv-hidden-note hidden>{{ 'setu_vendor.fb_hidden' | t }}</p>
+            <fieldset class="setu-reviews__stars">
+              <legend>{{ 'setu_vendor.fb_rating' | t }}</legend>
+              <span class="setu-reviews__star-row">
+                {%- for i in (1..5) -%}
+                  <label class="setu-reviews__star">
+                    <input type="radio" name="rating" value="{{ i }}" required>
+                    <span aria-hidden="true">★</span>
+                    <span class="setu-vendor-sr">{{ 'setu_vendor.fb_stars' | t: count: i }}</span>
+                  </label>
+                {%- endfor -%}
+              </span>
+            </fieldset>
+            <label class="setu-reviews__field" data-setu-rv-item-field hidden>
+              <span>{{ 'setu_vendor.fb_item' | t }}</span>
+              <select name="item" data-setu-rv-item>
+                <option value="">{{ 'setu_vendor.fb_item_none' | t }}</option>
+              </select>
+            </label>
+            <label class="setu-reviews__field">
+              <span>{{ 'setu_vendor.fb_comment' | t }}</span>
+              <textarea name="comment" rows="4" maxlength="1000"></textarea>
+            </label>
+            <label class="setu-reviews__field">
+              <span>{{ 'setu_vendor.fb_name' | t }}</span>
+              <input type="text" name="name" maxlength="40" autocomplete="given-name" value="{{ customer.first_name | escape }}">
+              <small>{{ 'setu_vendor.fb_name_hint' | t }}</small>
+            </label>
+            <p class="setu-reviews__error" data-setu-rv-error role="alert" hidden></p>
+            <button type="submit" class="setu-reviews__send" data-setu-rv-send>{{ 'setu_vendor.fb_send' | t }}</button>
+          </form>
+          <p class="setu-reviews__note" data-setu-rv-cannot hidden>{{ 'setu_vendor.fb_cannot' | t }}</p>
+          <p class="setu-reviews__note" data-setu-rv-unknown hidden>{{ 'setu_vendor.fb_unknown' | t }}</p>
+          <p class="setu-reviews__thanks" data-setu-rv-thanks role="status" hidden>{{ 'setu_vendor.fb_thanks' | t }}</p>
+        {%- else -%}
+          <p class="setu-reviews__note">
+            <a href="{{ routes.account_login_url }}{% if return_url != blank %}?return_to={{ return_url | url_encode }}{% endif %}">{{ 'setu_vendor.fb_sign_in' | t }}</a>
+            {{ 'setu_vendor.fb_sign_in_why' | t }}
+          </p>
+        {%- endif -%}
+      </div>
+    </div>
+
+    <div class="setu-reviews__main">
+      <p class="setu-reviews__status" data-setu-rv-status role="status">{{ 'setu_vendor.fb_loading' | t }}</p>
+      <ul class="setu-reviews__list" data-setu-rv-list></ul>
+      <button type="button" class="setu-reviews__more" data-setu-rv-more hidden>{{ 'setu_vendor.fb_more' | t }}</button>
+    </div>
+  </div>
+
+  <script type="application/json" data-setu-rv-text>
+    {
+      "none": {{ 'setu_vendor.fb_none' | t | json }},
+      "empty": {{ 'setu_vendor.rv_empty' | t | json }},
+      "failed": {{ 'setu_vendor.fb_failed' | t | json }},
+      "countOne": {{ 'setu_vendor.rv_count_one' | t | json }},
+      "count": {{ 'setu_vendor.rv_count' | t: count: '%c' | json }},
+      "bar": {{ 'setu_vendor.rv_bar' | t: stars: '%s', count: '%c' | json }},
+      "about": {{ 'setu_vendor.fb_about' | t: item: '%i' | json }},
+      "edited": {{ 'setu_vendor.fb_edited' | t | json }},
+      "stars": {{ 'setu_vendor.fb_out_of' | t: rating: '%r' | json }},
+      "write": {{ 'setu_vendor.rv_write' | t | json }},
+      "change": {{ 'setu_vendor.fb_change' | t | json }},
+      "choose": {{ 'setu_vendor.fb_choose' | t | json }},
+      "sending": {{ 'setu_vendor.fb_sending' | t | json }}
+    }
+  </script>
+</section>

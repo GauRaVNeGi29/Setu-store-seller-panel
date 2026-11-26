@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
-import { ANONYMOUS_AUTHOR, AUTHOR_MAX, COMMENT_MAX, HIDE_REASON_MAX, PUBLIC_PAGE, REVIEWS_PER_PAGE, type ReviewSummary } from "./rules";
+import { ANONYMOUS_AUTHOR, AUTHOR_MAX, COMMENT_MAX, HIDE_REASON_MAX, PUBLIC_PAGE, REVIEWS_PER_PAGE, type ReviewSort, type ReviewSummary } from "./rules";
 
 /**
  * Buyers' ratings of vendors.
@@ -195,18 +195,21 @@ export async function setReviewHidden(
 export type PublicReview = { rating: number; comment: string | null; author: string; date: string; edited: boolean; item: string | null };
 
 /** Published reviews for the store's seller page, newest first. Nothing that identifies the buyer or the order. */
-export async function publicReviews(db: PrismaClient, shop: string, vendorId: string, page = 1) {
+export async function publicReviews(db: PrismaClient, shop: string, vendorId: string, page = 1, sort: ReviewSort = "newest") {
   const where = { shop, vendorId, status: "published" as const };
   const p = Math.max(1, Math.floor(page) || 1);
+  // Within the same number of stars, newest first; id settles ties so pages never repeat a review.
+  const newest = [{ createdAt: "desc" as const }, { id: "desc" as const }];
+  const orderBy = sort === "highest" ? [{ rating: "desc" as const }, ...newest] : sort === "lowest" ? [{ rating: "asc" as const }, ...newest] : newest;
   const [rows, summary] = await Promise.all([
     db.vendorReview.findMany({
-      where, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip: (p - 1) * PUBLIC_PAGE, take: PUBLIC_PAGE + 1,
+      where, orderBy, skip: (p - 1) * PUBLIC_PAGE, take: PUBLIC_PAGE + 1,
       select: { rating: true, comment: true, authorName: true, createdAt: true, editedAt: true, productTitle: true },
     }),
     reviewSummary(db, shop, vendorId),
   ]);
   return {
-    summary, page: p, more: rows.length > PUBLIC_PAGE,
+    summary, page: p, sort, more: rows.length > PUBLIC_PAGE,
     reviews: rows.slice(0, PUBLIC_PAGE).map((r): PublicReview => ({
       rating: r.rating, comment: r.comment, author: r.authorName, date: r.createdAt.toISOString(), edited: r.editedAt !== null, item: r.productTitle,
     })),

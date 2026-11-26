@@ -1,8 +1,11 @@
 {%- doc -%}
-  The seller header for a seller's product listing page: banner, logo, name,
-  minimum order, rating, arrival dates, brand values and description. Renders nothing
-  unless the collection is a seller's own collection (the one linked on the
-  seller's marketplace_seller entry).
+  A seller's product listing page. part 'header' (the default): banner, logo,
+  name, minimum order, rating, arrival dates, brand values and description.
+  part 'reviews': "Ratings and reviews", meant for under the product listing.
+  Renders nothing unless the collection is a seller's own collection (the one
+  linked on the seller's marketplace_seller entry).
+
+  @param {string} [part] - 'header' (default) or 'reviews'
 
   @param {collection} collection - the collection being viewed
   @param {boolean} [show_banner] - show the seller's banner image
@@ -12,7 +15,7 @@
   @param {boolean} [show_facts] - show city and country, joining date and number of products
   @param {boolean} [show_times] - show when an order placed today arrives (the seller's processing time plus the store's delivery time)
   @param {boolean} [show_values] - show the seller's brand values (up to five short tags) under the name
-  @param {boolean} [show_feedback] - show the Feedback button and the block it opens (reviews and the review form)
+  @param {boolean} [show_feedback] - header: make the rating a link to the reviews under the products
   @param {string} [heading_tag] - tag for the seller's name: 'h1', 'h2' or 'p'
 {%- enddoc -%}
 {%- liquid
@@ -44,7 +47,16 @@
     endif
   endif
 -%}
-{%- if seller != nil -%}
+{%- liquid
+  assign root = routes.root_url
+  if root == '/'
+    assign root = ''
+  endif
+-%}
+{%- if seller != nil and part == 'reviews' -%}
+  {%- assign reviews_url = root | append: '/apps/setu-seller/reviews' -%}
+  {%- render 'setu-reviews', seller: seller, return_url: collection.url, url: reviews_url -%}
+{%- elsif seller != nil -%}
   {%- liquid
     assign name = seller.display_name.value | default: seller.vendor_name.value
     assign values = seller.brand_values.value
@@ -70,10 +82,6 @@
     if d_min != blank and d_max != blank and d_max > 0 and d_max >= d_min
       assign has_delivery = true
     endif
-    assign root = routes.root_url
-    if root == '/'
-      assign root = ''
-    endif
   -%}
   <div class="setu-vendor setu-seller{% if show_banner != false and banner != blank %} setu-seller--banner{% endif %}" data-setu-vendor="seller">
     {%- if show_banner != false and banner != blank -%}
@@ -93,7 +101,13 @@
         <{{ tag }} class="setu-seller__name">{{ name | escape }}</{{ tag }}>
         {%- capture about_items -%}
           {%- if show_rating != false and review_count > 0 -%}
-            <li>{%- render 'setu-stars', rating: seller.rating.value, count: seller.review_count.value -%}</li>
+            <li>
+              {%- if show_feedback != false -%}
+                <a class="setu-seller__rating-link" href="#SetuReviews">{%- render 'setu-stars', rating: seller.rating.value, count: seller.review_count.value -%}</a>
+              {%- else -%}
+                {%- render 'setu-stars', rating: seller.rating.value, count: seller.review_count.value -%}
+              {%- endif -%}
+            </li>
           {%- endif -%}
           {%- if show_facts != false -%}
             {%- if location != blank -%}
@@ -143,12 +157,6 @@
           </ul>
         {%- endif -%}
       </div>
-      {%- if show_feedback != false -%}
-        <button type="button" class="setu-seller__feedback-btn" data-setu-feedback-open aria-expanded="false" aria-controls="SetuFeedback">
-          {{- 'setu_vendor.feedback' | t -}}
-          {%- if review_count > 0 %} ({{ review_count }}){% endif -%}
-        </button>
-      {%- endif -%}
     </div>
     {%- if show_description != false and description != blank -%}
       <div class="setu-seller__about" data-setu-about>
@@ -157,10 +165,6 @@
           {{- 'setu_vendor.show_more' | t -}}
         </button>
       </div>
-    {%- endif -%}
-    {%- if show_feedback != false -%}
-      {%- assign reviews_url = root | append: '/apps/setu-seller/reviews' -%}
-      {%- render 'setu-feedback', seller: seller, name: name, return_url: collection.url, url: reviews_url -%}
     {%- endif -%}
   </div>
 {%- endif -%}
