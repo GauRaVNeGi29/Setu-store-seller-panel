@@ -136,14 +136,11 @@
           <ul class="setu-seller__meta setu-seller__meta--terms">{{ terms_items }}</ul>
         {%- endif -%}
         {%- if show_values != false and values != blank and values.size > 0 -%}
-          <div class="setu-seller__values">
-            <span class="setu-seller__values-label" id="SetuBrandValues">{{ 'setu_vendor.brand_values' | t }}</span>
-            <ul class="setu-seller__values-list" aria-labelledby="SetuBrandValues">
-              {%- for value in values limit: 5 -%}
-                <li>{{ value | escape }}</li>
-              {%- endfor -%}
-            </ul>
-          </div>
+          <ul class="setu-seller__values" aria-label="{{ 'setu_vendor.brand_values' | t | escape }}">
+            {%- for value in values limit: 5 -%}
+              <li>{{ value | escape }}</li>
+            {%- endfor -%}
+          </ul>
         {%- endif -%}
       </div>
       {%- if show_feedback != false -%}

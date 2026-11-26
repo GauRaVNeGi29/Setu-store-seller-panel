@@ -135,7 +135,7 @@ order value. The cart already reads the minimum from there. Business documents n
   `app.metafields.setu_seller.…`. No date is shown unless both are known.
 - **Brand values** on the seller page: up to five short tags the seller picks under My brand → Brand details ("Women
   owned", "Eco-friendly"; one-tap choices or their own words; the team can edit them on the vendor's page). Shown as
-  pills labelled *Brand values* under the minimum line, where the short description used to be. Kept in
+  pills (no visible label; the list is named "Brand values" for screen readers) under the minimum line, where the short description used to be. Kept in
   `Vendor.brandValues`, copied to the seller's entry as `brand_values` (a list). Rules: `app/lib/vendors/values.ts`.
   The short description is no longer shown on the seller page; product pages still use it.
 - **Description box** on the seller page: the seller's full description in a bordered light grey box (`#f7f7f7`) across the header's width.
