@@ -568,6 +568,10 @@ export default function Vendor() {
                     </label>
                   ))}
                 </div>
+                <label style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 12 }}>
+                  <span>Brand values (up to 5 short tags, separated by commas; shown on the seller&apos;s page)</span>
+                  <input name="brandValues" defaultValue={profile.brandValues.join(", ")} placeholder="e.g. Women owned, Eco-friendly" style={input} />
+                </label>
                 <fieldset style={{ border: 0, padding: 0, margin: "12px 0 0" }}>
                   <legend style={{ padding: 0, marginBottom: 4 }}>Processing time (days the vendor needs to make or ready an order)</legend>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

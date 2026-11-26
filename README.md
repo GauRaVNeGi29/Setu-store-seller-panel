@@ -133,6 +133,11 @@ order value. The cart already reads the minimum from there. Business documents n
   the app's **Dashboard** and kept as two app-data metafields on the app's installation
   (`setu_seller.delivery_days_min` / `_max`), which only this app can change and which Liquid reads as
   `app.metafields.setu_seller.…`. No date is shown unless both are known.
+- **Brand values** on the seller page: up to five short tags the seller picks under My brand → Brand details ("Women
+  owned", "Eco-friendly"; one-tap choices or their own words; the team can edit them on the vendor's page). Shown as
+  pills labelled *Brand values* under the minimum line, where the short description used to be. Kept in
+  `Vendor.brandValues`, copied to the seller's entry as `brand_values` (a list). Rules: `app/lib/vendors/values.ts`.
+  The short description is no longer shown on the seller page; product pages still use it.
 - **Description box** on the seller page: the seller's full description in a bordered light grey box (`#f7f7f7`) across the header's width.
   It opens two lines tall with *See more*, and *See less* folds it again (`setu-about.js`). A description that fits in two
   lines gets no button; without the script the whole description shows.

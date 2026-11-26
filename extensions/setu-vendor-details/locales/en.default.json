@@ -28,6 +28,7 @@
     "minimum_after": "minimum",
     "arrives_between": "Arrives {{ from }} – {{ to }}",
     "arrives_by": "Arrives by {{ date }}",
+    "brand_values": "Brand values",
     "show_more": "See more",
     "show_less": "See less",
     "feedback": "Feedback",

@@ -11,15 +11,16 @@ import { updateStoreListing } from "../lib/storefront/update.server";
 import { FILE_RULES } from "../lib/files/rules";
 import { BUSINESS_FIELDS, BUSINESS_FILES, FIELD_LABEL, SHORT_DESCRIPTION_MAX, fileInputName, type BusinessField } from "../lib/vendors/fields";
 import { inr } from "../lib/portal/format";
-import { DayRangeField, Field, FileField, FileLink, type PortalFile } from "../lib/portal/ui";
+import { BrandValuesField, DayRangeField, Field, FileField, FileLink, type PortalFile } from "../lib/portal/ui";
 import { daysText, rangeOf } from "../lib/vendors/shipping";
+import { BRAND_VALUES_MAX } from "../lib/vendors/values";
 
 /**
  * My brand, in three parts:
  *  - Seller details: the signed-in person's own name and phone (saved at once); email fixed; password by email link.
  *  - Business details: company name, address, GST / IEC / AD code documents. Sent to the Setu Store team;
  *    the current details stay until they approve.
- *  - Brand details: description, short description, minimum order value, processing time, logo, banner. Saved at once.
+ *  - Brand details: short description, brand values, description, minimum order value, processing time, logo, banner. Saved at once.
  * Business and brand need an owner or "view and edit" staff. Editing opens with ?edit=…, so it works without JavaScript.
  */
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -279,7 +280,9 @@ export default function Profile() {
           <Form method="post" encType="multipart/form-data" className="vp-panel-body vp-form">
             <input type="hidden" name="intent" value="brand" />
             <Field name="shortDescription" label="Short description" maxLength={SHORT_DESCRIPTION_MAX} defaultValue={val("shortDescription", d.shortDescription)}
-              error={err.shortDescription} hint={`One line about your brand, shown under your name on your product pages. Up to ${SHORT_DESCRIPTION_MAX} characters.`} />
+              error={err.shortDescription} hint={`One line about your brand, shown beside your name on your product pages. Up to ${SHORT_DESCRIPTION_MAX} characters.`} />
+            <BrandValuesField name="brandValues" label="Brand values" value={val("brandValues", d.brandValues.join(", "))} error={err.brandValues}
+              hint={`Up to ${BRAND_VALUES_MAX} short tags that say what your brand stands for, shown under your name on your seller page. Tap to choose, or type your own, separated by commas.`} />
             <Field name="description" label="Description" multiline defaultValue={val("description", d.description)} error={err.description}
               hint="A few sentences: what you make, how, and what makes it yours. Shown under Brand details on your product pages." />
             <Field name="minimumOrderValue" label="Minimum order value (₹)" required inputMode="decimal" defaultValue={val("minimumOrderValue", d.minimumOrderValue)}
@@ -308,6 +311,7 @@ export default function Profile() {
             )}
             <Rows rows={[
               ["Short description", d.shortDescription],
+              ["Brand values", d.brandValues.length > 0 && <ul className="vp-taglist">{d.brandValues.map((v) => <li key={v}>{v}</li>)}</ul>],
               ["Description", d.description],
               ["Minimum order value", d.minimumOrderValue ? inr(d.minimumOrderValue) : null, true],
               ["Processing time", processing ? daysText(processing) : null, true],

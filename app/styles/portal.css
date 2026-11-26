@@ -321,6 +321,18 @@ textarea.vp-input { min-height: 96px; resize: vertical; }
 .vp-range legend { font-weight: 600; font-size: 14px; margin-bottom: 6px; padding: 0; }
 .vp-range-row { display: flex; align-items: center; gap: 10px; color: var(--ink-2, inherit); font-size: 14px; }
 .vp-range-row .vp-input { width: 88px; flex: none; }
+/* Brand values: one-tap choices under the text box, and the chosen tags where they are shown. */
+.vp-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.vp-tag {
+  min-height: 32px; padding: 4px 12px; border: 1px solid var(--line-2); border-radius: 999px;
+  background: var(--paper); color: var(--ink); font: inherit; font-size: 13px; cursor: pointer;
+}
+.vp-tag:hover:not(:disabled) { background: var(--stone); }
+.vp-tag[aria-pressed="true"] { background: var(--green); border-color: var(--green); color: #fff; }
+.vp-tag:disabled { opacity: 0.45; cursor: default; }
+.vp-tag:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.vp-taglist { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.vp-taglist li { padding: 2px 10px; border: 1px solid var(--line-2); border-radius: 999px; font-size: 13px; }
 .vp-field-error { font-size: 13px; color: var(--madder); margin: 6px 0 0; font-weight: 600; }
 .vp-pw { position: relative; }
 .vp-pw .vp-input { padding-right: 76px; }

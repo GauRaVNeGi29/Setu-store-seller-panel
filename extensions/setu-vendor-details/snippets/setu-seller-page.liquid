@@ -1,6 +1,6 @@
 {%- doc -%}
   The seller header for a seller's product listing page: banner, logo, name,
-  short description, minimum order, rating, arrival dates and description. Renders nothing
+  minimum order, rating, arrival dates, brand values and description. Renders nothing
   unless the collection is a seller's own collection (the one linked on the
   seller's marketplace_seller entry).
 
@@ -11,6 +11,7 @@
   @param {boolean} [show_rating] - show the rating once the seller has reviews
   @param {boolean} [show_facts] - show city and country, joining date and number of products
   @param {boolean} [show_times] - show when an order placed today arrives (the seller's processing time plus the store's delivery time)
+  @param {boolean} [show_values] - show the seller's brand values (up to five short tags) under the name
   @param {boolean} [show_feedback] - show the Feedback button and the block it opens (reviews and the review form)
   @param {string} [heading_tag] - tag for the seller's name: 'h1', 'h2' or 'p'
 {%- enddoc -%}
@@ -46,7 +47,7 @@
 {%- if seller != nil -%}
   {%- liquid
     assign name = seller.display_name.value | default: seller.vendor_name.value
-    assign tagline = seller.short_description.value
+    assign values = seller.brand_values.value
     assign description = seller.description.value
     assign logo = seller.logo.value
     assign banner = seller.banner.value
@@ -134,8 +135,15 @@
         {%- if terms_items != blank -%}
           <ul class="setu-seller__meta setu-seller__meta--terms">{{ terms_items }}</ul>
         {%- endif -%}
-        {%- if tagline != blank -%}
-          <p class="setu-seller__tagline">{{ tagline | escape }}</p>
+        {%- if show_values != false and values != blank and values.size > 0 -%}
+          <div class="setu-seller__values">
+            <span class="setu-seller__values-label" id="SetuBrandValues">{{ 'setu_vendor.brand_values' | t }}</span>
+            <ul class="setu-seller__values-list" aria-labelledby="SetuBrandValues">
+              {%- for value in values limit: 5 -%}
+                <li>{{ value | escape }}</li>
+              {%- endfor -%}
+            </ul>
+          </div>
         {%- endif -%}
       </div>
       {%- if show_feedback != false -%}

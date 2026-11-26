@@ -156,6 +156,7 @@ model Vendor {
   bannerFileId      String?
   processingDaysMin Int? // days the vendor needs to make or ready an order, as a range; both set or both empty
   processingDaysMax Int?
+  brandValues       String[] @default([]) // up to five short tags ("Women owned"), shown on the seller's page
 
   // The vendor's public listing on the store (the marketplace_seller metaobject entry)
   storeEntryHandle  String? // handle of the entry the app keeps up to date

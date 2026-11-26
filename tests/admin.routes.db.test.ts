@@ -234,7 +234,7 @@ describe("All vendors and the vendor page", () => {
     const base = {
       intent: "details", displayName: "Urban Store", companyName: "Urban Store Pvt Ltd", addressLine: "5 Mall Road", city: "Ludhiana", state: "Punjab",
       postalCode: "141001", minimumOrderValue: "1500", shortDescription: "Sunglasses and watches", description: "New text",
-      processingDaysMin: "10", processingDaysMax: "15",
+      processingDaysMin: "10", processingDaysMax: "15", brandValues: "Women owned, Handmade",
     };
     expect(await vendorPost(base)).toMatchObject({ ok: true });
     expect(await vendorPost({ ...base, postalCode: "12" })).toMatchObject({ ok: false });
@@ -244,6 +244,8 @@ describe("All vendors and the vendor page", () => {
     expect(await vendorPost({ ...base, processingDaysMax: "" })).toMatchObject({ ok: false });
     const v = await db.vendor.findFirstOrThrow({ where: { shop, vendorName: "Urban Store" } });
     expect([v.processingDaysMin, v.processingDaysMax]).toEqual([10, 15]);
+    expect(await vendorPost({ ...base, brandValues: "1, 2, 3, 4, 5, 6" })).toMatchObject({ ok: false });
+    expect(v.brandValues).toEqual(["Women owned", "Handmade"]);
     expect([v.displayName, v.description, v.shortDescription, v.minimumOrderValue?.toFixed(2)]).toEqual(["Urban Store", "New text", "Sunglasses and watches", "1500.00"]);
     expect((await call(vendorPage.loader, "/app/vendor?name=Urban%20Store")).profile.missing).toEqual([]);
   });

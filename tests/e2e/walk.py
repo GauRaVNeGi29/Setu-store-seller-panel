@@ -324,9 +324,10 @@ async def main():
 
         # brand details with logo + banner
         await owner.click("a[href$='?edit=brand']"); await owner.wait_for_url("**edit=brand"); await owner.wait_for_selector("#minimumOrderValue")
-        await owner.fill("#processingDaysMin", "10"); await owner.fill("#processingDaysMax", "15")
+        # A picture of the form with a processing time and two brand values, then back to empty.
+        await owner.fill("#processingDaysMin", "10"); await owner.fill("#processingDaysMax", "15"); await owner.fill("#brandValues", "Women owned, Organic")
         await owner.locator("#s3").scroll_into_view_if_needed(); await owner.locator("section[aria-labelledby=s3]").screenshot(path=f"{SHOTS}/brand-form.png")
-        await owner.fill("#processingDaysMin", ""); await owner.fill("#processingDaysMax", "")
+        await owner.fill("#processingDaysMin", ""); await owner.fill("#processingDaysMax", ""); await owner.fill("#brandValues", "")
         await owner.fill("#minimumOrderValue", ""); await owner.click("button:has-text('Save brand details')")
         check("Brand details", "minimum order value is required (stopped before sending)", await owner.evaluate("!document.querySelector('#minimumOrderValue').checkValidity()"))
         await owner.fill("#minimumOrderValue", "1500"); await owner.click("button:has-text('Save brand details')")
@@ -340,6 +341,20 @@ async def main():
         await owner.fill("#minimumOrderValue", "1500")
         await submit(owner, "button:has-text('Save brand details')")
         check("Brand details", "an SVG logo is refused with a clear message", "PNG, JPG or WebP" in await text(owner))
+        pressed = "els => els.filter(e => e.getAttribute('aria-pressed') === 'true').map(e => e.textContent.trim())"
+        await owner.click(".vp-tag:has-text('Women owned')"); await owner.click(".vp-tag:has-text('Organic')")
+        check("Brand values", "tapping a choice adds it to the box and marks it chosen",
+              await owner.input_value("#brandValues") == "Women owned, Organic" and await owner.eval_on_selector_all(".vp-tag", pressed) == ["Women owned", "Organic"] and "2 of 5 chosen" in await text(owner))
+        await owner.click(".vp-tag:has-text('Organic')")
+        check("Brand values", "tapping it again takes it out", await owner.input_value("#brandValues") == "Women owned")
+        await owner.fill("#brandValues", "Women owned, handmade, One, Two, Three")
+        check("Brand values", "typed tags count too; at five, the other choices can't be added",
+              "5 of 5 chosen" in await text(owner) and await owner.eval_on_selector_all(".vp-tag", pressed) == ["Women owned", "Handmade"] and await owner.locator(".vp-tag:has-text('Organic')").is_disabled() and await owner.locator(".vp-tag:has-text('Handmade')").is_enabled())
+        await owner.fill("#brandValues", "Women owned, handmade, One, Two, Three, Four")
+        await submit(owner, "button:has-text('Save brand details')")
+        check("Brand values", "a sixth tag is refused with a clear message, and what was typed is kept",
+              "Choose up to 5. You have 6." in await text(owner) and await owner.input_value("#brandValues") == "Women owned, handmade, One, Two, Three, Four" and await owner.locator("#brandValues").get_attribute("aria-invalid") == "true")
+        await owner.fill("#brandValues", "Women owned, Hand-finished, Made in India")
         await owner.fill("#shortDescription", "Sunglasses and watches since 2017.")
         await owner.fill("#description", "Urban Store designs sunglasses, watches and statement jewellery in Ludhiana.")
         await owner.fill("#minimumOrderValue", "1500")
@@ -349,6 +364,8 @@ async def main():
         body = await text(owner)
         check("Brand details", "description, short description and minimum save at once", "Brand details saved." in body and "1,500" in body and "since 2017" in body)
         check("Brand details", "processing time shows as a range of days", "Processing time" in body and "10–15 days" in body)
+        tags = await owner.eval_on_selector_all(".vp-taglist li", "els => els.map(e => e.textContent.trim())")
+        check("Brand values", "saved with the rest and shown as tags, in the seller's order", tags == ["Women owned", "Hand-finished", "Made in India"], str(tags))
         imgs = await owner.eval_on_selector_all(".vp-brandpreview img", "els => els.map(e => e.naturalWidth)")
         check("Brand details", "logo and banner upload and show as a preview", len(imgs) == 2 and all(w > 0 for w in imgs), str(imgs))
         await owner.screenshot(path=f"{SHOTS}/brand.png", full_page=True)

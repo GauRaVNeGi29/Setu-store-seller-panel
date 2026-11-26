@@ -194,7 +194,7 @@ describe("store listing", () => {
     const { s, graphql, deps } = fakeStore();
     const v = await vendorWith("Urban Store");
     expect((await syncListing(db, graphql, shop, v.id, deps)).ok).toBe(true);
-    expect(s.addedFields).toEqual(["display_name", "short_description", "description", "logo", "banner", "location", "joined_on", "rating", "review_count", "processing_days_min", "processing_days_max"]);
+    expect(s.addedFields).toEqual(["display_name", "short_description", "description", "logo", "banner", "location", "joined_on", "rating", "review_count", "processing_days_min", "processing_days_max", "brand_values"]);
     expect(SELLER_FIELDS.find((f) => f.key === "logo")?.validations).toEqual([{ name: "file_type_options", value: '["Image"]' }]);
     await syncListing(db, graphql, shop, v.id, deps);
     expect(s.ops.filter((o) => o === "SetuSellerDefinitionUpdate")).toHaveLength(1);
@@ -236,6 +236,21 @@ describe("store listing", () => {
     expect(await syncListing(db, graphql, shop, v.id, deps)).toMatchObject({ changed: ["processing_days_min", "processing_days_max"] });
     expect(Object.keys(s.entries.get("urban-store")?.fields ?? {})).not.toEqual(expect.arrayContaining(["processing_days_min"]));
     expect(s.entries.get("urban-store")?.fields.processing_days_max).toBeUndefined();
+  });
+
+  it("writes the seller's brand values as a list, leaves them alone when unchanged, and clears them when removed", async () => {
+    const { s, graphql, deps } = fakeStore();
+    const v = await vendorWith("Urban Store", { brandValues: ["Women owned", "Eco-friendly"] });
+    expect((await syncListing(db, graphql, shop, v.id, deps) as { changed: string[] }).changed).toContain("brand_values");
+    expect(JSON.parse(s.entries.get("urban-store")!.fields.brand_values)).toEqual(["Women owned", "Eco-friendly"]);
+    // Shopify may hand the list back spaced differently: still the same list, so nothing is written.
+    s.entries.get("urban-store")!.fields.brand_values = '["Women owned", "Eco-friendly"]';
+    expect(await syncListing(db, graphql, shop, v.id, deps)).toMatchObject({ changed: [] });
+    await db.vendor.update({ where: { id: v.id }, data: { brandValues: ["Eco-friendly", "Women owned"] } });
+    expect(await syncListing(db, graphql, shop, v.id, deps)).toMatchObject({ changed: ["brand_values"] }); // order is the seller's choice
+    await db.vendor.update({ where: { id: v.id }, data: { brandValues: [] } });
+    expect(await syncListing(db, graphql, shop, v.id, deps)).toMatchObject({ changed: ["brand_values"] });
+    expect(s.entries.get("urban-store")?.fields.brand_values).toBeUndefined();
   });
 
   it("shows the city and country (never the street), and the day the seller joined, in India's calendar", async () => {

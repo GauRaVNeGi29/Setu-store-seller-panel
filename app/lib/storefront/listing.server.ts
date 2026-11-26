@@ -56,6 +56,7 @@ export const SELLER_FIELDS: FieldDef[] = [
   { key: "review_count", name: "Number of reviews", type: "number_integer", description: "Set by the Setu Store Seller Panel app." },
   { key: "processing_days_min", name: "Processing time: from (days)", type: "number_integer", description: "Days the seller needs to make or ready an order. Set by the Setu Store Seller Panel app." },
   { key: "processing_days_max", name: "Processing time: to (days)", type: "number_integer", description: "Set by the Setu Store Seller Panel app." },
+  { key: "brand_values", name: "Brand values", type: "list.single_line_text_field", description: "Up to five short tags the seller picked. Set by the Setu Store Seller Panel app." },
 ];
 
 export type ListingDeps = {
@@ -410,6 +411,15 @@ export async function ensureStoreImage(
 const istDate = (d: Date) => new Date(d.getTime() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
 const sameDecimal = (a: string, b: string) => a !== "" && b !== "" && Number(a) === Number(b);
 const NUMBERS = new Set(["minimum_order_value", "rating", "review_count", "processing_days_min", "processing_days_max"]);
+/** List fields hold a JSON array; the store may space it differently, so compare what it says. */
+const LISTS = new Set(["brand_values"]);
+const sameList = (a: string, b: string) => {
+  try {
+    return a !== "" && b !== "" && JSON.stringify(JSON.parse(a)) === JSON.stringify(JSON.parse(b));
+  } catch {
+    return false;
+  }
+};
 
 /**
  * Brings the vendor's store entry in line with the app. Writes only fields
@@ -451,6 +461,7 @@ export async function syncListing(
     const processing = rangeOf(vendor.processingDaysMin, vendor.processingDaysMax);
     want.processing_days_min = processing ? String(processing.min) : "";
     want.processing_days_max = processing ? String(processing.max) : "";
+    want.brand_values = vendor.brandValues.length ? JSON.stringify(vendor.brandValues) : "";
 
     const { metaobjectByHandle: entry } = await call<{ metaobjectByHandle: { id: string; fields: { key: string; value: string | null }[] } | null }>(
       graphql, ENTRY_QUERY, { handle: { type: SELLER_TYPE, handle } },
@@ -470,6 +481,7 @@ export async function syncListing(
     const changed = Object.keys(want).filter((k) => {
       const now = have[k] ?? "";
       if (NUMBERS.has(k) && sameDecimal(now, want[k])) return false;
+      if (LISTS.has(k) && sameList(now, want[k])) return false;
       return now !== want[k] && !(entry === null && want[k] === "");
     });
 

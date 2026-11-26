@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import styles from "../../styles/portal.css?url";
 import { BridgeArch, IconCheck } from "./icons";
+import { BRAND_VALUES_MAX, SUGGESTED_BRAND_VALUES, splitBrandValues, toggleBrandValue } from "../vendors/values";
 
 /** Fonts and stylesheet for every portal page: Setu Store's storefront faces. */
 export const portalLinks = () => [
@@ -126,6 +127,42 @@ export function DayRangeField({ name, label, min, max, error, hint, required }: 
       {hint && <p id={`${name}-hint`} className="vp-hint">{hint}</p>}
       {error && <p id={`${name}-error`} className="vp-field-error">{error}</p>}
     </fieldset>
+  );
+}
+
+/**
+ * Brand values: one text box (tags separated by commas) with one-tap choices
+ * under it. Tapping a choice adds it to the box or takes it out. Works as a
+ * plain text box before the page's script has loaded.
+ */
+export function BrandValuesField({ name, label, value, error, hint }: { name: string; label: string; value: string; error?: string; hint?: string }) {
+  const [typed, setTyped] = useState(value);
+  const chosen = splitBrandValues(typed).map((v) => v.toLowerCase());
+  const full = new Set(chosen).size >= BRAND_VALUES_MAX;
+  const describedBy = [error ? `${name}-error` : null, `${name}-hint`].filter(Boolean).join(" ");
+  return (
+    <div className="vp-field">
+      <label htmlFor={name}>
+        {label}
+        <span className="vp-optional"> (optional)</span>
+      </label>
+      <input id={name} name={name} className="vp-input" type="text" value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off"
+        placeholder="e.g. Women owned, Eco-friendly" aria-invalid={error ? true : undefined} aria-describedby={describedBy} />
+      <div className="vp-tags" role="group" aria-label={`Common ${label.toLowerCase()}: tap to add or remove`}>
+        {SUGGESTED_BRAND_VALUES.map((tag) => {
+          const on = chosen.includes(tag.toLowerCase());
+          return (
+            <button key={tag} type="button" className="vp-tag" aria-pressed={on} disabled={!on && full} onClick={() => setTyped(toggleBrandValue(typed, tag))}>
+              {tag}
+            </button>
+          );
+        })}
+      </div>
+      <p id={`${name}-hint`} className="vp-hint">
+        {hint} <span aria-live="polite">{new Set(chosen).size} of {BRAND_VALUES_MAX} chosen.</span>
+      </p>
+      {error && <p id={`${name}-error`} className="vp-field-error">{error}</p>}
+    </div>
   );
 }
 

@@ -221,9 +221,33 @@
   line-height: 1.1;
   overflow-wrap: anywhere;
 }
-.setu-seller__tagline {
-  margin: 0;
+/* Brand values: a small label, then the seller's tags as outlined pills. */
+.setu-seller__values {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 8px;
+}
+.setu-seller__values-label {
+  font-size: 0.875em;
   color: var(--setu-muted);
+}
+.setu-seller__values-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.setu-seller__values-list li {
+  padding: 2px 10px;
+  border: 1px solid var(--setu-line);
+  border-radius: 999px;
+  font-size: 0.8125em;
+  line-height: 1.5;
+  white-space: nowrap;
 }
 /* The seller's description: a light grey box across the header's full width. With
    the script it opens two lines tall ("is-short") and a button unfolds it. */

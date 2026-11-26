@@ -122,6 +122,26 @@ describe("brand details", () => {
     expect((await updateBrand(db, o, { minimumOrderValue: "100", shortDescription: "x".repeat(161) })).ok).toBe(false);
   });
 
+  it("brand values: up to five short plain tags, repeats dropped, saved in the seller's order", async () => {
+    const { me: o } = await owner("Ashnur", "o@ashnur.example");
+    const brand = (brandValues?: string) => updateBrand(db, o, { minimumOrderValue: "100", processingDaysMin: "10", processingDaysMax: "15", ...(brandValues === undefined ? {} : { brandValues }) });
+    const saved = async () => (await db.vendor.findUniqueOrThrow({ where: { id: o.vendor.id } })).brandValues;
+    expect(await brand(" Women owned,  eco-friendly ,, #Handmade\nSmall   batch; women OWNED ")).toEqual({ ok: true });
+    expect(await saved()).toEqual(["Women owned", "eco-friendly", "Handmade", "Small batch"]);
+    expect((await vendorDetails(db, shop, o.vendor.id))?.brandValues).toEqual(["Women owned", "eco-friendly", "Handmade", "Small batch"]);
+    for (const bad of ["a, b, c, d, e, f", "x".repeat(31), "Visit https://example.com", "<b>Organic</b>", "Organic 🌱", "call @me", "-dash first"]) {
+      const r = await brand(bad);
+      expect([r.ok, !r.ok && !!r.errors?.brandValues], bad).toEqual([false, true]);
+    }
+    expect(await saved()).toHaveLength(4); // a refused save changes nothing
+    expect(await brand("One, Two, Three, Four, 100% natural")).toEqual({ ok: true });
+    expect(await saved()).toEqual(["One, Two, Three, Four, 100% natural"].join("").split(", "));
+    expect(await brand("Mère & fille, हस्तनिर्मित, Bee's wax")).toEqual({ ok: true }); // other alphabets and plain joining marks are fine
+    expect(await brand("")).toEqual({ ok: true }); // optional: empty clears them
+    expect(await saved()).toEqual([]);
+    await expect(db.vendor.update({ where: { id: o.vendor.id }, data: { brandValues: ["1", "2", "3", "4", "5", "6"] } })).rejects.toThrow(); // the database holds the limit too
+  });
+
   it("processing time is required: two whole numbers of days, the second not smaller than the first", async () => {
     const { me: o } = await owner("Ashnur", "o@ashnur.example");
     const brand = (min?: string, max?: string) => updateBrand(db, o, { minimumOrderValue: "100", ...(min === undefined ? {} : { processingDaysMin: min }), ...(max === undefined ? {} : { processingDaysMax: max }) });
