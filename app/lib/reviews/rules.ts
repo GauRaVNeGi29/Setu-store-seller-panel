@@ -4,6 +4,7 @@ export const AUTHOR_MAX = 40;
 export const ANONYMOUS_AUTHOR = "Verified buyer";
 /** How many of the products they bought a buyer can attach to one review. */
 export const REVIEW_ITEMS_MAX = 20;
+export const LOCATION_MAX = 80;
 export const HIDE_REASON_MAX = 300;
 export const REVIEWS_PER_PAGE = 20;
 /** Reviews loaded at a time on the store's seller page. */

@@ -4,7 +4,7 @@ import db from "../db.server";
 import { isAllowedShop } from "../lib/guard.server";
 import type { AdminGraphql } from "../lib/orders/sync.server";
 import { gidToId } from "../lib/orders/map";
-import { buyerState, publicReviews, submitReview } from "../lib/reviews/reviews.server";
+import { buyerState, eligibleOrder, publicReviews, submitReview } from "../lib/reviews/reviews.server";
 import { reviewSort } from "../lib/reviews/rules";
 import { productCards } from "../lib/reviews/products.server";
 import { updateStoreListing } from "../lib/storefront/update.server";
@@ -27,6 +27,32 @@ const BUYER_ORDERS = `#graphql
   query SetuBuyerOrders($query: String!) {
     orders(first: 100, query: $query, sortKey: CREATED_AT, reverse: true) { nodes { id } }
   }`;
+
+const ORDER_PLACE = `#graphql
+  query SetuOrderPlace($id: ID!) {
+    order(id: $id) { displayAddress { city country } }
+  }`;
+
+/**
+ * City and country from the address on one of the buyer's orders, shown
+ * beside their name on the review. Best effort: reading addresses needs the
+ * app's "protected customer data" access for addresses, so if Shopify says no
+ * (or is slow) the review is saved without a place.
+ */
+async function orderPlace(graphql: AdminGraphql | null, orderId: bigint): Promise<{ city: string | null; country: string | null } | null> {
+  if (!graphql) return null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const slow = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("slow")), 3000); });
+    const answer = (async () => (await (await graphql(ORDER_PLACE, { variables: { id: `gid://shopify/Order/${orderId}` } })).json()) as { data?: { order: { displayAddress: { city: string | null; country: string | null } | null } | null } })();
+    const body = await Promise.race([answer, slow]);
+    return body.data?.order?.displayAddress ?? null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
@@ -105,7 +131,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const orders = await buyerOrders(c.graphql, c.customerId);
   if (orders === null) return json({ ok: false, error: "We couldn't check your orders just now. Please try again in a minute." }, 503);
 
-  const r = await submitReview(db, c.shop, { vendorId: vendor.id, customerId: c.customerId, orderIds: orders, rating: f("rating"), comment: f("comment"), authorName: f("name"), productIds: form.getAll("item").filter((v): v is string => typeof v === "string") });
+  // Where the buyer is, from the order that lets them review (the same one submitReview picks).
+  const order = await eligibleOrder(db, c.shop, vendor.vendorName, orders);
+  const buyerLocation = order ? await orderPlace(c.graphql, order.orderId) : null;
+  const r = await submitReview(db, c.shop, { vendorId: vendor.id, customerId: c.customerId, orderIds: orders, buyerLocation, rating: f("rating"), comment: f("comment"), authorName: f("name"), productIds: form.getAll("item").filter((v): v is string => typeof v === "string") });
   if (!r.ok) return json(r, 422);
   // The rating shown on the store follows. If this fails the review is still saved; the team sees why on the vendor page.
   void updateStoreListing(db, c.shop, vendor.id).catch(() => {});

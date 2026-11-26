@@ -809,6 +809,9 @@
   margin: 0;
   color: var(--setu-muted);
 }
+.setu-reviews__note--small {
+  font-size: 0.8125em;
+}
 .setu-reviews__note a {
   color: inherit;
   text-underline-offset: 3px;

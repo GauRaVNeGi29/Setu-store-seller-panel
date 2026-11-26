@@ -88,7 +88,7 @@ export default function Reviews() {
                     : <p className="vp-review-text vp-review-text--none">No written review.</p>}
                   <p className="vp-review-meta">
                     {r.items.length > 0 && <span>About: {r.items.join(", ")}</span>}
-                    <span>{r.authorName}</span>
+                    <span>{r.authorName}{r.location ? `, ${r.location}` : ""}</span>
                     <span>{day(r.createdAt)}{r.edited ? " (edited)" : ""}</span>
                     <Link to={`/portal/orders/${r.orderId}`}>Order {r.orderName}</Link>
                   </p>

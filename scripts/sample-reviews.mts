@@ -21,9 +21,9 @@ if (shop !== DEV_SHOP || process.env.NODE_ENV === "production") {
 // Samples use buyer numbers below zero, which no real Shopify customer has.
 const SAMPLES = [
   // `products`: how many of the seller's shipped products the sample says it is about (shown as pictures on the store).
-  { customerId: -1n, rating: 5, comment: "Sample review: beautiful work and carefully packed. Will order again.", products: 3 },
-  { customerId: -2n, rating: 4, comment: "Sample review: good quality. Delivery took a few days longer than expected.", products: 1 },
-  { customerId: -3n, rating: 3, comment: "Sample review: fine overall, but one piece had a small scratch.", products: 0 },
+  { customerId: -1n, rating: 5, comment: "Sample review: beautiful work and carefully packed. Will order again.", products: 3, buyerLocation: { city: "Jaipur", country: "India" } },
+  { customerId: -2n, rating: 4, comment: "Sample review: good quality. Delivery took a few days longer than expected.", products: 1, buyerLocation: { city: "Pune", country: "India" } },
+  { customerId: -3n, rating: 3, comment: "Sample review: fine overall, but one piece had a small scratch.", products: 0, buyerLocation: null },
 ];
 
 const db = new PrismaClient();

@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
-import { ANONYMOUS_AUTHOR, AUTHOR_MAX, COMMENT_MAX, HIDE_REASON_MAX, PUBLIC_PAGE, REVIEW_ITEMS_MAX, REVIEWS_PER_PAGE, type ReviewSort, type ReviewSummary } from "./rules";
+import { ANONYMOUS_AUTHOR, AUTHOR_MAX, COMMENT_MAX, HIDE_REASON_MAX, LOCATION_MAX, PUBLIC_PAGE, REVIEW_ITEMS_MAX, REVIEWS_PER_PAGE, type ReviewSort, type ReviewSummary } from "./rules";
 
 /**
  * Buyers' ratings of vendors.
@@ -28,6 +28,11 @@ export type ReviewInput = {
   authorName?: unknown;
   /** The products the review is about: each must be one the buyer bought from this vendor. Optional. */
   productIds?: unknown;
+  /**
+   * Where the buyer is: city and country from the address on their order, as
+   * Shopify reports it (never from the browser). Null when it isn't known.
+   */
+  buyerLocation?: { city?: string | null; country?: string | null } | null;
 };
 
 const text = (v: unknown) => (typeof v === "string" ? v : "").replace(/\r\n?/g, "\n").trim();
@@ -36,6 +41,13 @@ const text = (v: unknown) => (typeof v === "string" ? v : "").replace(/\r\n?/g, 
 export function displayAuthor(v: unknown): string {
   const name = text(v).replace(/https?:\/\/\S+/gi, "").replace(/\s+/g, " ").trim().slice(0, AUTHOR_MAX).trim();
   return name || ANONYMOUS_AUTHOR;
+}
+
+/** "Bengaluru, India": city and country on one line, or null when neither is known. */
+export function buyerLocationText(place: ReviewInput["buyerLocation"]): string | null {
+  const part = (v: unknown) => text(v).replace(/\s+/g, " ").replace(/[<>]/g, "");
+  const line = [part(place?.city), part(place?.country)].filter(Boolean).join(", ").slice(0, LOCATION_MAX).trim();
+  return line || null;
 }
 
 /** The buyer's most recent order that includes shipped items from this vendor, if any. */
@@ -97,10 +109,12 @@ export async function submitReview(db: PrismaClient, shop: string, input: Review
   const before = await db.vendorReview.findUnique({ where: key, select: { id: true } });
   // A review the team has hidden stays hidden when the buyer changes it.
   const rows = items.map((i, position) => ({ productId: BigInt(i.id), title: i.title, position }));
+  const where = buyerLocationText(input.buyerLocation);
   const saved = await db.vendorReview.upsert({
     where: key,
-    create: { shop, vendorId: vendor.id, customerId: input.customerId, ...data, items: { create: rows } },
-    update: { ...data, editedAt: new Date(), items: { deleteMany: {}, create: rows } },
+    create: { shop, vendorId: vendor.id, customerId: input.customerId, ...data, buyerLocation: where, items: { create: rows } },
+    // If the place couldn't be read this time, the one saved before stays.
+    update: { ...data, ...(where ? { buyerLocation: where } : {}), editedAt: new Date(), items: { deleteMany: {}, create: rows } },
     select: { id: true },
   });
   await db.auditLog.create({
@@ -137,6 +151,8 @@ export type ReviewRow = {
   edited: boolean;
   /** The products the buyer said the review is about (titles), if they chose any. */
   items: string[];
+  /** The buyer's city and country, as shown on the store. */
+  location: string | null;
   hidden: boolean;
   hiddenReason: string | null;
   hiddenBy: string | null;
@@ -154,7 +170,7 @@ export async function vendorReviews(db: PrismaClient, shop: string, vendorId: st
     db.vendorReview.findMany({
       where, orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       skip: (Math.max(1, page) - 1) * REVIEWS_PER_PAGE, take: REVIEWS_PER_PAGE,
-      select: { id: true, rating: true, comment: true, authorName: true, orderId: true, orderName: true, createdAt: true, editedAt: true, status: true, hiddenReason: true, hiddenBy: true, items: ITEMS },
+      select: { id: true, rating: true, comment: true, authorName: true, orderId: true, orderName: true, createdAt: true, editedAt: true, status: true, hiddenReason: true, hiddenBy: true, buyerLocation: true, items: ITEMS },
     }),
     reviewSummary(db, shop, vendorId),
   ]);
@@ -165,7 +181,7 @@ export async function vendorReviews(db: PrismaClient, shop: string, vendorId: st
       id: r.id, rating: r.rating, comment: r.comment, authorName: r.authorName,
       orderId: r.orderId.toString(), orderName: r.orderName,
       createdAt: r.createdAt.toISOString(),
-      edited: r.editedAt !== null, items: r.items.map((i) => i.title),
+      edited: r.editedAt !== null, items: r.items.map((i) => i.title), location: r.buyerLocation,
       hidden: r.status === "hidden", hiddenReason: r.hiddenReason, hiddenBy: r.hiddenBy,
     })),
   };
@@ -197,7 +213,7 @@ export async function setReviewHidden(
 // ---------------------------------------------------------------------------
 
 /** `items` are the products the review is about: id and the title on the buyer's order. The route adds picture and link. */
-export type PublicReview = { rating: number; comment: string | null; author: string; date: string; edited: boolean; items: { id: string; title: string }[] };
+export type PublicReview = { rating: number; comment: string | null; author: string; location: string | null; date: string; edited: boolean; items: { id: string; title: string }[] };
 
 /** Published reviews for the store's seller page, newest first. Nothing that identifies the buyer or the order. */
 export async function publicReviews(db: PrismaClient, shop: string, vendorId: string, page = 1, sort: ReviewSort = "newest") {
@@ -209,14 +225,14 @@ export async function publicReviews(db: PrismaClient, shop: string, vendorId: st
   const [rows, summary] = await Promise.all([
     db.vendorReview.findMany({
       where, orderBy, skip: (p - 1) * PUBLIC_PAGE, take: PUBLIC_PAGE + 1,
-      select: { rating: true, comment: true, authorName: true, createdAt: true, editedAt: true, items: ITEMS },
+      select: { rating: true, comment: true, authorName: true, buyerLocation: true, createdAt: true, editedAt: true, items: ITEMS },
     }),
     reviewSummary(db, shop, vendorId),
   ]);
   return {
     summary, page: p, sort, more: rows.length > PUBLIC_PAGE,
     reviews: rows.slice(0, PUBLIC_PAGE).map((r): PublicReview => ({
-      rating: r.rating, comment: r.comment, author: r.authorName, date: r.createdAt.toISOString(), edited: r.editedAt !== null,
+      rating: r.rating, comment: r.comment, author: r.authorName, location: r.buyerLocation, date: r.createdAt.toISOString(), edited: r.editedAt !== null,
       items: r.items.map((i) => ({ id: i.productId.toString(), title: i.title })),
     })),
   };

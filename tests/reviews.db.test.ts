@@ -15,6 +15,9 @@ const proxy = vi.hoisted(() => ({
   /** What Shopify knows about products, by id: missing means deleted. */
   products: {} as Record<string, { handle: string; title: string; status: string; image: string | null }>,
   productsDown: false,
+  /** The address Shopify has on each order, by order id. "denied" = the app may not read addresses. */
+  places: {} as Record<string, { city: string | null; country: string | null } | null>,
+  placesDenied: false,
 }));
 vi.mock("../app/shopify.server", () => ({
   unauthenticated: { admin: async () => { throw new Error("not used"); } },
@@ -31,6 +34,12 @@ vi.mock("../app/shopify.server", () => ({
                 const p = proxy.products[gid.split("/").pop()!];
                 return p ? { id: gid, handle: p.handle, title: p.title, status: p.status, featuredMedia: p.image ? { preview: { image: { url: p.image } } } : null } : null;
               }) } }) };
+            }
+            if (q.includes("SetuOrderPlace")) {
+              const id = (o.variables as unknown as { id: string }).id.split("/").pop()!;
+              proxy.asked.push(`place:${id}`);
+              if (proxy.placesDenied) return { json: async () => ({ errors: [{ message: "This app is not approved to access the MailingAddress object." }], data: { order: { displayAddress: null } } }) };
+              return { json: async () => ({ data: { order: { displayAddress: proxy.places[id] ?? null } } }) };
             }
             if (proxy.down) throw new Error("Shopify is unreachable");
             proxy.asked.push(o.variables.query);
@@ -344,7 +353,7 @@ describe("storefront reviews", () => {
     }
   };
   beforeEach(async () => {
-    Object.assign(proxy, { shop, orders: { "501": [String(O.n1004), String(O.n1001)], "777": [String(O.n1001)] }, down: false, asked: [], products: {}, productsDown: false });
+    Object.assign(proxy, { shop, orders: { "501": [String(O.n1004), String(O.n1001)], "777": [String(O.n1001)] }, down: false, asked: [], products: {}, productsDown: false, places: {}, placesDenied: false });
     forgetProductCards();
     await db.vendor.update({ where: { id: urban }, data: { storeEntryHandle: "urban-store" } });
     await db.vendor.update({ where: { id: ashnur }, data: { storeEntryHandle: "ashnur" } });
@@ -359,7 +368,7 @@ describe("storefront reviews", () => {
     const r = await get("seller=urban-store");
     expect(r.status).toBe(200);
     expect(r.body).toMatchObject({ ok: true, more: false, summary: { count: 1, average: "5.0" }, me: { signedIn: false } });
-    expect(r.body.reviews).toEqual([{ rating: 5, comment: "Lovely.", author: "Meera", date: expect.any(String), edited: false, items: [] }]);
+    expect(r.body.reviews).toEqual([{ rating: 5, comment: "Lovely.", author: "Meera", date: expect.any(String), edited: false, items: [], location: null }]);
     const raw = JSON.stringify(r.body);
     for (const secret of ["9001", "customerId", "#1004", "orderId", "Hidden one"]) expect(raw).not.toContain(secret);
     expect(proxy.asked).toEqual([]); // a signed-out visitor costs no call to Shopify
@@ -433,6 +442,31 @@ describe("storefront reviews", () => {
     expect(again.summary).toMatchObject({ count: 1, average: "5.0" });
     expect(again.reviews[0]).toMatchObject({ rating: 5, author: "Verified buyer", items: [], edited: true, comment: null });
     expect(await db.vendorReviewItem.count()).toBe(0);
+  });
+
+  it("shows the buyer's city and country beside their name, from the address on their order", async () => {
+    proxy.places = { [String(O.n1004)]: { city: " Bengaluru ", country: "India" }, [String(O.n1001)]: { city: "Elsewhere", country: "Nowhere" } };
+    const ok = { seller: "urban-store", rating: "5" };
+    expect(await post("logged_in_customer_id=501", { ...ok, city: "Paris", country: "France", buyerLocation: "Paris, France" })).toMatchObject({ status: 200 });
+    expect(proxy.asked).toContain(`place:${O.n1004}`); // the order that lets them review, not just any order
+    let shown = (await get("seller=urban-store")).body.reviews[0];
+    expect(shown).toMatchObject({ author: "Verified buyer", location: "Bengaluru, India" }); // nothing the browser sends can change it
+    expect(JSON.stringify(shown)).not.toMatch(/Paris|street|zip|postal/i);
+    expect((await vendorReviews(db, shop, urban)).reviews[0].location).toBe("Bengaluru, India");
+
+    // Only a country on the order; then the app not allowed to read addresses: the review is still saved, and the place it had stays.
+    proxy.places[String(O.n1004)] = { city: null, country: "India" };
+    await post("logged_in_customer_id=501", ok);
+    expect((await get("seller=urban-store")).body.reviews[0].location).toBe("India");
+    proxy.placesDenied = true;
+    expect(await post("logged_in_customer_id=501", { ...ok, rating: "4" })).toEqual({ status: 200, body: { ok: true, replaced: true } });
+    shown = (await get("seller=urban-store")).body.reviews[0];
+    expect(shown).toMatchObject({ rating: 4, location: "India" });
+
+    // A first review while addresses can't be read: saved, with no place.
+    await db.vendorReview.deleteMany({ where: { shop } });
+    expect(await post("logged_in_customer_id=501", ok)).toMatchObject({ status: 200 });
+    expect((await get("seller=urban-store")).body.reviews[0].location).toBeNull();
   });
 
   it("shows each product with its current title, picture and page; plain words when Shopify can't say", async () => {

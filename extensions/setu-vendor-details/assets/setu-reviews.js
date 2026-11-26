@@ -73,6 +73,7 @@
         var meta = el("p", "setu-reviews__meta");
         meta.appendChild(el("span", "", day + (r.edited ? " (" + (T.edited || "edited") + ")" : "")));
         meta.appendChild(el("span", "", r.author));
+        if (r.location) meta.appendChild(el("span", "", r.location));
         li.appendChild(meta);
         if (r.items && r.items.length) {
           li.appendChild(el("p", "setu-reviews__bought-label", T.purchased || ""));

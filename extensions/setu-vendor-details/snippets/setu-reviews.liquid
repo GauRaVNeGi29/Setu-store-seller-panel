@@ -77,6 +77,7 @@
               <input type="text" name="name" maxlength="40" autocomplete="given-name" value="{{ customer.first_name | escape }}">
               <small>{{ 'setu_vendor.fb_name_hint' | t }}</small>
             </label>
+            <p class="setu-reviews__note setu-reviews__note--small">{{ 'setu_vendor.rv_location_note' | t }}</p>
             <p class="setu-reviews__error" data-setu-rv-error role="alert" hidden></p>
             <button type="submit" class="setu-reviews__send" data-setu-rv-send>{{ 'setu_vendor.fb_send' | t }}</button>
           </form>
