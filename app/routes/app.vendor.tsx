@@ -305,7 +305,7 @@ function ReviewRowView({ r, name }: { r: ReviewRow; name: string }) {
       <td style={{ ...cell, whiteSpace: "nowrap" }}><b>{r.rating}</b> / 5</td>
       <td style={cell}>
         {r.comment ? <span style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{r.comment}</span> : <span style={{ color: "#666" }}>No written review</span>}
-        <br /><small style={{ color: "#666" }}>{r.authorName}, {when(r.createdAt)}{r.edited ? " (edited)" : ""}, order {r.orderName}{r.item ? `, about ${r.item}` : ""}</small>
+        <br /><small style={{ color: "#666" }}>{r.authorName}, {when(r.createdAt)}{r.edited ? " (edited)" : ""}, order {r.orderName}{r.items.length ? `, about ${r.items.join(", ")}` : ""}</small>
         {r.hidden && <><br /><small style={{ color: "#a63a32" }}>Hidden{r.hiddenBy ? ` by ${r.hiddenBy.replace(/^admin:/, "")}` : ""}{r.hiddenReason ? `: ${r.hiddenReason}` : ""}</small></>}
         {fetcher.data && !fetcher.data.ok && fetcher.data.error && <><br /><small style={{ color: "#a63a32" }}>{fetcher.data.error}</small></>}
         {fetcher.data && fetcher.data.ok && fetcher.data.error && <><br /><small style={{ color: "#8a5a12" }}>{fetcher.data.error}</small></>}

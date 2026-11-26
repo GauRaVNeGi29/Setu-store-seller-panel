@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
-import { ANONYMOUS_AUTHOR, AUTHOR_MAX, COMMENT_MAX, HIDE_REASON_MAX, PUBLIC_PAGE, REVIEWS_PER_PAGE, type ReviewSort, type ReviewSummary } from "./rules";
+import { ANONYMOUS_AUTHOR, AUTHOR_MAX, COMMENT_MAX, HIDE_REASON_MAX, PUBLIC_PAGE, REVIEW_ITEMS_MAX, REVIEWS_PER_PAGE, type ReviewSort, type ReviewSummary } from "./rules";
 
 /**
  * Buyers' ratings of vendors.
@@ -26,8 +26,8 @@ export type ReviewInput = {
   comment?: unknown;
   /** Name to show with the review. Empty shows "Verified buyer". */
   authorName?: unknown;
-  /** The item the review is about: must be one the buyer bought from this vendor. Optional. */
-  productId?: unknown;
+  /** The products the review is about: each must be one the buyer bought from this vendor. Optional. */
+  productIds?: unknown;
 };
 
 const text = (v: unknown) => (typeof v === "string" ? v : "").replace(/\r\n?/g, "\n").trim();
@@ -49,7 +49,7 @@ export async function eligibleOrder(db: PrismaClient, shop: string, vendorName: 
   return line;
 }
 
-/** The items from this vendor that have shipped to the buyer, newest order first: what a review can be "about". */
+/** The products from this vendor that have shipped to the buyer, newest order first: what a review can be "about". */
 export async function eligibleItems(db: PrismaClient, shop: string, vendorName: string, orderIds: bigint[]) {
   if (!orderIds.length) return [];
   const lines = await db.vendorOrderLine.findMany({
@@ -81,24 +81,26 @@ export async function submitReview(db: PrismaClient, shop: string, input: Review
   const order = await eligibleOrder(db, shop, vendor.vendorName, input.orderIds);
   if (!order) return { ok: false, error: "You can review a seller once an order from them has shipped." };
 
-  let item: { id: string; title: string } | null = null;
-  const wanted = typeof input.productId === "string" || typeof input.productId === "bigint" ? String(input.productId).trim() : "";
-  if (wanted) {
-    item = (await eligibleItems(db, shop, vendor.vendorName, input.orderIds)).find((i) => i.id === wanted) ?? null;
-    if (!item) return { ok: false, error: "Choose one of the items you bought from this seller." };
+  // Which products it is about: only ones this buyer has received from this vendor, each once, in the order chosen.
+  const wanted = [...new Set((Array.isArray(input.productIds) ? input.productIds : [input.productIds])
+    .map((v) => (typeof v === "string" || typeof v === "bigint" ? String(v).trim() : "")).filter(Boolean))];
+  if (wanted.length > REVIEW_ITEMS_MAX) return { ok: false, error: `Choose up to ${REVIEW_ITEMS_MAX} products.` };
+  let items: { id: string; title: string }[] = [];
+  if (wanted.length) {
+    const bought = await eligibleItems(db, shop, vendor.vendorName, input.orderIds);
+    items = wanted.map((id) => bought.find((i) => i.id === id)).filter((i): i is { id: string; title: string } => !!i);
+    if (items.length !== wanted.length) return { ok: false, error: "Choose from the items you bought from this seller." };
   }
 
-  const data = {
-    rating, comment: comment || null, authorName: displayAuthor(input.authorName), orderId: order.orderId, orderName: order.orderName,
-    productId: item ? BigInt(item.id) : null, productTitle: item?.title ?? null,
-  };
+  const data = { rating, comment: comment || null, authorName: displayAuthor(input.authorName), orderId: order.orderId, orderName: order.orderName };
   const key = { shop_vendorId_customerId: { shop, vendorId: vendor.id, customerId: input.customerId } };
   const before = await db.vendorReview.findUnique({ where: key, select: { id: true } });
   // A review the team has hidden stays hidden when the buyer changes it.
+  const rows = items.map((i, position) => ({ productId: BigInt(i.id), title: i.title, position }));
   const saved = await db.vendorReview.upsert({
     where: key,
-    create: { shop, vendorId: vendor.id, customerId: input.customerId, ...data },
-    update: { ...data, editedAt: new Date() },
+    create: { shop, vendorId: vendor.id, customerId: input.customerId, ...data, items: { create: rows } },
+    update: { ...data, editedAt: new Date(), items: { deleteMany: {}, create: rows } },
     select: { id: true },
   });
   await db.auditLog.create({
@@ -122,6 +124,8 @@ export async function reviewSummary(db: PrismaClient, shop: string, vendorId: st
   return { count, average: count ? (Math.round((sum / count) * 10) / 10).toFixed(1) : null, breakdown };
 }
 
+const ITEMS = { orderBy: { position: "asc" as const }, select: { productId: true, title: true } };
+
 export type ReviewRow = {
   id: string;
   rating: number;
@@ -131,8 +135,8 @@ export type ReviewRow = {
   orderName: string;
   createdAt: string;
   edited: boolean;
-  /** The item the buyer said the review is about, if they chose one. */
-  item: string | null;
+  /** The products the buyer said the review is about (titles), if they chose any. */
+  items: string[];
   hidden: boolean;
   hiddenReason: string | null;
   hiddenBy: string | null;
@@ -150,7 +154,7 @@ export async function vendorReviews(db: PrismaClient, shop: string, vendorId: st
     db.vendorReview.findMany({
       where, orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       skip: (Math.max(1, page) - 1) * REVIEWS_PER_PAGE, take: REVIEWS_PER_PAGE,
-      select: { id: true, rating: true, comment: true, authorName: true, orderId: true, orderName: true, createdAt: true, editedAt: true, status: true, hiddenReason: true, hiddenBy: true, productTitle: true },
+      select: { id: true, rating: true, comment: true, authorName: true, orderId: true, orderName: true, createdAt: true, editedAt: true, status: true, hiddenReason: true, hiddenBy: true, items: ITEMS },
     }),
     reviewSummary(db, shop, vendorId),
   ]);
@@ -161,7 +165,7 @@ export async function vendorReviews(db: PrismaClient, shop: string, vendorId: st
       id: r.id, rating: r.rating, comment: r.comment, authorName: r.authorName,
       orderId: r.orderId.toString(), orderName: r.orderName,
       createdAt: r.createdAt.toISOString(),
-      edited: r.editedAt !== null, item: r.productTitle,
+      edited: r.editedAt !== null, items: r.items.map((i) => i.title),
       hidden: r.status === "hidden", hiddenReason: r.hiddenReason, hiddenBy: r.hiddenBy,
     })),
   };
@@ -192,7 +196,8 @@ export async function setReviewHidden(
 // Storefront
 // ---------------------------------------------------------------------------
 
-export type PublicReview = { rating: number; comment: string | null; author: string; date: string; edited: boolean; item: string | null };
+/** `items` are the products the review is about: id and the title on the buyer's order. The route adds picture and link. */
+export type PublicReview = { rating: number; comment: string | null; author: string; date: string; edited: boolean; items: { id: string; title: string }[] };
 
 /** Published reviews for the store's seller page, newest first. Nothing that identifies the buyer or the order. */
 export async function publicReviews(db: PrismaClient, shop: string, vendorId: string, page = 1, sort: ReviewSort = "newest") {
@@ -204,14 +209,15 @@ export async function publicReviews(db: PrismaClient, shop: string, vendorId: st
   const [rows, summary] = await Promise.all([
     db.vendorReview.findMany({
       where, orderBy, skip: (p - 1) * PUBLIC_PAGE, take: PUBLIC_PAGE + 1,
-      select: { rating: true, comment: true, authorName: true, createdAt: true, editedAt: true, productTitle: true },
+      select: { rating: true, comment: true, authorName: true, createdAt: true, editedAt: true, items: ITEMS },
     }),
     reviewSummary(db, shop, vendorId),
   ]);
   return {
     summary, page: p, sort, more: rows.length > PUBLIC_PAGE,
     reviews: rows.slice(0, PUBLIC_PAGE).map((r): PublicReview => ({
-      rating: r.rating, comment: r.comment, author: r.authorName, date: r.createdAt.toISOString(), edited: r.editedAt !== null, item: r.productTitle,
+      rating: r.rating, comment: r.comment, author: r.authorName, date: r.createdAt.toISOString(), edited: r.editedAt !== null,
+      items: r.items.map((i) => ({ id: i.productId.toString(), title: i.title })),
     })),
   };
 }
@@ -223,7 +229,7 @@ export async function buyerState(db: PrismaClient, shop: string, vendor: { id: s
     eligibleItems(db, shop, vendor.vendorName, orderIds),
     db.vendorReview.findUnique({
       where: { shop_vendorId_customerId: { shop, vendorId: vendor.id, customerId } },
-      select: { rating: true, comment: true, authorName: true, productId: true, status: true },
+      select: { rating: true, comment: true, authorName: true, status: true, items: ITEMS },
     }),
   ]);
   return {
@@ -231,7 +237,7 @@ export async function buyerState(db: PrismaClient, shop: string, vendor: { id: s
     items: order ? items : [],
     review: mine && {
       rating: mine.rating, comment: mine.comment ?? "", name: mine.authorName === ANONYMOUS_AUTHOR ? "" : mine.authorName,
-      item: mine.productId?.toString() ?? "", hidden: mine.status === "hidden",
+      items: mine.items.map((i) => i.productId.toString()), hidden: mine.status === "hidden",
     },
   };
 }

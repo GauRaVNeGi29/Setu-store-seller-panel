@@ -863,14 +863,111 @@
   margin: 0;
   font: inherit;
   font-size: 1.125em;
-  font-weight: 600;
+  font-weight: 400;
 }
 .setu-reviews__stars {
   margin: 0;
   padding: 0;
   border: 0;
 }
+.setu-reviews__products {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+/* The products a buyer can tick: a list that scrolls when it is long. */
+.setu-reviews__picks {
+  display: grid;
+  gap: 2px;
+  max-height: 264px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--setu-line);
+  border-radius: 8px;
+}
+.setu-reviews__pick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.setu-reviews__pick:hover {
+  background: var(--setu-soft, rgba(0, 0, 0, 0.04));
+}
+.setu-reviews__pick input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--color-foreground, currentColor);
+}
+.setu-reviews__pick img {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+.setu-reviews__pick span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+/* Under a review: the products it is about, as pictures linked to the product. */
+.setu-reviews__bought-label {
+  margin: 20px 0 0;
+  font-size: 0.9375em;
+  color: var(--setu-muted);
+}
+.setu-reviews__bought {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.setu-reviews__product {
+  display: block;
+  border-radius: 6px;
+  color: inherit;
+  text-decoration: none;
+}
+.setu-reviews__product img {
+  display: block;
+  width: 72px;
+  height: 72px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: var(--setu-soft, rgba(0, 0, 0, 0.04));
+}
+a.setu-reviews__product:hover img {
+  opacity: 0.85;
+}
+.setu-reviews__product--words {
+  display: flex;
+  align-items: center;
+  min-height: 72px;
+  max-width: 180px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  border: 1px solid var(--setu-line);
+  font-size: 0.8125em;
+  overflow-wrap: anywhere;
+}
+a.setu-reviews__product--words {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.setu-reviews__product:focus-visible {
+  outline: 2px solid var(--color-foreground, currentColor);
+  outline-offset: 2px;
+}
 .setu-reviews__stars legend,
+.setu-reviews__products legend,
 .setu-reviews__field > span {
   display: block;
   margin-bottom: 6px;

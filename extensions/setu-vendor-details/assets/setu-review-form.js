@@ -2,7 +2,8 @@
  * Setu Store seller reviews: the signed-in buyer's form. setu-reviews.js loads
  * the reviews and says what this buyer can do ("setu:reviews"); this script
  * shows the "Write a review" button and form to a buyer whose order from the
- * seller has shipped, fills in their earlier review, and sends it. Loaded only
+ * seller has shipped, lists the products they can say it is about, fills in
+ * their earlier review, and sends it. Loaded only
  * for signed-in buyers.
  */
 (function () {
@@ -13,7 +14,7 @@
     };
     var f = q("form"), open = q("open");
     if (!f || !open) return;
-    var error = q("error"), thanks = q("thanks"), send = q("send"), select = q("item");
+    var error = q("error"), thanks = q("thanks"), send = q("send"), picks = q("items");
     var T = {};
     try {
       T = JSON.parse(q("text").textContent);
@@ -44,9 +45,33 @@
       if (!me.canReview) return;
       open.textContent = mine ? T.change || "" : T.write || "";
       q("form-title").textContent = mine ? T.change || "" : q("form-title").textContent;
-      while (select.options.length > 1) select.remove(1);
+      // One tick box for each product they have received from this seller, with its picture.
+      var chosen = (mine && mine.items) || [];
+      picks.replaceChildren();
       (me.items || []).forEach(function (i) {
-        select.appendChild(new Option(i.title, i.id));
+        var label = document.createElement("label");
+        label.className = "setu-reviews__pick";
+        var box = document.createElement("input");
+        box.type = "checkbox";
+        box.name = "item";
+        box.value = i.id;
+        box.checked = chosen.indexOf(i.id) !== -1;
+        label.appendChild(box);
+        if (i.image) {
+          var img = document.createElement("img");
+          img.alt = "";
+          img.width = img.height = 40;
+          img.loading = "lazy";
+          img.addEventListener("error", function () {
+            img.remove();
+          });
+          img.src = i.image;
+          label.appendChild(img);
+        }
+        var name = document.createElement("span");
+        name.textContent = i.title;
+        label.appendChild(name);
+        picks.appendChild(label);
       });
       q("item-field").hidden = !(me.items || []).length;
       if (mine) {
@@ -55,7 +80,6 @@
         if (radio) radio.checked = true;
         f.elements.comment.value = mine.comment || "";
         f.elements.name.value = mine.name || "";
-        select.value = mine.item || "";
       }
     }
     panel.addEventListener("setu:reviews", function (event) {

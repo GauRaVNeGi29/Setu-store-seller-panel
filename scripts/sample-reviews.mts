@@ -9,7 +9,7 @@
  * Refuses to run anywhere but the development store.
  */
 import { PrismaClient } from "@prisma/client";
-import { submitReview } from "../app/lib/reviews/reviews.server";
+import { eligibleItems, submitReview } from "../app/lib/reviews/reviews.server";
 
 const DEV_SHOP = "seller-panel-dev.myshopify.com";
 const shop = process.env.PORTAL_SHOP ?? "";
@@ -20,9 +20,10 @@ if (shop !== DEV_SHOP || process.env.NODE_ENV === "production") {
 
 // Samples use buyer numbers below zero, which no real Shopify customer has.
 const SAMPLES = [
-  { customerId: -1n, rating: 5, comment: "Sample review: beautiful work and carefully packed. Will order again." },
-  { customerId: -2n, rating: 4, comment: "Sample review: good quality. Delivery took a few days longer than expected." },
-  { customerId: -3n, rating: 3, comment: "Sample review: fine overall, but one piece had a small scratch." },
+  // `products`: how many of the seller's shipped products the sample says it is about (shown as pictures on the store).
+  { customerId: -1n, rating: 5, comment: "Sample review: beautiful work and carefully packed. Will order again.", products: 3 },
+  { customerId: -2n, rating: 4, comment: "Sample review: good quality. Delivery took a few days longer than expected.", products: 1 },
+  { customerId: -3n, rating: 3, comment: "Sample review: fine overall, but one piece had a small scratch.", products: 0 },
 ];
 
 const db = new PrismaClient();
@@ -43,8 +44,10 @@ try {
         continue;
       }
       let added = 0;
-      for (const s of SAMPLES) {
-        const r = await submitReview(db, shop, { vendorId: v.id, orderIds: shipped.map((l) => l.orderId), authorName: "Sample buyer", ...s });
+      const orderIds = shipped.map((l) => l.orderId);
+      const bought = await eligibleItems(db, shop, v.vendorName, orderIds);
+      for (const { products, ...s } of SAMPLES) {
+        const r = await submitReview(db, shop, { vendorId: v.id, orderIds, authorName: "Sample buyer", productIds: bought.slice(0, products).map((i) => i.id), ...s });
         if (r.ok) added++;
         else console.log(`${v.displayName}: ${r.error}`);
       }

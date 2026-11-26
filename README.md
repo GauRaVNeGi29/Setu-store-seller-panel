@@ -120,11 +120,14 @@ order value. The cart already reads the minimum from there. Business documents n
   the panel) and the number of products. The street address is never copied to the store.
 - **Ratings and reviews** under the seller's product listing (added to the end of the page content, or wherever the theme
   has `<div class="setu-seller-reviews"></div>`; also the *Seller reviews* block). Left: the rating, "Brand rating (N
-  reviews)" and a bar with a count for each number of stars. Right: the reviews (stars, words, date • name • item), a sort
+  reviews)" and a bar with a count for each number of stars. Right: the reviews (stars, words, date • name, then "Purchased products:" as pictures linked to each product), a sort
   menu (Newest, Highest rated, Lowest rated; `&sort=`) and "Show more reviews". The rating in the seller header links to
   it. Reviews are fetched when the buyer scrolls near them (`setu-reviews.js`). A signed-in buyer whose order
-  from the seller has shipped gets "Write a review" and a form (1–5 stars, optional item, comment, name to show;
-  `setu-review-form.js`). It talks to the app through the
+  from the seller has shipped gets "Write a review" and a form (1–5 stars, tick boxes for the products they bought from
+  the seller, comment, name to show; `setu-review-form.js`). A review can be about several products
+  (`VendorReviewItem`, up to 20); their current title, picture and page come from Shopify when the reviews are shown and
+  are remembered for ten minutes (`app/lib/reviews/products.server.ts`). A product with no picture, or one that is
+  archived or deleted, shows as its name in words. It talks to the app through the
   store's **app proxy** (needs the `write_app_proxy` scope): `/apps/setu-seller/reviews` → `app/routes/proxy.reviews.tsx`. Shopify signs the request and says
   which customer is signed in; the buyer's orders are read from Shopify (`orders(query: "customer_id:…")`) and matched
   against the seller's shipped order lines, so nothing about who bought what is taken from the browser. The app has to be

@@ -2,7 +2,9 @@
   "Ratings and reviews" for a seller, shown under the seller's product listing:
   the rating and how many reviews gave each number of stars on one side, the
   reviews on the other, with a sort menu. A signed-in buyer whose order from
-  the seller has shipped can write or change their review. setu-reviews.js
+  the seller has shipped can write or change their review and tick the
+  products it is about; those show under the review as pictures that link to
+  the product. setu-reviews.js
   loads the reviews from the Setu Store Seller Panel app through the store's
   app proxy; setu-review-form.js runs the form.
 
@@ -62,12 +64,10 @@
                 {%- endfor -%}
               </span>
             </fieldset>
-            <label class="setu-reviews__field" data-setu-rv-item-field hidden>
-              <span>{{ 'setu_vendor.fb_item' | t }}</span>
-              <select name="item" data-setu-rv-item>
-                <option value="">{{ 'setu_vendor.fb_item_none' | t }}</option>
-              </select>
-            </label>
+            <fieldset class="setu-reviews__products" data-setu-rv-item-field hidden>
+              <legend>{{ 'setu_vendor.fb_item' | t }}</legend>
+              <div class="setu-reviews__picks" data-setu-rv-items></div>
+            </fieldset>
             <label class="setu-reviews__field">
               <span>{{ 'setu_vendor.fb_comment' | t }}</span>
               <textarea name="comment" rows="4" maxlength="1000"></textarea>
@@ -107,7 +107,7 @@
       "countOne": {{ 'setu_vendor.rv_count_one' | t | json }},
       "count": {{ 'setu_vendor.rv_count' | t: count: '%c' | json }},
       "bar": {{ 'setu_vendor.rv_bar' | t: stars: '%s', count: '%c' | json }},
-      "about": {{ 'setu_vendor.fb_about' | t: item: '%i' | json }},
+      "purchased": {{ 'setu_vendor.rv_purchased' | t | json }},
       "edited": {{ 'setu_vendor.fb_edited' | t | json }},
       "stars": {{ 'setu_vendor.fb_out_of' | t: rating: '%r' | json }},
       "write": {{ 'setu_vendor.rv_write' | t | json }},

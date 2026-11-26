@@ -6,6 +6,7 @@ import type { AdminGraphql } from "../lib/orders/sync.server";
 import { gidToId } from "../lib/orders/map";
 import { buyerState, publicReviews, submitReview } from "../lib/reviews/reviews.server";
 import { reviewSort } from "../lib/reviews/rules";
+import { productCards } from "../lib/reviews/products.server";
 import { updateStoreListing } from "../lib/storefront/update.server";
 
 /**
@@ -13,7 +14,8 @@ import { updateStoreListing } from "../lib/storefront/update.server";
  *   GET  /apps/setu-seller/reviews?seller=<entry handle>&page=1&sort=newest|highest|lowest
  *                                                                 published reviews, rating, and what this buyer can do
  *                                                                 (&only=list leaves the buyer part out: paging and re-sorting)
- *   POST /apps/setu-seller/reviews                                the signed-in buyer's review (seller, rating, comment, name, item)
+ *   POST /apps/setu-seller/reviews                                the signed-in buyer's review (seller, rating, comment, name,
+ *                                                                 and "item" once for each product it is about)
  *
  * authenticate.public.appProxy checks Shopify's signature, so the shop and
  * logged_in_customer_id in the query are Shopify's word, not the browser's.
@@ -60,16 +62,26 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   if (!vendor) return json({ ok: false, error: "This seller has no reviews page yet." }, 404);
   const list = await publicReviews(db, c.shop, vendor.id, Number(c.url.searchParams.get("page")) || 1, reviewSort(c.url.searchParams.get("sort")));
   // "Show more" and re-sorting need only the list: no need to ask Shopify for the buyer's orders again.
-  if (list.page > 1 || c.url.searchParams.get("only") === "list") return json({ ok: true, ...list });
+  const onlyList = list.page > 1 || c.url.searchParams.get("only") === "list";
 
-  let me: { signedIn: boolean; canReview?: boolean; unknown?: boolean; items?: { id: string; title: string }[]; review?: unknown } = { signedIn: false };
-  if (c.customerId !== null) {
+  type Me = { signedIn: boolean; canReview?: boolean; unknown?: boolean; items?: { id: string; title: string }[]; review?: unknown };
+  let me: Me = { signedIn: false };
+  if (!onlyList && c.customerId !== null) {
     const orders = await buyerOrders(c.graphql, c.customerId);
     me = orders === null
       ? { signedIn: true, canReview: false, unknown: true }
       : { signedIn: true, ...(await buyerState(db, c.shop, vendor, c.customerId, orders)) };
   }
-  return json({ ok: true, ...list, me });
+
+  // Each product a review is about, and each one the buyer can choose, gets its current title, picture and page.
+  const cards = await productCards(c.graphql, c.shop, [...list.reviews.flatMap((r) => r.items.map((i) => i.id)), ...(me.items ?? []).map((i) => i.id)]);
+  const card = (i: { id: string; title: string }) => {
+    const k = cards.get(i.id);
+    return { title: k?.title ?? i.title, url: k?.url ?? null, image: k?.image ?? null };
+  };
+  const shown = { ...list, reviews: list.reviews.map((r) => ({ ...r, items: r.items.map(card) })) };
+  if (onlyList) return json({ ok: true, ...shown });
+  return json({ ok: true, ...shown, me: me.items ? { ...me, items: me.items.map((i) => ({ id: i.id, ...card(i) })) } : me });
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -93,7 +105,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const orders = await buyerOrders(c.graphql, c.customerId);
   if (orders === null) return json({ ok: false, error: "We couldn't check your orders just now. Please try again in a minute." }, 503);
 
-  const r = await submitReview(db, c.shop, { vendorId: vendor.id, customerId: c.customerId, orderIds: orders, rating: f("rating"), comment: f("comment"), authorName: f("name"), productId: f("item") });
+  const r = await submitReview(db, c.shop, { vendorId: vendor.id, customerId: c.customerId, orderIds: orders, rating: f("rating"), comment: f("comment"), authorName: f("name"), productIds: form.getAll("item").filter((v): v is string => typeof v === "string") });
   if (!r.ok) return json(r, 422);
   // The rating shown on the store follows. If this fails the review is still saved; the team sees why on the vendor page.
   void updateStoreListing(db, c.shop, vendor.id).catch(() => {});

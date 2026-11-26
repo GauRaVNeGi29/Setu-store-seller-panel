@@ -10,7 +10,12 @@ import fixture from "./fixtures/dev-orders-2026-11-20.json";
  * So a buyer of #1004 can review Urban Store and nobody can review Ashnur yet.
  */
 // What Shopify's app proxy tells the app: which shop, and (inside the request's query) which signed-in customer.
-const proxy = vi.hoisted(() => ({ shop: "seller-panel-dev.myshopify.com" as string | null, orders: {} as Record<string, string[]>, down: false, asked: [] as string[] }));
+const proxy = vi.hoisted(() => ({
+  shop: "seller-panel-dev.myshopify.com" as string | null, orders: {} as Record<string, string[]>, down: false, asked: [] as string[],
+  /** What Shopify knows about products, by id: missing means deleted. */
+  products: {} as Record<string, { handle: string; title: string; status: string; image: string | null }>,
+  productsDown: false,
+}));
 vi.mock("../app/shopify.server", () => ({
   unauthenticated: { admin: async () => { throw new Error("not used"); } },
   authenticate: {
@@ -18,7 +23,15 @@ vi.mock("../app/shopify.server", () => ({
       appProxy: async () => ({
         session: proxy.shop ? { shop: proxy.shop } : undefined,
         admin: {
-          graphql: async (_q: string, o: { variables: { query: string } }) => {
+          graphql: async (q: string, o: { variables: { query: string; ids?: string[] } }) => {
+            if (q.includes("SetuReviewProducts")) {
+              proxy.asked.push(`products:${o.variables.ids!.length}`);
+              if (proxy.productsDown) throw new Error("Shopify is unreachable");
+              return { json: async () => ({ data: { nodes: o.variables.ids!.map((gid) => {
+                const p = proxy.products[gid.split("/").pop()!];
+                return p ? { id: gid, handle: p.handle, title: p.title, status: p.status, featuredMedia: p.image ? { preview: { image: { url: p.image } } } : null } : null;
+              }) } }) };
+            }
             if (proxy.down) throw new Error("Shopify is unreachable");
             proxy.asked.push(o.variables.query);
             const id = o.variables.query.replace("customer_id:", "");
@@ -34,6 +47,7 @@ vi.mock("../app/shopify.server", () => ({
 const { saveOrder } = await import("../app/lib/orders/sync.server");
 const { submitReview, reviewSummary, vendorReviews, setReviewHidden, eligibleOrder, displayAuthor } = await import("../app/lib/reviews/reviews.server");
 const { COMMENT_MAX, REVIEWS_PER_PAGE } = await import("../app/lib/reviews/rules");
+const { forgetProductCards } = await import("../app/lib/reviews/products.server");
 const { enableVendor, addVendorUser, setVendorStatus } = await import("../app/lib/vendors/vendors.server");
 const { signUp, createTeamHandoff, redeemTeamHandoff, COOKIE_NAME } = await import("../app/lib/portal/auth.server");
 const { listAllVendors } = await import("../app/lib/vendors/team.server");
@@ -318,9 +332,11 @@ describe("storefront reviews", () => {
     const r = (await storefront.loader({ request: new Request(`https://app.test/proxy/reviews?shop=${shop}&${query}`), params: {}, context: {} } as never)) as Response;
     return { status: r.status, body: await r.json() };
   };
-  const post = async (query: string, fields: Record<string, string>, method = "POST") => {
+  const post = async (query: string, fields: Record<string, string | string[]>, method = "POST") => {
     try {
-      const r = (await storefront.action({ request: new Request(`https://app.test/proxy/reviews?shop=${shop}&${query}`, { method, body: new URLSearchParams(fields) }), params: {}, context: {} } as never)) as Response;
+      const body = new URLSearchParams();
+      for (const [k, v] of Object.entries(fields)) for (const one of Array.isArray(v) ? v : [v]) body.append(k, one);
+      const r = (await storefront.action({ request: new Request(`https://app.test/proxy/reviews?shop=${shop}&${query}`, { method, body }), params: {}, context: {} } as never)) as Response;
       return { status: r.status, body: await r.json() };
     } catch (e) {
       if (e instanceof Response) return { status: e.status, body: await e.json() };
@@ -328,7 +344,8 @@ describe("storefront reviews", () => {
     }
   };
   beforeEach(async () => {
-    Object.assign(proxy, { shop, orders: { "501": [String(O.n1004), String(O.n1001)], "777": [String(O.n1001)] }, down: false, asked: [] });
+    Object.assign(proxy, { shop, orders: { "501": [String(O.n1004), String(O.n1001)], "777": [String(O.n1001)] }, down: false, asked: [], products: {}, productsDown: false });
+    forgetProductCards();
     await db.vendor.update({ where: { id: urban }, data: { storeEntryHandle: "urban-store" } });
     await db.vendor.update({ where: { id: ashnur }, data: { storeEntryHandle: "ashnur" } });
   });
@@ -342,7 +359,7 @@ describe("storefront reviews", () => {
     const r = await get("seller=urban-store");
     expect(r.status).toBe(200);
     expect(r.body).toMatchObject({ ok: true, more: false, summary: { count: 1, average: "5.0" }, me: { signedIn: false } });
-    expect(r.body.reviews).toEqual([{ rating: 5, comment: "Lovely.", author: "Meera", date: expect.any(String), edited: false, item: null }]);
+    expect(r.body.reviews).toEqual([{ rating: 5, comment: "Lovely.", author: "Meera", date: expect.any(String), edited: false, items: [] }]);
     const raw = JSON.stringify(r.body);
     for (const secret of ["9001", "customerId", "#1004", "orderId", "Hidden one"]) expect(raw).not.toContain(secret);
     expect(proxy.asked).toEqual([]); // a signed-out visitor costs no call to Shopify
@@ -378,8 +395,8 @@ describe("storefront reviews", () => {
     const yes = (await get("seller=urban-store&logged_in_customer_id=501")).body.me;
     expect(yes).toMatchObject({ signedIn: true, canReview: true, review: null });
     expect(yes.items.length).toBe(2);
-    expect(yes.items[0]).toEqual({ id: expect.stringMatching(/^\d+$/), title: expect.any(String) });
-    expect(proxy.asked).toEqual(["customer_id:501"]);
+    expect(yes.items[0]).toEqual({ id: expect.stringMatching(/^\d+$/), title: expect.any(String), url: null, image: null });
+    expect(proxy.asked).toEqual(["customer_id:501", "products:2"]); // their orders, then the two products' pictures
 
     // Same buyer, other seller: #1004's Ashnur items haven't shipped.
     expect((await get("seller=ashnur&logged_in_customer_id=501")).body.me).toMatchObject({ signedIn: true, canReview: false, items: [] });
@@ -395,22 +412,53 @@ describe("storefront reviews", () => {
     expect(await db.vendorReview.count({ where: { shop } })).toBe(0);
   });
 
-  it("a buyer leaves a review about an item they bought, then changes it", async () => {
+  it("a buyer leaves a review about products they bought, then changes it", async () => {
     const items = (await get("seller=urban-store&logged_in_customer_id=501")).body.me.items as { id: string; title: string }[];
-    const sent = await post("logged_in_customer_id=501", { seller: "urban-store", rating: "4", comment: "  Sturdy and well finished. ", name: " Asha ", item: items[1].id });
+    const sent = await post("logged_in_customer_id=501", { seller: "urban-store", rating: "4", comment: "  Sturdy and well finished. ", name: " Asha ", item: [items[1].id, items[0].id, items[1].id] });
     expect(sent).toEqual({ status: 200, body: { ok: true, replaced: false } });
-    const saved = await db.vendorReview.findFirstOrThrow({ where: { shop, customerId: 501n } });
-    expect([saved.rating, saved.comment, saved.authorName, saved.productTitle, saved.orderName]).toEqual([4, "Sturdy and well finished.", "Asha", items[1].title, "#1004"]);
+    const saved = await db.vendorReview.findFirstOrThrow({ where: { shop, customerId: 501n }, include: { items: { orderBy: { position: "asc" } } } });
+    expect([saved.rating, saved.comment, saved.authorName, saved.orderName]).toEqual([4, "Sturdy and well finished.", "Asha", "#1004"]);
+    expect(saved.items.map((i) => [i.productId.toString(), i.title])).toEqual([[items[1].id, items[1].title], [items[0].id, items[0].title]]); // each once, in the order chosen
 
     const after = (await get("seller=urban-store&logged_in_customer_id=501")).body;
-    expect(after.reviews[0]).toMatchObject({ rating: 4, author: "Asha", item: items[1].title });
-    expect(after.me.review).toEqual({ rating: 4, comment: "Sturdy and well finished.", name: "Asha", item: items[1].id, hidden: false });
+    expect(after.reviews[0]).toMatchObject({ rating: 4, author: "Asha", items: [{ title: items[1].title }, { title: items[0].title }] });
+    expect(after.me.review).toEqual({ rating: 4, comment: "Sturdy and well finished.", name: "Asha", items: [items[1].id, items[0].id], hidden: false });
+    expect((await vendorReviews(db, shop, urban)).reviews[0]).toMatchObject({ items: [items[1].title, items[0].title], orderName: "#1004" });
 
+    // Changing it to one product, then to none.
+    expect(await post("logged_in_customer_id=501", { seller: "urban-store", rating: "4", item: items[0].id })).toEqual({ status: 200, body: { ok: true, replaced: true } });
+    expect((await get("seller=urban-store")).body.reviews[0].items.map((i: { title: string }) => i.title)).toEqual([items[0].title]);
     expect(await post("logged_in_customer_id=501", { seller: "urban-store", rating: "5", comment: "", name: "", item: "" })).toEqual({ status: 200, body: { ok: true, replaced: true } });
     const again = (await get("seller=urban-store")).body;
     expect(again.summary).toMatchObject({ count: 1, average: "5.0" });
-    expect(again.reviews[0]).toMatchObject({ rating: 5, author: "Verified buyer", item: null, edited: true, comment: null });
-    expect((await vendorReviews(db, shop, urban)).reviews[0]).toMatchObject({ item: null, orderName: "#1004" });
+    expect(again.reviews[0]).toMatchObject({ rating: 5, author: "Verified buyer", items: [], edited: true, comment: null });
+    expect(await db.vendorReviewItem.count()).toBe(0);
+  });
+
+  it("shows each product with its current title, picture and page; plain words when Shopify can't say", async () => {
+    const items = (await get("seller=urban-store&logged_in_customer_id=501")).body.me.items as { id: string; title: string }[];
+    await post("logged_in_customer_id=501", { seller: "urban-store", rating: "5", item: [items[0].id, items[1].id] });
+    forgetProductCards(); proxy.asked.length = 0;
+    proxy.products = {
+      [items[0].id]: { handle: "sunburst-ring", title: "Sunburst Ring (new name)", status: "ACTIVE", image: "https://cdn.shopify.com/ring_240x240.jpg" },
+      [items[1].id]: { handle: "old-studs", title: "Old Studs", status: "ARCHIVED", image: null },
+    };
+    const shown = (await get("seller=urban-store")).body.reviews[0].items;
+    expect(shown).toEqual([
+      { title: "Sunburst Ring (new name)", url: "/products/sunburst-ring", image: "https://cdn.shopify.com/ring_240x240.jpg" },
+      { title: "Old Studs", url: null, image: null }, // archived: no page to send the buyer to
+    ]);
+    expect(JSON.stringify(shown)).not.toContain(items[0].id); // product numbers aren't needed on the page
+    await get("seller=urban-store"); await get("seller=urban-store&sort=highest&only=list");
+    expect(proxy.asked).toEqual(["products:2"]); // asked once, then remembered for a while
+
+    // A product deleted from Shopify, and Shopify not answering: the review still shows, with the titles from the order.
+    forgetProductCards(); proxy.products = { [items[0].id]: proxy.products[items[0].id] };
+    expect((await get("seller=urban-store")).body.reviews[0].items[1]).toEqual({ title: items[1].title, url: null, image: null });
+    forgetProductCards(); proxy.productsDown = true;
+    const r = await get("seller=urban-store");
+    expect(r.status).toBe(200);
+    expect(r.body.reviews[0].items).toEqual([{ title: items[0].title, url: null, image: null }, { title: items[1].title, url: null, image: null }]);
   });
 
   it("refuses: signed out, no shipped order, someone else's item, a bad rating, an unknown seller, not POST", async () => {
@@ -420,6 +468,9 @@ describe("storefront reviews", () => {
     expect(await post("logged_in_customer_id=501", { seller: "ashnur", rating: "5" })).toMatchObject({ status: 422 });
     const ashnurItem = (await db.vendorOrderLine.findFirstOrThrow({ where: { shop, vendorName: "Ashnur", productId: { not: null } } })).productId!.toString();
     expect(await post("logged_in_customer_id=501", { ...ok, item: ashnurItem })).toMatchObject({ status: 422, body: { error: expect.stringContaining("items you bought") } });
+    const mine = ((await get("seller=urban-store&logged_in_customer_id=501")).body.me.items as { id: string }[])[0].id;
+    expect(await post("logged_in_customer_id=501", { ...ok, item: [mine, ashnurItem] })).toMatchObject({ status: 422 }); // one wrong product refuses the lot
+    expect(await post("logged_in_customer_id=501", { ...ok, item: Array.from({ length: 21 }, (_, i) => String(9000 + i)) })).toMatchObject({ status: 422, body: { error: "Choose up to 20 products." } });
     expect(await post("logged_in_customer_id=501", { ...ok, item: "not-a-number" })).toMatchObject({ status: 422 });
     for (const rating of ["0", "6", "", "4.5"]) expect(await post("logged_in_customer_id=501", { seller: "urban-store", rating })).toMatchObject({ status: 422 });
     expect(await post("logged_in_customer_id=501", { seller: "nobody", rating: "5" })).toMatchObject({ status: 404 });

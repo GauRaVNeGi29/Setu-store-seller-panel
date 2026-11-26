@@ -406,7 +406,9 @@ model VendorReview {
   rating  Int // 1–5
   comment String? @db.Text
 
-  // The item the buyer says the review is about: one they bought from this vendor. Optional.
+  // The products the buyer says the review is about: ones they bought from this vendor. Optional.
+  items VendorReviewItem[]
+  // Before reviews could name several products. No longer written; kept until older branches are merged.
   productId    BigInt?
   productTitle String?
 
@@ -421,6 +423,20 @@ model VendorReview {
 
   @@unique([shop, vendorId, customerId])
   @@index([shop, vendorId, status, createdAt])
+}
+
+/// A product a review is about. The title is the one on the buyer's order; the
+/// store shows the product's current title, picture and link when it can.
+model VendorReviewItem {
+  id        String       @id @default(cuid())
+  reviewId  String
+  review    VendorReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  productId BigInt
+  title     String
+  position  Int          @default(0)
+
+  @@unique([reviewId, productId])
+  @@index([productId])
 }
 
 /// Settings the Setu Store team changes in the Shopify app, one row per shop.

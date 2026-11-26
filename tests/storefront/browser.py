@@ -14,24 +14,31 @@ BASE = f"http://127.0.0.1:{_srv.server_address[1]}"
 
 
 PAT = "**/apps/setu-seller/reviews**"
+# A stand-in product picture, and the buyer's two products as the app describes them.
+IMG = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Crect width='240' height='240' fill='%23c9b79c'/%3E%3C/svg%3E"
+RING = {"title": "Sunburst Pearl Ring", "url": "/products/sunburst-pearl-ring", "image": IMG}
+STUDS = {"title": "Molten Gold Studs", "url": "/products/molten-gold-studs", "image": IMG}
 
 class FakeApp:
     """Answers /apps/setu-seller/reviews the way app/routes/proxy.reviews.tsx does."""
     def __init__(self, signed_in=False, can_review=False, fail=False, empty=False):
         self.signed_in, self.can_review, self.fail, self.posts, self.mine, self.gets = signed_in, can_review, fail, [], None, []
-        self.reviews = [] if empty else [{"rating": 5, "comment": "Lovely finish, well packed.", "author": "Meera", "date": "2026-11-20T10:00:00Z", "edited": False, "item": "Sunburst Pearl Ring"},
-                        {"rating": 4, "comment": "<img src=x onerror=\"document.title='hacked'\"> Good", "author": "Verified buyer", "date": "2026-11-18T10:00:00Z", "edited": True, "item": None}] \
-            + [{"rating": 3 if i else 1, "comment": f"Older {i}", "author": "Buyer", "date": "2026-10-01T10:00:00Z", "edited": False, "item": None} for i in range(10)]
+        self.reviews = [] if empty else [{"rating": 5, "comment": "Lovely finish, well packed.", "author": "Meera", "date": "2026-11-20T10:00:00Z", "edited": False,
+                         # a product with a picture and a page; an archived one (no page, no picture); one whose picture won't load
+                         "items": [RING, {"title": "Old Brass Cuff", "url": None, "image": None}, {"title": "Jade Drop Earrings", "url": "/products/jade-drop-earrings", "image": "/missing-picture.jpg"}]},
+                        {"rating": 4, "comment": "<img src=x onerror=\"document.title='hacked'\"> Good", "author": "Verified buyer", "date": "2026-11-18T10:00:00Z", "edited": True, "items": []}] \
+            + [{"rating": 3 if i else 1, "comment": f"Older {i}", "author": "Buyer", "date": "2026-10-01T10:00:00Z", "edited": False, "items": []} for i in range(10)]
     async def handle(self, route):
         req = route.request
         q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlparse(req.url).query).items()}
         if self.fail:
             return await route.fulfill(status=500, content_type="application/json", body='{"ok":false}')
         if req.method == "POST":
-            f = {k: v[0] for k, v in urllib.parse.parse_qs(req.post_data or "", keep_blank_values=True).items()}
+            sent = urllib.parse.parse_qs(req.post_data or "", keep_blank_values=True)
+            f = {k: v[0] for k, v in sent.items() if k != "item"} | {"item": sent.get("item", [])}  # "item" comes once for each product ticked
             self.posts.append(f)
-            self.mine = {"rating": int(f["rating"]), "comment": f.get("comment", ""), "name": f.get("name", ""), "item": f.get("item", ""), "hidden": False}
-            self.reviews.insert(0, {"rating": int(f["rating"]), "comment": f.get("comment") or None, "author": f.get("name") or "Verified buyer", "date": "2026-11-25T10:00:00Z", "edited": False, "item": "Molten Gold Studs" if f.get("item") == "22" else None})
+            self.mine = {"rating": int(f["rating"]), "comment": f.get("comment", ""), "name": f.get("name", ""), "items": f["item"], "hidden": False}
+            self.reviews.insert(0, {"rating": int(f["rating"]), "comment": f.get("comment") or None, "author": f.get("name") or "Verified buyer", "date": "2026-11-25T10:00:00Z", "edited": False, "items": [{"11": RING, "22": STUDS}[i] for i in f["item"]]})
             return await route.fulfill(content_type="application/json", body='{"ok":true,"replaced":false}')
         self.gets.append(q)
         page, sort = int(q.get("page", "1")), q.get("sort", "newest")
@@ -40,7 +47,7 @@ class FakeApp:
         body = {"ok": True, "summary": {"count": n, "average": f"{sum(r['rating'] for r in rows) / n:.1f}" if n else None, "breakdown": {str(k): sum(1 for r in rows if r["rating"] == k) for k in range(1, 6)}},
                 "page": page, "sort": sort, "more": page * 10 < n, "reviews": rows[(page - 1) * 10: page * 10]}
         if page == 1 and q.get("only") != "list":
-            body["me"] = {"signedIn": True, "canReview": self.can_review, "items": [{"id": "11", "title": "Sunburst Pearl Ring"}, {"id": "22", "title": "Molten Gold Studs"}] if self.can_review else [], "review": self.mine} if self.signed_in else {"signedIn": False}
+            body["me"] = {"signedIn": True, "canReview": self.can_review, "items": [{"id": "11", **RING}, {"id": "22", **STUDS, "image": None}] if self.can_review else [], "review": self.mine} if self.signed_in else {"signedIn": False}
         await route.fulfill(content_type="application/json", body=json.dumps(body))
 
 def check(what, ok, detail=""):
@@ -140,8 +147,11 @@ async def main():
             bars = await p.eval_on_selector_all(".setu-reviews__bar", "els => els.map(e => [e.querySelector('.setu-reviews__bar-n').textContent, e.querySelector('.setu-reviews__bar-c').textContent, e.querySelector('.setu-reviews__bar-fill').style.width, e.getAttribute('aria-label')])")
             check(f"[{label}] left side: the big rating, 'Brand rating (12 reviews)', and a bar with a count for each number of stars, 5 down to 1", side.startswith("★ 3.1 out of 5 Brand rating (12 reviews)") and bars == [["5", "1", "8%", "5-star reviews: 1"], ["4", "1", "8%", "4-star reviews: 1"], ["3", "9", "75%", "3-star reviews: 9"], ["2", "0", "0%", "2-star reviews: 0"], ["1", "1", "8%", "1-star reviews: 1"]], side[:80] + str(bars))
             first = await p.evaluate("(() => { const li = document.querySelector('.setu-reviews__item'); return [li.querySelector('.setu-stars').getAttribute('aria-label'), li.querySelector('.setu-reviews__text').textContent, [...li.querySelectorAll('.setu-reviews__meta span')].map(e => e.textContent)] })()")
-            check(f"[{label}] right side: the first 10 reviews, each with stars, the words, then date, name and item", await p.locator(".setu-reviews__item").count() == 10 and first == ["5 out of 5 stars", "Lovely finish, well packed.", ["Nov 20, 2026", "Meera", "About: Sunburst Pearl Ring"]] and "(edited)" in await p.inner_text(".setu-reviews__list"), str(first))
-            check(f"[{label}] review text is shown as text, never run as HTML", await p.locator(".setu-reviews__list img").count() == 0 and await p.title() != "hacked" and "<img src=x" in await p.inner_text(".setu-reviews__list"))
+            check(f"[{label}] right side: the first 10 reviews, each with stars, the words, then date and name", await p.locator(".setu-reviews__item").count() == 10 and first == ["5 out of 5 stars", "Lovely finish, well packed.", ["Nov 20, 2026", "Meera"]] and "(edited)" in await p.inner_text(".setu-reviews__list"), str(first))
+            await p.wait_for_function("document.querySelectorAll('.setu-reviews__item:first-child .setu-reviews__product--words').length === 2")
+            bought = await p.evaluate("(() => { const li = document.querySelector('.setu-reviews__item'); return [li.querySelector('.setu-reviews__bought-label').textContent, [...li.querySelectorAll('.setu-reviews__product')].map(e => [e.tagName, e.getAttribute('href'), e.querySelector('img') ? e.querySelector('img').alt : null, e.querySelector('img') ? e.querySelector('img').getBoundingClientRect().width : 0, e.textContent.trim()])] })()")
+            check(f"[{label}] 'Purchased products:' under a review: a picture linked to the product; plain words (no link) for one with no page; linked words when the picture won't load", bought == ["Purchased products:", [["A", "/products/sunburst-pearl-ring", "Sunburst Pearl Ring", 72, ""], ["SPAN", None, None, 0, "Old Brass Cuff"], ["A", "/products/jade-drop-earrings", None, 0, "Jade Drop Earrings"]]] and await p.locator(".setu-reviews__item:nth-child(2) .setu-reviews__bought").count() == 0, str(bought))
+            check(f"[{label}] review text is shown as text, never run as HTML", await p.locator(".setu-reviews__text img, .setu-reviews__meta img").count() == 0 and await p.title() != "hacked" and "<img src=x" in await p.inner_text(".setu-reviews__list"))
             cols = await p.evaluate("(() => { const r = (q) => document.querySelector(q).getBoundingClientRect(); const a = r('.setu-reviews__side'), b = r('.setu-reviews__main'), h = r('.setu-reviews__title'), s = r('[data-setu-rv-sort]'), g = r('.grid'); return { side: [a.left, a.top, a.right, a.bottom], main: [b.left, b.top, b.right], title: h.left, sortRight: s.right, sortTop: s.top, titleBottom: h.bottom, grid: [g.left, g.right] } })()")
             if label == "desktop":
                 check(f"[{label}] two columns: rating on the left, reviews on the right, starting level; title and sort menu on one row; lined up with the products", abs(cols["side"][1] - cols["main"][1]) < 2 and cols["main"][0] >= cols["side"][2] + 40 and abs(cols["title"] - cols["grid"][0]) < 1 and abs(cols["sortRight"] - cols["grid"][1]) < 1 and cols["sortTop"] < cols["titleBottom"], str(cols))
@@ -176,23 +186,25 @@ async def main():
             opener = p.locator("[data-setu-rv-open]")
             check(f"[{label}] a buyer sees 'Write a review' under the rating; the form stays shut until asked for", (await opener.inner_text()).strip() == "Write a review" and await opener.get_attribute("aria-expanded") == "false" and not await p.is_visible("[data-setu-rv-form]"))
             await opener.click()
-            opts = await p.eval_on_selector_all("[data-setu-rv-item] option", "els => els.map(e => e.textContent.trim())")
-            check(f"[{label}] the form: 5 stars, their items to choose from, their first name filled in", await opener.get_attribute("aria-expanded") == "true" and await p.is_visible("[data-setu-rv-form]") and await p.locator("input[name=rating]").count() == 5 and opts == ["The seller in general", "Sunburst Pearl Ring", "Molten Gold Studs"] and await p.input_value("input[name=name]") == "Asha")
+            picks = await p.eval_on_selector_all(".setu-reviews__pick", "els => els.map(e => [e.textContent.trim(), e.querySelector('input').type, e.querySelector('input').checked, !!e.querySelector('img')])")
+            check(f"[{label}] the form: 5 stars, a tick box for each product they bought (with its picture when there is one), their first name filled in", await opener.get_attribute("aria-expanded") == "true" and await p.is_visible("[data-setu-rv-form]") and await p.locator("input[name=rating]").count() == 5 and picks == [["Sunburst Pearl Ring", "checkbox", False, True], ["Molten Gold Studs", "checkbox", False, False]] and await p.input_value("input[name=name]") == "Asha" and "Which products is this about?" in await p.inner_text("[data-setu-rv-form]"), str(picks))
+            check(f"[{label}] the 'Rate this seller' heading is not bold", await p.evaluate("getComputedStyle(document.querySelector('[data-setu-rv-form-title]')).fontWeight") == "400")
             await p.click("[data-setu-rv-send]")
             check(f"[{label}] sending without a rating asks for one and sends nothing", (await p.inner_text("[data-setu-rv-error]")).startswith("Choose a rating") and app.posts == [])
             await p.locator("input[name=rating][value='4']").check(force=True)
             lit = await p.eval_on_selector_all(".setu-reviews__star", "els => els.map(e => getComputedStyle(e).color)")
             check(f"[{label}] choosing 4 stars fills the first four, and the 'choose a rating' message goes away", len(set(lit[:4])) == 1 and lit[4] != lit[0] and not await p.is_visible("[data-setu-rv-error]"), str(lit))
-            await p.select_option("[data-setu-rv-item]", "22"); await p.fill("textarea[name=comment]", "Sturdy and well finished.")
+            await p.check(".setu-reviews__pick input[value='22']"); await p.check(".setu-reviews__pick input[value='11']"); await p.fill("textarea[name=comment]", "Sturdy and well finished.")
             await p.screenshot(path=f"{OUT}/reviews-form-{label}.png", full_page=True)
             await p.click("[data-setu-rv-send]"); await p.wait_for_selector("[data-setu-rv-thanks]:not([hidden])")
-            check(f"[{label}] the review is sent with the seller, rating, item, comment and name", app.posts == [{"rating": "4", "item": "22", "comment": "Sturdy and well finished.", "name": "Asha", "seller": "urban-store"}], str(app.posts))
+            check(f"[{label}] the review is sent with the seller, rating, both products, comment and name", app.posts == [{"rating": "4", "item": ["11", "22"], "comment": "Sturdy and well finished.", "name": "Asha", "seller": "urban-store"}], str(app.posts))
             await p.wait_for_function("document.querySelector('.setu-reviews__item .setu-reviews__text')?.textContent === 'Sturdy and well finished.'")
             await p.wait_for_function("document.querySelector('[data-setu-rv-open]').textContent.trim() === 'Change your review'")
             first = " ".join((await p.locator(".setu-reviews__item").first.inner_text()).split())
-            check(f"[{label}] after sending: thanks, the form shuts, the new review is at the top, the count goes up, and the button becomes 'Change your review'", "Asha" in first and "About: Molten Gold Studs" in first and not await p.is_visible("[data-setu-rv-form]") and "Brand rating (13 reviews)" in await p.inner_text(".setu-reviews__side") and await p.evaluate("document.activeElement.hasAttribute('data-setu-rv-open')"))
+            mine = await p.eval_on_selector_all(".setu-reviews__item:first-child a.setu-reviews__product", "els => els.map(e => e.getAttribute('href'))")
+            check(f"[{label}] after sending: thanks, the form shuts, the new review is at the top with both products, the count goes up, and the button becomes 'Change your review'", "Asha" in first and mine == ["/products/sunburst-pearl-ring", "/products/molten-gold-studs"] and not await p.is_visible("[data-setu-rv-form]") and "Brand rating (13 reviews)" in await p.inner_text(".setu-reviews__side") and await p.evaluate("document.activeElement.hasAttribute('data-setu-rv-open')"))
             await opener.click()
-            check(f"[{label}] opening it again shows their answers ready to change", await p.inner_text("[data-setu-rv-form-title]") == "Change your review" and await p.input_value("textarea[name=comment]") == "Sturdy and well finished." and await p.locator("input[name=rating][value='4']").is_checked() and await p.input_value("[data-setu-rv-item]") == "22" and not await p.is_visible("[data-setu-rv-thanks]"))
+            check(f"[{label}] opening it again shows their answers ready to change", await p.inner_text("[data-setu-rv-form-title]") == "Change your review" and await p.input_value("textarea[name=comment]") == "Sturdy and well finished." and await p.locator("input[name=rating][value='4']").is_checked() and await p.eval_on_selector_all(".setu-reviews__pick input", "els => els.map(e => e.checked)") == [True, True] and not await p.is_visible("[data-setu-rv-thanks]"))
 
             # ---- signed in, nothing shipped from this seller; a seller with no reviews; then the app not answering
             await p.unroute(PAT); app = FakeApp(signed_in=True, can_review=False); await p.route(PAT, app.handle)

@@ -2,8 +2,8 @@
  * Setu Store "Ratings and reviews" on a seller's page: loads the seller's
  * reviews from the app (through the store's app proxy) when the section comes
  * near the screen, draws the rating, the bar for each number of stars and the
- * list, and re-sorts on request. Review text is always put on the page as
- * text, never as HTML. setu-review-form.js runs the buyer's form.
+ * list (with the products each review is about), and re-sorts on request.
+ * Review text is always put on the page as text, never as HTML. setu-review-form.js runs the buyer's form.
  */
 (function () {
   function reviews(panel) {
@@ -41,6 +41,28 @@
       return s;
     }
 
+    /* A product the review is about: its picture, linked to its page. Its name in words when there is no picture. */
+    function product(i) {
+      var box = el(i.url ? "a" : "span", "setu-reviews__product");
+      if (i.url) box.href = i.url;
+      box.title = i.title;
+      function words() {
+        box.classList.add("setu-reviews__product--words");
+        box.textContent = i.title;
+      }
+      if (!i.image) words();
+      else {
+        var img = el("img");
+        img.alt = i.title;
+        img.loading = "lazy";
+        img.width = img.height = 72;
+        img.addEventListener("error", words);
+        img.src = i.image;
+        box.appendChild(img);
+      }
+      return box;
+    }
+
     function addReviews(items) {
       items.forEach(function (r) {
         var li = el("li", "setu-reviews__item");
@@ -51,8 +73,15 @@
         var meta = el("p", "setu-reviews__meta");
         meta.appendChild(el("span", "", day + (r.edited ? " (" + (T.edited || "edited") + ")" : "")));
         meta.appendChild(el("span", "", r.author));
-        if (r.item) meta.appendChild(el("span", "", (T.about || "About: %i").replace("%i", r.item)));
         li.appendChild(meta);
+        if (r.items && r.items.length) {
+          li.appendChild(el("p", "setu-reviews__bought-label", T.purchased || ""));
+          var row = el("ul", "setu-reviews__bought");
+          r.items.forEach(function (i) {
+            row.appendChild(el("li")).appendChild(product(i));
+          });
+          li.appendChild(row);
+        }
         list.appendChild(li);
       });
     }
