@@ -107,7 +107,7 @@ order value. The cart already reads the minimum from there. Business documents n
   A collection already on the entry is never changed. When the entry has none, the listing update links one: an existing
   collection with the seller's handle that holds exactly the seller's products, or a new automatic collection
   ("Vendor is X"), published to the online store. Needs the `write_products` and `write_publications` scopes.
-- **Seller header** on that collection page: banner, logo, name, short description, Min, rating, description. By default the
+- **Seller header** on that collection page: banner, logo, name, rating, minimum, arrival dates, brand values, description. By default the
   app embed adds it at the top of the page and hides the theme's own collection title there; or place
   `<div class="setu-seller-header"></div>` yourself (setting *Seller header on a seller's collection*).
 - **Brands page**: every seller with logo, name, minimum, rating and a row of products ending in "View all N products";
@@ -149,7 +149,8 @@ order value. The cart already reads the minimum from there. Business documents n
   owned", "Eco-friendly"; one-tap choices or their own words; the team can edit them on the vendor's page). Shown as
   pills (no visible label; the list is named "Brand values" for screen readers) under the minimum line, where the short description used to be. Kept in
   `Vendor.brandValues`, copied to the seller's entry as `brand_values` (a list). Rules: `app/lib/vendors/values.ts`.
-  The short description is no longer shown on the seller page; product pages still use it.
+  The short description is no longer shown on the seller page or under the vendor name on product pages; it is only the
+  fallback "about the seller" text on a product page when a seller has no full description.
 - **Description box** on the seller page: the seller's full description in a bordered light grey box (`#f7f7f7`) across the header's width.
   It opens two lines tall with *See more*, and *See less* folds it again (`setu-about.js`). A description that fits in two
   lines gets no button; without the script the whole description shows.

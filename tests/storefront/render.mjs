@@ -52,6 +52,9 @@ const page = (title, main, templates) => `<!doctype html><html lang="en"><head><
 <style>${css}</style></head><body><header>Seller Panel Dev</header><main id="MainContent">${main}</main><footer>Footer</footer>${templates}<script>${js}</script></body></html>`;
 const brands = render("setu-brands", { per_page: 10, product_limit: 8 });
 fs.writeFileSync(path.join(OUT, "brands.html"), page("Brands", `<div class="section page-width-content"><h1>Brands</h1><div class="rte"><div class="setu-all-brands"></div></div></div>`, `<template id="setu-all-brands-tpl" data-auto="end">${brands}</template>`));
+// A product page: the vendor header above the product title, the "about the seller" part below.
+const productParts = (vendor) => ["header", "description"].map((part) => `<template id="setu-vendor-${part}-tpl">${render("setu-vendor", { part, product: { vendor } })}</template>`).join("");
+fs.writeFileSync(path.join(OUT, "product.html"), page("Sunburst Pearl Ring", `<div class="section"><div class="setu-vendor-header"></div><h1>Sunburst Pearl Ring</h1><div class="setu-vendor-description"></div></div>`, productParts("Urban Store")));
 // The dev theme's page (Horizon): the section is a full-width grid whose side columns are the page margins, the
 // title and the page text sit in the middle column, and rich text indents lists and gives items bullets and spacing.
 const HORIZON = `<style>.hz{--page-margin:16px;display:grid;grid-template-columns:minmax(var(--page-margin),1fr) min(1800px,100% - var(--page-margin)*2) minmax(var(--page-margin),1fr);padding:40px 0 80px}.hz>*{grid-column:2}.hz-wrap{display:flex;flex-direction:column;gap:32px}.hz .rte{max-width:none}.rte :is(ul,ol):not(:is(ul,ol) :is(ul,ol)){padding-inline-start:2.25em;list-style:disc}.rte li{margin-block:.5em;list-style:inherit}.rte li::marker{content:"• "}@media(min-width:750px){.hz{--page-margin:40px}}</style>`;

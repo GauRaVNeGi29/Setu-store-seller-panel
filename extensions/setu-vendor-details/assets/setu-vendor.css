@@ -69,14 +69,6 @@
 .setu-vendor-hd__name--bold {
   font-weight: 600;
 }
-.setu-vendor-hd__tagline {
-  max-width: 40ch;
-  overflow: hidden;
-  font-size: 0.875em;
-  color: var(--setu-muted);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .setu-vendor-hd__min {
   flex: none;
   display: inline-flex;

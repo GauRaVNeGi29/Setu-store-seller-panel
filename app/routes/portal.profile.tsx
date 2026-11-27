@@ -280,7 +280,7 @@ export default function Profile() {
           <Form method="post" encType="multipart/form-data" className="vp-panel-body vp-form">
             <input type="hidden" name="intent" value="brand" />
             <Field name="shortDescription" label="Short description" maxLength={SHORT_DESCRIPTION_MAX} defaultValue={val("shortDescription", d.shortDescription)}
-              error={err.shortDescription} hint={`One line about your brand, shown beside your name on your product pages. Up to ${SHORT_DESCRIPTION_MAX} characters.`} />
+              error={err.shortDescription} hint={`One line about your brand. Product pages show it in the "about the seller" part when you have no full description. Up to ${SHORT_DESCRIPTION_MAX} characters.`} />
             <BrandValuesField name="brandValues" label="Brand values" value={val("brandValues", d.brandValues.join(", "))} error={err.brandValues}
               hint={`Up to ${BRAND_VALUES_MAX} short tags that say what your brand stands for, shown under your name on your seller page. Tap to choose, or type your own, separated by commas.`} />
             <Field name="description" label="Description" multiline defaultValue={val("description", d.description)} error={err.description}

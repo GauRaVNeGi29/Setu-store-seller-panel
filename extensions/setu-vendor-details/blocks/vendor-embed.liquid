@@ -16,7 +16,7 @@
 {%- endcomment -%}
 {%- if product != blank -%}
   <template id="setu-vendor-header-tpl">
-    {%- render 'setu-vendor', part: 'header', product: product, show_tagline: block.settings.show_tagline, show_min: block.settings.show_min, logo_size: block.settings.logo_size, bold_name: block.settings.bold_name -%}
+    {%- render 'setu-vendor', part: 'header', product: product, show_min: block.settings.show_min, logo_size: block.settings.logo_size, bold_name: block.settings.bold_name -%}
   </template>
   <template id="setu-vendor-description-tpl">
     {%- render 'setu-vendor', part: 'description', product: product, show_link: block.settings.show_link, link_label: block.settings.link_label -%}
@@ -95,12 +95,6 @@
       "id": "bold_name",
       "label": "Bold brand name",
       "default": false
-    },
-    {
-      "type": "checkbox",
-      "id": "show_tagline",
-      "label": "Show short description",
-      "default": true
     },
     {
       "type": "checkbox",
