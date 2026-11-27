@@ -2,6 +2,7 @@ import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from "no
 import { promisify } from "node:util";
 import type { PrismaClient, Prisma } from "@prisma/client";
 import { normaliseEmail, isValidEmail } from "../vendors/vendors.server";
+import { mailLoginLocked, mailPasswordChanged, mailSignupReceived } from "../mail/notify.server";
 
 /**
  * Vendor sign-in (email + password), sign-up, password reset and sessions.
@@ -149,6 +150,8 @@ export async function signUp(db: PrismaClient, raw: SignupInput, ctx: Ctx): Prom
     });
   }
   await db.auditLog.create({ data: { shop: ctx.shop, actor: `portal:${v.email}`, action: "signup.created", target: `user:${user.id}`, detail: { status: user.status, invited: Boolean(existing), ip: ctx.ip ?? null } } });
+  // A person the team invited is active at once and already has their welcome mail.
+  if (user.status === "pending") await mailSignupReceived(db, ctx.shop, user);
 
   const s = await createSession(db, user.id, ctx);
   return { ok: true, status: user.status === "active" ? "active" : "pending", ...s };
@@ -173,6 +176,8 @@ export async function signIn(db: PrismaClient, rawEmail: string, password: strin
   ]);
   if (emailFails >= LOCK_FAILS || ipFails >= IP_FAILS_PER_HOUR) {
     await db.auditLog.create({ data: { shop: ctx.shop, actor: `portal:${email}`, action: "login.locked", detail: { ip: ctx.ip ?? null } } });
+    // Only when this address itself had too many wrong tries, not when a whole network is held back.
+    if (emailFails >= LOCK_FAILS) await mailLoginLocked(db, ctx.shop, email, Math.round(LOCK_WINDOW_MS / 60000), now);
     return { ok: false, reason: "locked" };
   }
 
@@ -319,6 +324,8 @@ export async function resetPassword(db: PrismaClient, token: string, password: s
     db.loginAttempt.deleteMany({ where: { shop: ctx.shop, email: r.vendorUser.email, success: false } }),
   ]);
   await db.auditLog.create({ data: { shop: ctx.shop, actor: `portal:${r.vendorUser.email}`, action: "password.reset", detail: { ip: ctx.ip ?? null } } });
+  // Not for a first password set from an invitation: nothing was changed there.
+  if (r.vendorUser.passwordHash) await mailPasswordChanged(db, ctx.shop, r.vendorUser);
   return { ok: true };
 }
 

@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
+import { mailAccessChanged, mailPersonAdded, mailSignupApproved, mailSignupDeclined, mailVendorStatus } from "../mail/notify.server";
 
 /**
  * Stage 2 – vendor records, managed by the team in Shopify admin.
@@ -46,6 +47,7 @@ export async function setVendorStatus(db: PrismaClient, shop: string, vendorId: 
       : []),
     db.auditLog.create({ data: { shop, actor, action: `vendor.${status}`, target: `vendor:${vendor.id}` } }),
   ]);
+  if (vendor.status !== status) await mailVendorStatus(db, shop, vendor.id, status);
   return { ok: true } as VendorResult;
 }
 
@@ -67,6 +69,7 @@ export async function addVendorUser(
   // Invited: they create their password on the sign-up page and are active straight away.
   await db.vendorUser.create({ data: { shop, vendorId: vendor.id, email, name: name?.trim() || null, status: "invited", role: opts.role ?? "owner", access: opts.access ?? "edit" } });
   await db.auditLog.create({ data: { shop, actor, action: "vendor_user.added", target: `vendor:${vendor.id}`, detail: { email } } });
+  await mailPersonAdded(db, shop, vendor.id, vendor.displayName || vendor.vendorName, { email, name: name?.trim() || null }, opts.role ?? "owner");
   return { ok: true };
 }
 
@@ -79,6 +82,11 @@ export async function removeVendorUser(db: PrismaClient, shop: string, userId: s
     db.vendorUser.delete({ where: { id: user.id } }),
     db.auditLog.create({ data: { shop, actor, action: "vendor_user.removed", target: `vendor:${user.vendorId}`, detail: { email: user.email } } }),
   ]);
+  if (user.vendorId && (user.status === "active" || user.status === "invited")) {
+    const vendor = await db.vendor.findUnique({ where: { id: user.vendorId }, select: { displayName: true, vendorName: true } });
+    const brand = vendor?.displayName || vendor?.vendorName || "your brand";
+    await mailAccessChanged(db, shop, user.vendorId, brand, user, `Your access to ${brand} on the vendor portal was removed. You can no longer sign in.`);
+  }
   return { ok: true };
 }
 
@@ -125,6 +133,7 @@ export async function approveSignup(db: PrismaClient, shop: string, userId: stri
   await db.vendorUser.update({ where: { id: user.id }, data: { vendorId: vendor.id, status: "active", reviewedAt: new Date(), reviewedBy: actor } });
   await fillVendorProfile(db, vendor.id, app as Record<string, string | null>, user.phone);
   await db.auditLog.create({ data: { shop, actor, action: "signup.approved", target: `vendor:${vendor.id}`, detail: { email: user.email, vendorName: name } } });
+  await mailSignupApproved(db, shop, user, vendor.id, vendor.displayName || vendor.vendorName);
   return { ok: true };
 }
 
@@ -137,6 +146,7 @@ export async function rejectSignup(db: PrismaClient, shop: string, userId: strin
     db.portalSession.updateMany({ where: { vendorUserId: user.id, revokedAt: null }, data: { revokedAt: new Date() } }),
     db.auditLog.create({ data: { shop, actor, action: "signup.rejected", detail: { email: user.email } } }),
   ]);
+  await mailSignupDeclined(db, shop, user);
   return { ok: true };
 }
 

@@ -2,6 +2,7 @@ import type { PrismaClient } from "@prisma/client";
 import { Decimal } from "decimal.js";
 import { addDays, aggregate, istDay } from "../portal/dashboard.server";
 import { RANGES, type RangeKey } from "../portal/ranges";
+import { mailCommissionSet } from "../mail/notify.server";
 
 /**
  * Commission: one percentage per vendor, set by the Setu Store team.
@@ -51,6 +52,7 @@ export async function setCommissionRate(db: PrismaClient, shop: string, vendorId
   const effectiveFrom = history.length ? now : START;
   await db.vendorCommission.create({ data: { shop, vendorId, ratePercent: rate, effectiveFrom, setBy: actor.slice(0, 200), createdAt: now } });
   await db.auditLog.create({ data: { shop, actor, action: "vendor.commission_set", target: `vendor:${vendorId}`, detail: { rate, from: history.length ? now.toISOString() : "all orders", previous: currentRate(history) } } });
+  await mailCommissionSet(db, shop, vendorId, rate);
   return { ok: true, rate };
 }
 

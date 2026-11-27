@@ -4,6 +4,7 @@ import { reviewNumbers } from "../reviews/reviews.server";
 import { deliveryTime } from "../settings/settings.server";
 import { listAllVendors } from "../vendors/team.server";
 import { listSignups } from "../vendors/vendors.server";
+import { mailNumbers } from "../mail/admin.server";
 
 /**
  * What the app's Dashboard shows: alerts (each one says where to deal with
@@ -25,7 +26,7 @@ const REPORT_DAYS = 30;
 
 export async function dashboard(db: PrismaClient, shop: string, now = new Date()) {
   const since = new Date(now.getTime() - REPORT_DAYS * 24 * 60 * 60 * 1000);
-  const [vendors, signups, delivery, allTime, period, reviews, activity] = await Promise.all([
+  const [vendors, signups, delivery, allTime, period, reviews, activity, mail] = await Promise.all([
     listAllVendors(db, shop),
     listSignups(db, shop),
     deliveryTime(db, shop),
@@ -33,6 +34,7 @@ export async function dashboard(db: PrismaClient, shop: string, now = new Date()
     vendorOverview(db, shop, since),
     reviewNumbers(db, shop, now),
     recentActivity(db, shop, 8, true),
+    mailNumbers(db, shop, now),
   ]);
 
   const alerts: Alert[] = [];
@@ -47,6 +49,9 @@ export async function dashboard(db: PrismaClient, shop: string, now = new Date()
   if (allTime.lastError) alerts.push({ key: "sync", tone: "critical", href: "/app/orders", text: `Orders didn't copy from Shopify: ${allTime.lastError}` });
   if (delivery.error) alerts.push({ key: "delivery_copy", tone: "critical", href: "/app/orders", text: "The delivery time is saved here but the store doesn't show it yet" });
   else if (!delivery.range) alerts.push({ key: "delivery_unset", tone: "warning", href: "/app/orders", text: "No delivery time is set, so seller pages show no arrival dates" });
+  if (mail.failed) alerts.push({ key: "mail_failed", tone: "critical", href: "/app/mail?view=log&status=failed", text: `${mail.failed} ${mail.failed === 1 ? "mail" : "mails"} couldn't be sent in the last 7 days` });
+  if (mail.bounced) alerts.push({ key: "mail_bounced", tone: "warning", href: "/app/mail?view=log&status=bounced", text: `${mail.bounced} ${mail.bounced === 1 ? "mail was" : "mails were"} refused by the address in the last 7 days` });
+  if (!mail.team.length) alerts.push({ key: "mail_no_team", tone: "warning", href: "/app/mail?view=team", text: "No team address is set, so nobody on the team gets alert mails" });
   if (signups.length) alerts.push({ key: "signups", tone: "warning", href: "/app/signups", text: `${signups.length} ${signups.length === 1 ? "sign-up is" : "sign-ups are"} waiting for approval` });
   about("business_changes", vendors.filter((v) => v.pendingChange), "vendor has business changes to review", "vendors have business changes to review");
   about("no_commission", vendors.filter((v) => v.commission === null), "vendor has no commission rate", "vendors have no commission rate");
@@ -64,6 +69,7 @@ export async function dashboard(db: PrismaClient, shop: string, now = new Date()
       shipping: { unitsToShip: all.unitsToShip, vendorsToShip: all.vendorsToShip, openOrders: allTime.vendors.reduce((n, v) => n + v.openOrders, 0) },
       orders: { total: allTime.orderCount, net: all.net },
       reviews: { published: reviews.published, hidden: reviews.hidden, average: reviews.average, last30Days: reviews.last30Days },
+      mail: { sent: mail.sent, waiting: mail.waiting, failed: mail.failed, bounced: mail.bounced },
     },
     report: {
       days: REPORT_DAYS,

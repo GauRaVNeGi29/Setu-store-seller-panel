@@ -44,6 +44,7 @@ const pages = {
   signups: await import("../app/routes/app.signups"),
   orders: await import("../app/routes/app.orders"),
   reviews: await import("../app/routes/app.reviews"),
+  mail: await import("../app/routes/app.mail"),
 };
 
 const db = new PrismaClient();
@@ -57,6 +58,8 @@ async function cleanup() {
   await db.syncState.deleteMany({ where: { shop } });
   await db.auditLog.deleteMany({ where: { shop } });
   await db.shopSetting.deleteMany({ where: { shop } });
+  await db.mailMessage.deleteMany({ where: { shop } });
+  await db.mailTemplateSetting.deleteMany({ where: { shop } });
 }
 
 beforeAll(async () => {
@@ -77,6 +80,13 @@ beforeAll(async () => {
   });
   await review(1, 5);
   await review(2, 3, { status: "hidden", hiddenBy: "admin:team@setustore.test", hiddenReason: "Spam", hiddenAt: new Date() });
+  // Mail: the sign-up above wrote one to the seller; add a team address, a mail that failed and one that was delivered.
+  await db.shopSetting.update({ where: { shop }, data: { adminEmails: ["alerts@setustore.test"] } });
+  await db.mailTemplateSetting.create({ data: { shop, template: "review_new", enabled: false } });
+  const sent = { shop, audience: "seller", toEmail: "owner@urban.example", vendorId: urban.id, body: "x" };
+  await db.mailMessage.create({ data: { ...sent, template: "order_new", subject: "New order #1003 for Urban Store Co.", status: "delivered", attempts: 1, sentAt: new Date() } });
+  await db.mailMessage.create({ data: { ...sent, template: "commission_set", subject: "Your commission rate on Setu Store", status: "failed", attempts: 5, note: "The mail service refused it (422): Invalid `to` field" } });
+  await db.mailMessage.create({ data: { ...sent, template: "password_reset", subject: "Reset your Setu Store vendor portal password", status: "logged", attempts: 1, note: "No mail service is set up, so this was not sent." } });
 });
 afterAll(cleanup);
 
@@ -148,5 +158,39 @@ describe("the team's pages draw from real data", () => {
     expect(hidden).not.toContain("Review number 1");
     const bySeller = await draw("reviews", "/app/reviews?view=sellers", "reviews-sellers");
     for (const part of ["Ratings by seller", "Urban Store Co.", "See their reviews"]) expect(bySeller, part).toContain(part);
+  });
+
+  it("Mail: every mail with who gets it and its words; the log with what happened; the team's addresses", async () => {
+    const mails = await draw("mail", "/app/mail", "mail");
+    for (const part of [
+      "No mail service is set up. Mails are kept in the log but not sent.", "Mails Log Team addresses 1", "Sent 1 Last 7 days", "Waiting 1", "Failed 1", "Not sent 1",
+      "Mails to sellers", "Account", "Orders", "Reviews", "Mails to the team", "Team alerts",
+      "New order An order with the vendor's products is placed (one mail per order) Everyone active on the vendor's team On Switch off",
+      "New review", "Off Switch on", "Password reset link", "Always on", "1 mail in total is switched off",
+      "Read it, or send a test", "Subject New order #1042 for Ashnur", "Hello Priya,", "• 24 × Pillar Candle – Rose", "Send this example to", "Send test",
+      "Orders past their processing time", "A seller's email is bouncing", "New 5-star review for Ashnur",
+    ]) expect(mails, part).toContain(part);
+    // The two mails that were dropped are not offered.
+    expect(mails).not.toMatch(/summary|still incomplete/i);
+    // A required mail has no switch: as many switches as mails that can be switched.
+    expect(mails.match(/Switch (?:on|off)/g)!.length).toBe(mails.match(/Read it, or send a test/g)!.length - mails.match(/Always on/g)!.length);
+
+    const log = await draw("mail", "/app/mail?view=log", "mail-log");
+    for (const part of [
+      "4 mails, newest first", "owner@urban.example Seller", "New order #1003 for Urban Store Co. New order Delivered",
+      "Your commission rate on Setu Store Commission rate set Failed The mail service refused it (422): Invalid `to` field Send again",
+      "Not sent No mail service is set up, so this was not sent.", "new@seller.example", "Sign-up received",
+    ]) expect(log, part).toContain(part);
+    // Only the failed mail can be sent again: one is still waiting, one carried a one-time link.
+    expect(log.match(/Send again/g)).toHaveLength(1);
+    expect(log).toContain("Waiting");
+    const failed = await draw("mail", "/app/mail?view=log&status=failed", "mail-log-failed");
+    expect(failed).toContain("1 mail match");
+    expect(failed).toContain("Your commission rate on Setu Store");
+    expect(failed).not.toContain("New order #1003");
+    expect(await draw("mail", "/app/mail?view=log&to=nobody", "mail-log-none")).toContain("No mails match.");
+
+    const team = await draw("mail", "/app/mail?view=team", "mail-team");
+    for (const part of ["Team addresses", "Email addresses, one on each line (up to 10)", "alerts@setustore.test", "Save", "Sellers never see these addresses."]) expect(team, part).toContain(part);
   });
 });

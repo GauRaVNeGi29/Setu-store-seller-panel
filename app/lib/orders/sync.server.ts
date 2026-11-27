@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import { gidToId, orderToLines, type ShopifyOrder, type VendorLine } from "./map";
+import { mailOrderChanges, mailSyncFailed } from "../mail/notify.server";
 
 /**
  * Keeps VendorOrderLine in step with Shopify.
@@ -113,7 +114,15 @@ export async function removeOrder(db: PrismaClient, shop: string, orderId: bigin
 export async function syncOrder(db: PrismaClient, graphql: AdminGraphql, shop: string, orderGid: string, actor: string) {
   const order = await fetchOrder(graphql, orderGid);
   if (!order) return { removed: await removeOrder(db, shop, gidToId(orderGid), actor) };
-  return { lines: (await saveOrder(db, shop, order, actor)).length };
+  // This is the path a single order takes when Shopify reports a change, so it is
+  // where vendors are mailed. The full resync below saves orders without mailing.
+  const orderId = gidToId(order.id);
+  const pick = { vendorName: true, lineItemId: true, title: true, variantTitle: true, quantity: true, currentQuantity: true, refundedAmount: true, orderCancelled: true, orderCreatedAt: true } as const;
+  const before = await db.vendorOrderLine.findMany({ where: { shop, orderId }, select: pick });
+  const lines = await saveOrder(db, shop, order, actor);
+  const after = await db.vendorOrderLine.findMany({ where: { shop, orderId }, select: pick });
+  await mailOrderChanges(db, shop, { id: orderId, name: order.name }, before, after);
+  return { lines: lines.length };
 }
 
 /**
@@ -148,6 +157,7 @@ export async function fullSync(db: PrismaClient, graphql: AdminGraphql, shop: st
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     await db.syncState.upsert({ where: { shop }, create: { shop, lastError: message }, update: { lastError: message } });
+    await mailSyncFailed(db, shop, message);
     throw e;
   }
 }

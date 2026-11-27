@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
+import { mailStoreCopyFailed } from "../mail/notify.server";
 import { friendly, syncListing, type ListingResult } from "./listing.server";
 
 /**
@@ -12,7 +13,21 @@ import { friendly, syncListing, type ListingResult } from "./listing.server";
  */
 const TIMEOUT_MS = 20_000;
 
-export async function updateStoreListing(db: PrismaClient, shop: string, vendorId: string): Promise<ListingResult> {
+/**
+ * `alert`: mail the team if it fails. For updates nobody on the team is
+ * watching (a vendor saved their brand, a buyer left a review); in the
+ * Shopify app the person sees the error on the page instead.
+ */
+export async function updateStoreListing(db: PrismaClient, shop: string, vendorId: string, opts: { alert?: boolean } = {}): Promise<ListingResult> {
+  const r = await update(db, shop, vendorId);
+  if (!r.ok && opts.alert && process.env.STORE_LISTING_SYNC !== "off") {
+    const v = await db.vendor.findFirst({ where: { id: vendorId, shop }, select: { displayName: true, vendorName: true } }).catch(() => null);
+    await mailStoreCopyFailed(db, shop, `the store listing of ${v?.displayName || v?.vendorName || "a vendor"}`, r.error);
+  }
+  return r;
+}
+
+async function update(db: PrismaClient, shop: string, vendorId: string): Promise<ListingResult> {
   if (process.env.STORE_LISTING_SYNC === "off") return { ok: false, error: "Store listing updates are switched off (STORE_LISTING_SYNC=off)." };
   let graphql;
   try {

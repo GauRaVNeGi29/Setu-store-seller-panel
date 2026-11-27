@@ -61,7 +61,7 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<ActionRes
   if (!run) return { ok: false, intent, error: "Unknown action" };
   const r = await run();
   // Brand details are public: copy them to the store listing. A failure here is recorded for the team; the save stands.
-  if (r.ok && intent === "brand") await updateStoreListing(db, me.shop, me.vendor.id);
+  if (r.ok && intent === "brand") await updateStoreListing(db, me.shop, me.vendor.id, { alert: true });
   if (r.ok) throw redirect(`/portal/profile?saved=${intent === "withdraw" ? "withdrawn" : intent}`);
   return { ok: false, intent, error: r.error, errors: r.errors, values };
 };
