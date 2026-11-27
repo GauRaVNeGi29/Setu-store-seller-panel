@@ -366,13 +366,29 @@
   outline: 2px solid currentColor;
   outline-offset: 2px;
 }
-.setu-brands__list,
-.setu-brand__track {
+/* The list often sits in a theme's rich text, which indents lists and gives
+   their items bullets and spacing: these selectors are strong enough to undo that. */
+.setu-brands ul.setu-brands__list,
+.setu-brands ul.setu-brand__track {
   list-style: none;
   margin: 0;
   padding: 0;
 }
-.setu-brand {
+.setu-brands li.setu-brand,
+.setu-brands li.setu-brand__card {
+  list-style: none;
+}
+.setu-brands li.setu-brand__card {
+  margin: 0;
+  padding: 0;
+}
+.setu-brands li.setu-brand::before,
+.setu-brands li.setu-brand__card::before,
+.setu-brands li.setu-brand::marker,
+.setu-brands li.setu-brand__card::marker {
+  content: none;
+}
+.setu-brands li.setu-brand {
   display: grid;
   grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);
   gap: 20px;
@@ -382,7 +398,7 @@
   border: 1px solid var(--setu-line);
   border-radius: 14px;
 }
-.setu-brand[hidden] {
+.setu-brands li.setu-brand[hidden] {
   display: none;
 }
 .setu-brand__seller {
@@ -435,11 +451,13 @@
   position: relative;
   min-width: 0;
 }
-.setu-brand__track {
+.setu-brands ul.setu-brand__track {
   display: flex;
   gap: 12px;
   overflow-x: auto;
   scroll-snap-type: x proximity;
+  /* Snap to the padded edge, so a row that scrolls starts level with one that doesn't. */
+  scroll-padding-inline: 2px;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
   padding: 2px;
@@ -583,7 +601,7 @@
 }
 
 @media screen and (max-width: 749px) {
-  .setu-brand {
+  .setu-brands li.setu-brand {
     grid-template-columns: minmax(0, 1fr);
     gap: 12px;
     padding: 12px;

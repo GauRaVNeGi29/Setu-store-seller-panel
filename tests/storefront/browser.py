@@ -112,6 +112,27 @@ async def main():
             w2 = await p.evaluate("(() => { const r = document.querySelector('.setu-brands').getBoundingClientRect(); return [r.left, r.right, document.documentElement.scrollWidth, innerWidth] })()")
             check(f"[{label}] the width follows the window when it is resized", w2[2] <= w2[3] and abs(w2[0] - pad) < 1 and abs(w2[1] - (w2[3] - pad)) < 2, str(w2))
             await p.set_viewport_size(vp)
+            # ---- the dev theme's page shape: full-width grid with margin columns, list inside rich text
+            await p.goto(f"{BASE}/brands-horizon.html"); await p.wait_for_selector("[data-setu-ready]")
+            g = await p.evaluate("(() => { const r = (q) => document.querySelector(q).getBoundingClientRect(); const h = r('h1'), l = r('.setu-brands'), bar = r('[data-setu-bar]'), sort = r('.setu-brands__sort'), search = r('.setu-brands__search'), row = r('.setu-brand:not([hidden])'), list = r('.setu-brands__list'); const rows = [...document.querySelectorAll('.setu-brand:not([hidden])')].map(e => e.getBoundingClientRect()); const li = document.querySelector('.setu-brand'), card = document.querySelector('.setu-brand__card'); return { vw: document.documentElement.clientWidth, sw: document.documentElement.scrollWidth, title: h.left, left: l.left, right: l.right, sort: sort.left, search: search.right, bar: [bar.left, bar.right], row: [row.left, row.right], list: list.left, rowsIn: rows.every(x => x.left >= l.left - 0.5 && x.right <= l.right + 0.5), gap: rows.length > 1 ? rows[1].top - rows[0].bottom : 20, bullets: [getComputedStyle(li).listStyleType, getComputedStyle(card).listStyleType, getComputedStyle(li, '::marker').content, getComputedStyle(card).marginTop] } })()")
+            m = 40 if label == "desktop" else 16  # the theme's page margin: 40px on a wide screen, 16px on a phone
+            check(f"[{label}] in the dev theme's page shape: the list starts at the page title and leaves the same margin on the right", abs(g["left"] - g["title"]) < 1 and abs(g["left"] - m) < 1 and abs((g["vw"] - g["right"]) - m) < 1 and g["sw"] <= g["vw"], str(g))
+            check(f"[{label}] 'Sort by' sits at the left edge, the search box ends at the right edge, and every seller's box spans exactly between them", abs(g["sort"] - g["left"]) < 1 and abs(g["search"] - g["right"]) < 1 and abs(g["row"][0] - g["left"]) < 1 and abs(g["row"][1] - g["right"]) < 1 and abs(g["list"] - g["left"]) < 1 and g["rowsIn"], str(g))
+            check(f"[{label}] the theme's rich-text list styling (indent, bullets, extra spacing) doesn't reach the list", g["bullets"] == ["none", "none", "none", "0px"] and abs(g["gap"] - 20) < 1, str(g["bullets"]) + str(g["gap"]))
+            nav = await p.evaluate("(() => { const b = document.querySelector('.setu-brand [data-setu-next]'); if (!b || !b.offsetParent) return null; const r = b.getBoundingClientRect(), l = document.querySelector('.setu-brands').getBoundingClientRect(); return r.right <= l.right + 0.5 })()")
+            check(f"[{label}] the arrow at the end of a seller's products stays inside the list", nav in (True, None), str(nav))
+            firsts = await p.eval_on_selector_all(".setu-brand:not([hidden]) .setu-brand__card:first-child", "els => els.map(e => Math.round(e.getBoundingClientRect().left * 2) / 2)")
+            check(f"[{label}] every seller's first product starts at the same place, whether or not the row scrolls", len(set(firsts)) == 1 and len(firsts) > 3, str(firsts))
+            await p.screenshot(path=f"{OUT}/brands-horizon-{label}.png")
+            if label == "desktop":
+                # the owner's screen: 1920 wide, where the theme's 1800px page leaves 60px each side
+                await p.set_viewport_size({"width": 1920, "height": 900}); await p.wait_for_timeout(200)
+                big = await p.evaluate("(() => { const r = (q) => document.querySelector(q).getBoundingClientRect(); return [r('h1').left, r('.setu-brands').left, document.documentElement.clientWidth - r('.setu-brands').right, r('.setu-brands__sort').left, document.documentElement.clientWidth - r('.setu-brands__search').right, document.documentElement.scrollWidth] })()")
+                check("[desktop] on a 1920-wide screen: title, 'Sort by' and the list all start 60px in, and 60px is left on the right", all(abs(x - 60) < 1 for x in big[:5]) and big[5] <= 1920, str(big))
+                await p.screenshot(path=f"{OUT}/brands-horizon-1920.png")
+                await p.set_viewport_size(vp); await p.wait_for_timeout(150)
+            await p.fill("[data-setu-search]", "zzz-no-such-brand"); await p.wait_for_timeout(250)
+            check(f"[{label}] searching still hides the sellers that don't match", await p.locator(".setu-brand:visible").count() == 0)
             await p.goto(f"{BASE}/brands-auto.html"); await p.wait_for_selector("[data-setu-ready]")
             check(f"[{label}] with no placeholder, the list adds itself to the end of the page content", await p.locator("#MainContent > .setu-all-brands--auto [data-setu-brand]:not([hidden])").count() == 10 and await p.evaluate("document.documentElement.scrollWidth") <= vp["width"])
             await p.goto(f"{BASE}/brands-nojs.html")

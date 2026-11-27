@@ -101,8 +101,12 @@
 
   /*
    * A theme's page text often sits in a narrow column. When the list is in one,
-   * make it as wide as the widest box around it inside the page's section, so
-   * it lines up with the page title.
+   * make it as wide as the widest space around it inside the page's section, so
+   * it lines up with the page title. A box that lays its content out in tracks
+   * (a grid with margin columns, as newer themes use for the page width) only
+   * offers the track our branch sits in, not its whole width. The list never
+   * touches the edges of the screen: if the space found does, the page margin
+   * is kept on both sides.
    */
   function widen(root) {
     if (!root.classList.contains("setu-brands--wide")) return;
@@ -110,15 +114,26 @@
     root.style.marginLeft = "";
     var own = root.getBoundingClientRect();
     var best = null;
-    for (var el = root.parentElement; el && el !== document.body; el = el.parentElement) {
+    var child = root;
+    for (var el = root.parentElement; el && el !== document.body; child = el, el = el.parentElement) {
       if (el.tagName === "MAIN" || el.classList.contains("shopify-section")) break;
       var cs = getComputedStyle(el);
-      var r = el.getBoundingClientRect();
-      var left = r.left + (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.borderLeftWidth) || 0);
-      var width = r.width - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0) - (parseFloat(cs.borderLeftWidth) || 0) - (parseFloat(cs.borderRightWidth) || 0);
+      var tracks = /grid/.test(cs.display) || (/flex/.test(cs.display) && !/column/.test(cs.flexDirection));
+      var r = (tracks ? child : el).getBoundingClientRect();
+      var px = function (v) {
+        return tracks ? 0 : parseFloat(cs[v]) || 0;
+      };
+      var left = r.left + px("paddingLeft") + px("borderLeftWidth");
+      var width = r.width - px("paddingLeft") - px("paddingRight") - px("borderLeftWidth") - px("borderRightWidth");
       if (!best || width > best.width + 1) best = { left: left, width: width };
     }
-    if (!best || best.width <= own.width + 1) return;
+    if (!best) return;
+    var screen = document.documentElement.clientWidth;
+    if (best.left < 1 && best.left + best.width > screen - 1) {
+      var margin = parseFloat(getComputedStyle(root).getPropertyValue("--page-margin")) || Math.max(16, Math.min(40, screen * 0.03));
+      best = { left: margin, width: screen - margin * 2 };
+    }
+    if (best.width <= own.width + 1) return;
     root.style.width = best.width + "px";
     root.style.marginLeft = best.left - own.left + "px";
   }
