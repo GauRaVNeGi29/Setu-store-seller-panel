@@ -1,16 +1,17 @@
 import type { PrismaClient } from "@prisma/client";
-import { summariseByVendor } from "./map";
+import { summariseByVendor, type VendorSummary } from "./map";
 
 /** Read-only queries for the team's admin screens. Everything is filtered by shop. */
 
-export async function vendorOverview(db: PrismaClient, shop: string) {
+/** Totals for each vendor. With `since`, only orders placed from that moment on. */
+export async function vendorOverview(db: PrismaClient, shop: string, since?: Date) {
   const lines = await db.vendorOrderLine.findMany({
-    where: { shop },
+    where: { shop, ...(since ? { orderCreatedAt: { gte: since } } : {}) },
     select: { vendorName: true, orderId: true, currentQuantity: true, fulfilledQuantity: true, status: true, lineTotal: true, refundedAmount: true, netAmount: true },
   });
   const [state, orders] = await Promise.all([
     db.syncState.findUnique({ where: { shop } }),
-    db.vendorOrderLine.findMany({ where: { shop }, select: { orderId: true }, distinct: ["orderId"] }),
+    db.vendorOrderLine.findMany({ where: { shop, ...(since ? { orderCreatedAt: { gte: since } } : {}) }, select: { orderId: true }, distinct: ["orderId"] }),
   ]);
   return {
     vendors: summariseByVendor(lines),
@@ -47,7 +48,22 @@ export async function vendorLines(db: PrismaClient, shop: string, vendorName: st
   }));
 }
 
-export async function recentActivity(db: PrismaClient, shop: string, take = 15) {
-  const rows = await db.auditLog.findMany({ where: { shop }, orderBy: { at: "desc" }, take });
+/** Adds up the vendors' rows: what the whole store sold, and what is still to ship. */
+export function storeTotals(vendors: VendorSummary[]) {
+  const sum = (pick: (v: VendorSummary) => number) => vendors.reduce((n, v) => n + pick(v), 0);
+  return {
+    units: sum((v) => v.units),
+    net: sum((v) => Number(v.net)).toFixed(2),
+    unitsToShip: sum((v) => v.unitsToShip),
+    vendorsToShip: vendors.filter((v) => v.unitsToShip > 0).length,
+  };
+}
+
+/** Events that happen all day and say little on their own: left out of the Dashboard's short list. */
+const ROUTINE = ["order.synced", "order.removed", "login.success", "login.failed"];
+
+/** The latest entries in the activity record. `notable` leaves out routine ones (each order copied, each sign-in). */
+export async function recentActivity(db: PrismaClient, shop: string, take = 15, notable = false) {
+  const rows = await db.auditLog.findMany({ where: { shop, ...(notable ? { action: { notIn: ROUTINE } } : {}) }, orderBy: { at: "desc" }, take });
   return rows.map((r) => ({ id: r.id.toString(), at: r.at.toISOString(), actor: r.actor, action: r.action, target: r.target }));
 }

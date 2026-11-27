@@ -5,7 +5,7 @@ Custom Shopify app that will give Setu Store's vendors a secure place to see the
 **Status: Stages 1–4 – development only (dev store).**
 
 - **Stage 1:** the app copies every order line into its own database, filed by vendor, kept current by order webhooks.
-- **Stage 2:** the team sets up vendors and invites the emails allowed in (Shopify admin → the app → a vendor → *Vendor portal access*), and approves self sign-ups (*Sign-ups* page).
+- **Stage 2:** the team sets up vendors and invites the emails allowed in (Shopify admin → the app → a vendor → *Vendor portal access*), and approves self sign-ups (*Vendors → Sign-ups*).
 - **Stage 3:** vendors create an account at `/portal/signup` and sign in with email + password at `/portal/login`; *Forgot password* emails a reset link. Invited emails get in straight away; anyone else waits for approval.
 - **Stage 4:** vendors see *My orders*, each order's detail (their items only), *What to ship* and *My brand*.
 
@@ -24,7 +24,7 @@ Custom Shopify app that will give Setu Store's vendors a secure place to see the
 | Re-read orders from Shopify, save, full resync | `app/lib/orders/sync.server.ts` |
 | Webhook burst queue | `app/lib/orders/queue.server.ts` |
 | Order webhooks (create, update, cancel, fulfil, refund, delete) | `app/routes/webhooks.orders.tsx` |
-| Team screens: vendor overview, one vendor's lines | `app/routes/app._index.tsx`, `app/routes/app.vendor.tsx` |
+| Team screens in Shopify admin (see *The app in Shopify admin* below) | `app/routes/app.*.tsx`, `app/lib/admin/` |
 | Store guard | `app/lib/guard.server.ts` |
 | Database | `prisma/schema.prisma` (VendorOrderLine, SyncState, AuditLog) |
 | Vendor records and access (team) | `app/lib/vendors/vendors.server.ts`, `app/routes/app.vendor.tsx` |
@@ -33,8 +33,22 @@ Custom Shopify app that will give Setu Store's vendors a secure place to see the
 | Vendor portal pages | `app/routes/portal*.tsx`, `app/lib/portal/data.server.ts` |
 | Store listing (vendor details, seller collections, Brands page) | `app/lib/storefront/`, `extensions/setu-vendor-details/`, `tests/storefront/` |
 | Reviews (rules, seller page, team controls) | `app/lib/reviews/`, `app/routes/portal.reviews.tsx`, `app/routes/app.vendor.tsx` |
-| Dashboard and store settings (delivery time) | `app/routes/app._index.tsx`, `app/lib/settings/`, `app/lib/vendors/shipping.ts` |
+| Store settings (delivery time) | `app/routes/app.orders.tsx`, `app/lib/settings/`, `app/lib/vendors/shipping.ts` |
 | Tests (76): order mapping, sync, passwords, sign-up, approval, reset, sessions, vendor isolation through the real pages | `tests/` |
+
+## The app in Shopify admin
+
+Four pages, each laid out the same way: tabs under the title, the main numbers, then tables.
+
+| Page | Route | What is there |
+|---|---|---|
+| **Dashboard** | `/app` | Alerts (each links to where it is dealt with), the main numbers for vendors, shipping, delivery time and reviews, a sales report for the last 30 days with the top vendors, and recent activity in plain words. Nothing is changed from here. |
+| **Vendors** | `/app/vendors`, `/app/signups`, `/app/vendor?name=` | Tabs: *All vendors* (owner, people, commission, minimum order, processing time, rating, net sales, status, what needs attention; search), *Needs attention*, *Sign-ups* (approve or decline), *Without portal access* (Shopify vendors with orders but no account). *Tools*: update all store listings, the portal sign-in page. One vendor's page holds its people, commission, details, store listing, reviews and order lines. |
+| **Shipping and orders** | `/app/orders` | Tabs: *Shipping* (waiting to ship by vendor, the store's delivery time, each seller's processing time and total), *Sales by vendor*, *Order sync*. |
+| **Reviews** | `/app/reviews` | Tabs: *All reviews* (every seller; narrow by seller, status or stars; hide with a reason, show again), *By seller* (rating and counts). |
+
+Shared pieces (tabs, number tiles, the review row) are in `app/lib/admin/ui.tsx`; the Dashboard's data in `app/lib/admin/dashboard.server.ts`.
+`tests/admin.render.db.test.ts` draws every page from its real loader data and writes plain-HTML copies to `.cache/admin-preview/`.
 
 ## First-time setup on your PC
 
@@ -52,7 +66,7 @@ Custom Shopify app that will give Setu Store's vendors a secure place to see the
    ```bash
    npm run dev              # shopify app dev; pick seller-panel-dev.myshopify.com when asked
    ```
-   Open the app from the dev store admin. On first open it copies all orders. The app opens on the **Dashboard**; the **Vendors and orders** page should show:
+   Open the app from the dev store admin. On first open it copies all orders. The app opens on the **Dashboard**; **Shipping and orders → Sales by vendor** should show:
 
    | Vendor | Orders | Units sold | Gross | Refunded | Net | Units to ship |
    | --- | --- | --- | --- | --- | --- | --- |
@@ -66,7 +80,7 @@ Custom Shopify app that will give Setu Store's vendors a secure place to see the
 1. In `.env`: `PORTAL_SHOP=seller-panel-dev.myshopify.com` and `PORTAL_DEV_SHOW_EMAILS=true` (shows the would-be reset email on the page, since no email service is set up yet).
 2. `npm run dev`, open the app in the dev store admin.
 3. **Invited vendor:** click a vendor (e.g. Ashnur) → *Set up portal access* → add an email. Then open `<trycloudflare address>/portal/signup` in a private window, use that email, fill the form → straight into *My orders*.
-4. **New vendor:** sign up with an email nobody invited → *under review*. In the app, *Sign-ups* → choose the Shopify vendor name → *Approve*. Refresh the portal → their orders appear.
+4. **New vendor:** sign up with an email nobody invited → *under review*. In the app, *Vendors → Sign-ups* → choose the Shopify vendor name → *Approve*. Refresh the portal → their orders appear.
 5. **Forgot password:** `/portal/forgot` → the page shows the reset link (development only) → choose a new password.
 
 What vendors never see: other vendors' items, an order's grand total, the buyer's name, email, phone or address. Applicants waiting for approval see no order data at all.
@@ -77,7 +91,7 @@ Buyers rate a seller from 1 to 5 stars, with an optional comment. Code: `app/lib
 
 - **Who can review:** only a buyer with a shipped, not-cancelled order from that seller. One review per buyer per seller; sending another replaces it.
 - **Seller portal:** *Reviews* shows the rating, a breakdown by stars and every review. Sellers can read but not change them, and never see who the buyer is (only the name the buyer chose, and the order number).
-- **Shopify app:** the vendor page lists the reviews; the team can hide one with a reason (the seller sees the reason) or show it again. Hidden reviews aren't counted. *All vendors* shows each rating.
+- **Shopify app:** the vendor page lists the reviews; the team can hide one with a reason (the seller sees the reason) or show it again. Hidden reviews aren't counted. The **Reviews** page lists every seller's reviews with the same controls; *Vendors* shows each rating.
 - **Store listing:** the average and the number of reviews are copied to the seller's Marketplace seller entry (`rating`, `review_count`) for the theme.
 - **Not built yet:** the storefront form where buyers leave a review. Until then, `npm run reviews:sample` adds clearly labelled sample reviews on the development store only (`npm run reviews:sample -- remove` takes them out).
 
@@ -88,7 +102,7 @@ The app copies each vendor's public brand details into the store's **Marketplace
 order value. The cart already reads the minimum from there. Business documents never leave the app.
 
 - **When:** a seller saves *My brand*, or the team saves *Details* on the vendor page. *Update store listing*
-  (vendor page) and *Update all store listings* (All vendors) run it by hand. A failed update never undoes the save;
+  (vendor page) and *Update all store listings* (Vendors → Tools) run it by hand. A failed update never undoes the save;
   the reason shows on the vendor page.
 - **Fields:** the app adds any missing fields to the definition (`display_name`, `short_description`,
   `description`, `logo`, `banner`). It never changes `collection` or `webkul_seller_id`, and never blanks a
@@ -142,7 +156,7 @@ order value. The cart already reads the minimum from there. Business documents n
   counts themselves are not shown). Processing time is the days the seller needs to make or ready an order, a range the
   seller sets under My brand → Brand details (the team can change it on the vendor's page); it is copied to the seller's
   entry (`processing_days_min`, `processing_days_max`). Delivery time is one range for the whole store, set by the team on
-  the app's **Dashboard** and kept as two app-data metafields on the app's installation
+  **Shipping and orders** in the app and kept as two app-data metafields on the app's installation
   (`setu_seller.delivery_days_min` / `_max`), which only this app can change and which Liquid reads as
   `app.metafields.setu_seller.…`. No date is shown unless both are known.
 - **Brand values** on the seller page: up to five short tags the seller picks under My brand → Brand details ("Women
@@ -161,7 +175,7 @@ order value. The cart already reads the minimum from there. Business documents n
 **Turning it on (dev store):**
 1. `npm run dev -- --theme 189269180525` (the theme that holds the placeholders; without `--theme` the CLI uploads
    a Dawn copy to host the extension). Accept the new permissions when the app opens (store content and files).
-2. In the app: *All vendors* → *Update all store listings*.
+2. In the app: *Vendors* → *Tools* → *Update all store listings*.
 3. Online Store → Themes → Customize → App embeds → switch on **Vendor details** → Save.
 
 ### Security rules (enforced on the server, covered by tests)

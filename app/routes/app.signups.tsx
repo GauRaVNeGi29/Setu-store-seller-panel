@@ -6,9 +6,11 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { approveSignup, listSignups, rejectSignup } from "../lib/vendors/vendors.server";
+import { vendorCounts } from "../lib/admin/vendors.server";
+import { Tabs, vendorTabs } from "../lib/admin/ui";
 
 /**
- * Sign-ups waiting for review. Approving links the person to a Shopify vendor
+ * Sign-ups waiting for review: one of the views of Vendors (same tabs). Approving links the person to a Shopify vendor
  * name; from then on they see that vendor's orders. Until then they see nothing.
  */
 
@@ -17,13 +19,14 @@ const VENDORS_QUERY = `#graphql
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session, admin } = await authenticate.admin(request);
-  const [pending, rejected, vendorsRes] = await Promise.all([
+  const [pending, rejected, vendorsRes, { counts }] = await Promise.all([
     listSignups(db, session.shop, "pending"),
     listSignups(db, session.shop, "rejected"),
     admin.graphql(VENDORS_QUERY).then((r) => r.json()).catch(() => null),
+    vendorCounts(db, session.shop),
   ]);
   const shopifyVendors: string[] = vendorsRes?.data?.productVendors?.nodes ?? [];
-  return { pending, rejected: rejected.slice(-20).reverse(), shopifyVendors };
+  return { pending, rejected: rejected.slice(-20).reverse(), shopifyVendors, counts };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -102,12 +105,13 @@ function SignupCard({ s, vendors }: { s: Signup; vendors: string[] }) {
 }
 
 export default function Signups() {
-  const { pending, rejected, shopifyVendors } = useLoaderData<typeof loader>();
+  const { pending, rejected, shopifyVendors, counts } = useLoaderData<typeof loader>();
 
   return (
-    <s-page heading="Sign-ups">
+    <s-page heading="Vendors">
+      <Tabs label="Vendors" current="signups" tabs={vendorTabs(counts)} />
       {pending.length === 0 ? (
-        <s-section><s-paragraph>No sign-ups waiting for review.</s-paragraph></s-section>
+        <s-section heading="Sign-ups waiting for approval"><s-paragraph>No sign-ups are waiting.</s-paragraph></s-section>
       ) : (
         pending.map((s) => <SignupCard key={s.id} s={s} vendors={shopifyVendors} />)
       )}

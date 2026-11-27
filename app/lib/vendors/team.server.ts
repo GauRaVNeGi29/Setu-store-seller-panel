@@ -414,6 +414,7 @@ export async function listAllVendors(db: PrismaClient, shop: string) {
       active: count("active"), deactivated: count("disabled"), needsApproval: count("pending"), invited: count("invited"),
       pendingChange: v.changeRequests.length > 0,
       commission: v.commissions[0]?.ratePercent.toFixed(2) ?? null,
+      minimumOrderValue: v.minimumOrderValue?.toFixed(2) ?? null,
       missing: missingDetails({ ...v, minimumOrderValue: v.minimumOrderValue?.toFixed(2) ?? null }),
       city: [v.city, v.state].filter(Boolean).join(", "),
       store: v.storeSyncError ? "error" : v.storeSyncedAt ? "ok" : "never",

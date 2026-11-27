@@ -1,8 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import type { AdminGraphql } from "../orders/sync.server";
 import { friendly } from "../storefront/listing.server";
-import { listSignups } from "../vendors/vendors.server";
-import { listAllVendors } from "../vendors/team.server";
 import { cleanDayRange, rangeOf, type DayRange } from "../vendors/shipping";
 
 /**
@@ -124,34 +122,4 @@ async function copyToStore(db: PrismaClient, graphql: AdminGraphql, shop: string
   }
   await db.shopSetting.upsert({ where: { shop }, create: { shop }, update: { deliveryError: null } });
   return { ok: true, range, onStore: true };
-}
-
-/** What the app's dashboard shows: things waiting for the team, and a few numbers. */
-export async function teamDashboard(db: PrismaClient, shop: string) {
-  const [vendors, signups, reviews, hidden, delivery] = await Promise.all([
-    listAllVendors(db, shop),
-    listSignups(db, shop),
-    db.vendorReview.count({ where: { shop, status: "published" } }),
-    db.vendorReview.count({ where: { shop, status: "hidden" } }),
-    deliveryTime(db, shop),
-  ]);
-  const names = (list: typeof vendors) => list.map((v) => ({ name: v.displayName, vendorName: v.vendorName }));
-  return {
-    delivery,
-    attention: {
-      signups: signups.length,
-      businessChanges: names(vendors.filter((v) => v.pendingChange)),
-      noCommission: names(vendors.filter((v) => v.commission === null)),
-      missingDetails: names(vendors.filter((v) => v.missing.length > 0)),
-      noProcessingTime: names(vendors.filter((v) => !v.processing)),
-      storeNotUpdated: names(vendors.filter((v) => v.store !== "ok")),
-    },
-    numbers: {
-      vendors: vendors.length,
-      active: vendors.filter((v) => v.status === "active").length,
-      paused: vendors.filter((v) => v.status !== "active").length,
-      reviews, hiddenReviews: hidden,
-    },
-    vendors: vendors.map((v) => ({ id: v.id, name: v.displayName, vendorName: v.vendorName, processing: v.processing })),
-  };
 }

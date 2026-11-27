@@ -187,6 +187,70 @@ export async function vendorReviews(db: PrismaClient, shop: string, vendorId: st
   };
 }
 
+export type TeamReviewFilter = { vendorId?: string; status?: "published" | "hidden"; rating?: number; page?: number };
+
+/**
+ * Every seller's reviews in one list, newest first, for the team's Reviews
+ * page. Can be narrowed to one seller, to published or hidden, or to a number
+ * of stars. Each row says which seller it is about.
+ */
+export async function teamReviews(db: PrismaClient, shop: string, filter: TeamReviewFilter = {}) {
+  const where = {
+    shop,
+    ...(filter.vendorId ? { vendorId: filter.vendorId } : {}),
+    ...(filter.status ? { status: filter.status } : {}),
+    ...(filter.rating ? { rating: filter.rating } : {}),
+  };
+  const total = await db.vendorReview.count({ where });
+  const pages = Math.max(1, Math.ceil(total / REVIEWS_PER_PAGE));
+  const page = Math.min(Math.max(1, Math.floor(filter.page ?? 1) || 1), pages);
+  const rows = await db.vendorReview.findMany({
+    where, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip: (page - 1) * REVIEWS_PER_PAGE, take: REVIEWS_PER_PAGE,
+    select: {
+      id: true, rating: true, comment: true, authorName: true, orderId: true, orderName: true, createdAt: true, editedAt: true, status: true,
+      hiddenReason: true, hiddenBy: true, buyerLocation: true, items: ITEMS, vendor: { select: { id: true, vendorName: true, displayName: true } },
+    },
+  });
+  return {
+    total, page, pages,
+    reviews: rows.map((r) => ({
+      id: r.id, rating: r.rating, comment: r.comment, authorName: r.authorName,
+      orderId: r.orderId.toString(), orderName: r.orderName, createdAt: r.createdAt.toISOString(),
+      edited: r.editedAt !== null, items: r.items.map((i) => i.title), location: r.buyerLocation,
+      hidden: r.status === "hidden", hiddenReason: r.hiddenReason, hiddenBy: r.hiddenBy,
+      vendor: { id: r.vendor.id, vendorName: r.vendor.vendorName, name: r.vendor.displayName },
+    })),
+  };
+}
+
+/** The store's reviews in numbers, and each seller's rating: for the team's Reviews page and Dashboard. */
+export async function reviewNumbers(db: PrismaClient, shop: string, now = new Date()) {
+  const month = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const [groups, recent, vendors] = await Promise.all([
+    db.vendorReview.groupBy({ by: ["vendorId", "status"], where: { shop }, _count: { _all: true }, _sum: { rating: true } }),
+    db.vendorReview.count({ where: { shop, createdAt: { gte: month } } }),
+    db.vendor.findMany({ where: { shop }, select: { id: true, vendorName: true, displayName: true }, orderBy: { displayName: "asc" } }),
+  ]);
+  const by = new Map<string, { published: number; hidden: number; stars: number }>();
+  for (const g of groups) {
+    const v = by.get(g.vendorId) ?? { published: 0, hidden: 0, stars: 0 };
+    if (g.status === "published") { v.published += g._count._all; v.stars += g._sum.rating ?? 0; } else v.hidden += g._count._all;
+    by.set(g.vendorId, v);
+  }
+  const all = [...by.values()];
+  const published = all.reduce((n, v) => n + v.published, 0);
+  const stars = all.reduce((n, v) => n + v.stars, 0);
+  const average = (count: number, sum: number) => (count ? (Math.round((sum / count) * 10) / 10).toFixed(1) : null);
+  return {
+    published, hidden: all.reduce((n, v) => n + v.hidden, 0), average: average(published, stars), last30Days: recent,
+    /** Sellers that have any review, by name. */
+    vendors: vendors.filter((v) => by.has(v.id)).map((v) => {
+      const n = by.get(v.id)!;
+      return { id: v.id, vendorName: v.vendorName, name: v.displayName, published: n.published, hidden: n.hidden, average: average(n.published, n.stars) };
+    }),
+  };
+}
+
 /** The team hides a review (with a reason the vendor sees) or shows it again. */
 export async function setReviewHidden(
   db: PrismaClient, shop: string, vendorId: string, reviewId: string, hide: boolean, actor: string, reason?: string | null,

@@ -475,7 +475,8 @@ describe("pages", () => {
     expect((await db.vendor.findFirstOrThrow({ where: { shop, vendorName: "Urban Store" } })).description).toBe("Kept.");
     const list = await run(allVendors.loader, admin("/app/vendors"));
     expect(list.data?.vendors[0].store).toBe("error");
-    expect(list.data?.totals.storeNotUpdated).toBe(1);
+    expect(list.data?.storeNotUpdated).toBe(1);
+    expect(list.data?.vendors[0].flags).toContain("Store listing didn't update");
   });
 
   it("'Update all store listings' updates every vendor, and stops at the first missing permission", async () => {

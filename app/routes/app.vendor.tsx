@@ -15,8 +15,10 @@ import { BUSINESS_FIELDS, BUSINESS_FILES, FIELD_LABEL } from "../lib/vendors/fie
 import { createTeamHandoff } from "../lib/portal/auth.server";
 import { commissionHistory, setCommissionRate } from "../lib/commission/commission.server";
 import { portalBaseUrl } from "../lib/portal/context.server";
-import { setReviewHidden, vendorReviews, type ReviewRow } from "../lib/reviews/reviews.server";
-import { HIDE_REASON_MAX, type ReviewSummary } from "../lib/reviews/rules";
+import { vendorReviews, type ReviewRow } from "../lib/reviews/reviews.server";
+import { changeReviewVisibility } from "../lib/reviews/team.server";
+import { type ReviewSummary } from "../lib/reviews/rules";
+import { ReviewRowView } from "../lib/admin/ui";
 
 /**
  * One vendor, team-only inside Shopify admin:
@@ -105,13 +107,7 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<{ ok: boo
     }
     case "hide_review":
     case "show_review": {
-      const hide = intent === "hide_review";
-      const r = await setReviewHidden(db, shop, vendor.id, f("reviewId"), hide, actor, f("reason"));
-      if (!r.ok) return r;
-      // The rating on the store listing follows the published reviews.
-      const listing = await updateStoreListing(db, shop, vendor.id);
-      const message = hide ? "Review hidden – no longer counted in the rating" : "Review shown again";
-      return listing.ok ? { ok: true, message } : { ok: true, message, error: `The rating on the store listing didn't update: ${listing.error}` };
+      return changeReviewVisibility(db, shop, vendor.id, f("reviewId"), intent === "hide_review", actor, f("reason"));
     }
     case "team_view": {
       const r = await createTeamHandoff(db, shop, vendor.id, actor);
@@ -291,54 +287,6 @@ function CommissionSection({ name, history }: { name: string; history: RateRow[]
 
 type ReviewList = { summary: ReviewSummary; total: number; hidden: number; page: number; pages: number; reviews: ReviewRow[] };
 
-function ReviewRowView({ r, name }: { r: ReviewRow; name: string }) {
-  const fetcher = useFetcher<typeof action>();
-  const shopify = useAppBridge();
-  const busy = fetcher.state !== "idle";
-  const [asking, setAsking] = useState(false);
-  useEffect(() => {
-    if (fetcher.data?.ok && fetcher.data.message) shopify.toast.show(fetcher.data.message);
-  }, [fetcher.data, shopify]);
-  const reasonId = `reason-${r.id}`;
-  return (
-    <tr>
-      <td style={{ ...cell, whiteSpace: "nowrap" }}><b>{r.rating}</b> / 5</td>
-      <td style={cell}>
-        {r.comment ? <span style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{r.comment}</span> : <span style={{ color: "#666" }}>No written review</span>}
-        <br /><small style={{ color: "#666" }}>{r.authorName}{r.location ? ` (${r.location})` : ""}, {when(r.createdAt)}{r.edited ? " (edited)" : ""}, order {r.orderName}{r.items.length ? `, about ${r.items.join(", ")}` : ""}</small>
-        {r.hidden && <><br /><small style={{ color: "#a63a32" }}>Hidden{r.hiddenBy ? ` by ${r.hiddenBy.replace(/^admin:/, "")}` : ""}{r.hiddenReason ? `: ${r.hiddenReason}` : ""}</small></>}
-        {fetcher.data && !fetcher.data.ok && fetcher.data.error && <><br /><small style={{ color: "#a63a32" }}>{fetcher.data.error}</small></>}
-        {fetcher.data && fetcher.data.ok && fetcher.data.error && <><br /><small style={{ color: "#8a5a12" }}>{fetcher.data.error}</small></>}
-      </td>
-      <td style={cell}>{r.hidden ? <s-badge tone="critical">Hidden</s-badge> : <s-badge tone="success">Published</s-badge>}</td>
-      <td style={cell}>
-        {r.hidden ? (
-          <fetcher.Form method="post">
-            <input type="hidden" name="name" value={name} />
-            <input type="hidden" name="intent" value="show_review" />
-            <input type="hidden" name="reviewId" value={r.id} />
-            <s-button type="submit" {...(busy ? { loading: true } : {})}>Show again</s-button>
-          </fetcher.Form>
-        ) : asking ? (
-          <fetcher.Form method="post" style={{ display: "grid", gap: 6, minWidth: 220 }} onSubmit={() => setAsking(false)}>
-            <input type="hidden" name="name" value={name} />
-            <input type="hidden" name="intent" value="hide_review" />
-            <input type="hidden" name="reviewId" value={r.id} />
-            <label htmlFor={reasonId} style={{ fontSize: 13 }}>Why hide it? The vendor sees this.</label>
-            <input id={reasonId} name="reason" required maxLength={HIDE_REASON_MAX} placeholder="e.g. Abusive language" style={input} />
-            <span style={{ display: "flex", gap: 6 }}>
-              <s-button type="submit" tone="critical" {...(busy ? { loading: true } : {})}>Hide review</s-button>
-              <s-button type="button" variant="tertiary" onClick={() => setAsking(false)}>Cancel</s-button>
-            </span>
-          </fetcher.Form>
-        ) : (
-          <s-button type="button" onClick={() => setAsking(true)} {...(busy ? { loading: true } : {})}>Hide</s-button>
-        )}
-      </td>
-    </tr>
-  );
-}
-
 /** Buyers' reviews of this vendor. The team can hide one (with a reason the vendor sees) or show it again. */
 function ReviewsSection({ name, brand, list }: { name: string; brand: string; list: ReviewList }) {
   const s = list.summary;
@@ -354,7 +302,7 @@ function ReviewsSection({ name, brand, list }: { name: string; brand: string; li
       {list.total > 0 && (
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead><tr style={{ textAlign: "left" }}><th style={cell}>Rating</th><th style={cell}>Review</th><th style={cell}>Status</th><th style={cell}></th></tr></thead>
-          <tbody>{list.reviews.map((r) => <ReviewRowView key={r.id + r.hidden} r={r} name={name} />)}</tbody>
+          <tbody>{list.reviews.map((r) => <ReviewRowView key={r.id + r.hidden} r={r} fields={{ name }} />)}</tbody>
         </table>
       )}
       {list.pages > 1 && (
@@ -430,7 +378,7 @@ export default function Vendor() {
 
   return (
     <s-page heading={profile?.displayName || name || "(no vendor)"}>
-      <s-link slot="breadcrumb-actions" href="/app/vendors">All vendors</s-link>
+      <s-link slot="breadcrumb-actions" href="/app/vendors">Vendors</s-link>
       {fetcher.data && !fetcher.data.ok && fetcher.data.error && <s-banner tone="critical">{fetcher.data.error}</s-banner>}
       {fetcher.data && fetcher.data.ok && fetcher.data.error && <s-banner tone="warning">{fetcher.data.error}</s-banner>}
 
