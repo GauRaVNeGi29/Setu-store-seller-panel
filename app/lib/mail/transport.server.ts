@@ -2,13 +2,17 @@
  * Hands one mail to the mail service (Resend), or decides it must not really
  * go out.
  *
- *  - No RESEND_API_KEY / PORTAL_EMAIL_FROM: nothing can be sent. The mail is
- *    kept in the log only.
- *  - MAIL_ONLY_TO (addresses or @domains, separated by commas): only these
- *    really get mail; everything else is kept in the log only. Outside
- *    production this list is required, so a development store can never mail
- *    real sellers by accident.
- *  - PORTAL_EMAIL_REPLY_TO: where replies go (defaults to the From address).
+ * The values come from Mail → Settings in the app, or from the server's
+ * environment where the app has none (see config.server.ts, which puts the
+ * two together into the `env` these functions are given):
+ *
+ *  - No Resend key or sender address (RESEND_API_KEY, PORTAL_EMAIL_FROM):
+ *    nothing can be sent. The mail is kept in the log only.
+ *  - Test list (MAIL_ONLY_TO: addresses or @domains): only these really get
+ *    mail; everything else is kept in the log only. Outside production this
+ *    list is required, so a development store can never mail real sellers by
+ *    accident. "Production" is the server's NODE_ENV and can't be set in the app.
+ *  - Reply address (PORTAL_EMAIL_REPLY_TO): where replies go (defaults to the sender).
  */
 
 export type Env = Record<string, string | undefined>;
@@ -32,9 +36,9 @@ export function heldBack(to: string, env: Env = process.env): string | null {
   const allowed = onlyTo(env);
   const email = to.toLowerCase();
   if (allowed.length) {
-    return allowed.some((a) => (a.startsWith("@") ? email.endsWith(a) : email === a)) ? null : "Not sent: this address isn't on the test list (MAIL_ONLY_TO).";
+    return allowed.some((a) => (a.startsWith("@") ? email.endsWith(a) : email === a)) ? null : "Not sent: this address isn't on the test list (Mail → Settings).";
   }
-  return env.NODE_ENV === "production" ? null : "Not sent: outside production, mail only goes to addresses on the test list (MAIL_ONLY_TO).";
+  return env.NODE_ENV === "production" ? null : "Not sent: this is a development copy, which only mails addresses on the test list (Mail → Settings), and the list is empty.";
 }
 
 /** What the Mail page says about sending in this environment. */
@@ -42,7 +46,7 @@ export function sendingMode(env: Env = process.env): { real: boolean; text: stri
   if (!mailConfigured(env)) return { real: false, text: "No mail service is set up. Mails are kept in the log but not sent." };
   const allowed = onlyTo(env);
   if (allowed.length) return { real: true, text: `Test mode: mails are really sent only to ${allowed.join(", ")}. All others are kept in the log.` };
-  if (env.NODE_ENV !== "production") return { real: false, text: "A mail service is set up, but outside production mails are sent only to a test list (MAIL_ONLY_TO), and none is set. Mails are kept in the log." };
+  if (env.NODE_ENV !== "production") return { real: false, text: "A mail service is set up, but this is a development copy: it only mails addresses on the test list, and the list is empty. Mails are kept in the log." };
   return { real: true, text: `Mails are sent from ${env.PORTAL_EMAIL_FROM}.` };
 }
 
@@ -53,7 +57,7 @@ export async function hand(mail: Outgoing, env: Env = process.env, fetcher: type
     const res = await fetcher("https://api.resend.com/emails", {
       method: "POST",
       // The same id on a retry tells the service it has seen this mail before.
-      headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json", "Idempotency-Key": mail.id },
+      headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json", "Idempotency-Key": mail.id, "User-Agent": "setu-store-seller-panel" },
       body: JSON.stringify({
         from: env.PORTAL_EMAIL_FROM, to: [mail.to], reply_to: env.PORTAL_EMAIL_REPLY_TO || undefined,
         subject: mail.subject, text: mail.text, html: mail.html,

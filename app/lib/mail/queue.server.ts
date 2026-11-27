@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import { compose, TEMPLATES, wordsFor, type DataOf, type TemplateKey } from "./templates";
+import { mailEnv } from "./config.server";
 import { hand, mailBaseUrl, type Env } from "./transport.server";
 
 /**
@@ -68,7 +69,8 @@ export async function queueMail<K extends TemplateKey>(
 export async function sendSecret<K extends TemplateKey>(
   db: PrismaClient, shop: string, template: K, to: Recipient, data: DataOf<K>, opts: { vendorId?: string | null; env?: Env; fetcher?: typeof fetch } = {},
 ): Promise<{ delivered: boolean; note: string | null; subject: string; link: string | null }> {
-  const env = opts.env ?? process.env;
+  // The shop's own mail settings (Mail → Settings in the app) on top of the server's.
+  const env = await mailEnv(db, shop, opts.env ?? process.env);
   const words = wordsFor(template, data, mailBaseUrl(env));
   const body = words.lines.join("\n");
   const row = await db.mailMessage.create({
@@ -89,16 +91,25 @@ export async function sendSecret<K extends TemplateKey>(
   return { delivered: r.status === "sent", note: r.status === "logged" ? r.note : null, subject: row.subject, link: words.link?.url ?? null };
 }
 
-/** Hands every mail that is due to the mail service. Safe to run from several places at once. */
-export async function deliverDue(db: PrismaClient, env: Env = process.env, now = new Date(), fetcher: typeof fetch = fetch): Promise<{ sent: number; logged: number; failed: number; later: number }> {
+/**
+ * Hands every mail that is due to the mail service. Safe to run from several
+ * places at once. With `only`, hands over just that mail (the Mail page's
+ * test, which must not wait behind a long queue).
+ */
+export async function deliverDue(
+  db: PrismaClient, env: Env = process.env, now = new Date(), fetcher: typeof fetch = fetch, only?: string,
+): Promise<{ sent: number; logged: number; failed: number; later: number }> {
   const out = { sent: 0, logged: 0, failed: 0, later: 0 };
   // A mail left in "sending" by a process that stopped is picked up again after ten minutes.
   await db.mailMessage.updateMany({ where: { status: "sending", updatedAt: { lt: new Date(now.getTime() - 10 * 60000) } }, data: { status: "queued" } });
-  const due = await db.mailMessage.findMany({ where: { status: "queued", nextAttemptAt: { lte: now } }, orderBy: { createdAt: "asc" }, take: BATCH });
+  const due = await db.mailMessage.findMany({ where: { status: "queued", nextAttemptAt: { lte: now }, ...(only ? { id: only } : {}) }, orderBy: { createdAt: "asc" }, take: BATCH });
+  // Each shop sends with its own settings (Mail → Settings in the app), read once per run.
+  const settings = new Map<string, Env>();
+  const envOf = async (shop: string) => settings.get(shop) ?? settings.set(shop, await mailEnv(db, shop, env)).get(shop)!;
   for (const m of due) {
     const claimed = await db.mailMessage.updateMany({ where: { id: m.id, status: "queued" }, data: { status: "sending", attempts: { increment: 1 } } });
     if (claimed.count !== 1) continue; // another run took it
-    const r = await hand({ id: m.id, to: m.toEmail, subject: m.subject, ...compose(m) }, env, fetcher);
+    const r = await hand({ id: m.id, to: m.toEmail, subject: m.subject, ...compose(m) }, await envOf(m.shop), fetcher);
     if (r.status === "sent") {
       await db.mailMessage.update({ where: { id: m.id }, data: { status: "sent", providerId: r.providerId, sentAt: new Date(), note: null } });
       out.sent++;
@@ -120,9 +131,15 @@ export async function deliverDue(db: PrismaClient, env: Env = process.env, now =
 }
 
 let running: Promise<unknown> | null = null;
+let soon: ReturnType<typeof setTimeout> | null = null;
 let timer: ReturnType<typeof setInterval> | null = null;
 
-/** Starts a delivery run soon, without waiting for it, and makes sure the every-minute timer is on. Not used in tests. */
+/**
+ * Starts a delivery run in a second, without waiting for it, and makes sure
+ * the every-minute timer is on. The short wait gathers mails queued together
+ * into one run, and means a script that queues a mail and exits (a seed, a
+ * one-off task) simply leaves it for the app to send. Not used in tests.
+ */
 export function kick(db: PrismaClient, env: Env = process.env) {
   // Tests run the queue themselves, whatever environment they pretend to be in.
   if (env.NODE_ENV === "test" || env.VITEST || process.env.VITEST) return;
@@ -130,8 +147,19 @@ export function kick(db: PrismaClient, env: Env = process.env) {
     timer = setInterval(() => kick(db, env), 60000);
     timer.unref?.();
   }
-  if (running) return;
-  running = deliverDue(db, env).catch((e) => console.error("[mail] delivery run failed:", e)).finally(() => { running = null; });
+  if (running || soon) return;
+  // A full batch means more may be waiting: carry on, up to a limit, rather than leave them a minute.
+  const run = async () => {
+    for (let i = 0; i < 20; i++) {
+      const r = await deliverDue(db, env);
+      if (r.sent + r.logged + r.failed + r.later < BATCH) break;
+    }
+  };
+  soon = setTimeout(() => {
+    soon = null;
+    running = run().catch((e) => console.error("[mail] delivery run failed:", e)).finally(() => { running = null; });
+  }, 1000);
+  soon.unref?.();
 }
 
 /** Puts a mail that failed, bounced or was only logged back in the queue (the Mail page's "Send again"). */

@@ -60,6 +60,7 @@ async function cleanup() {
   await db.shopSetting.deleteMany({ where: { shop } });
   await db.mailMessage.deleteMany({ where: { shop } });
   await db.mailTemplateSetting.deleteMany({ where: { shop } });
+  await db.mailSetting.deleteMany({ where: { shop } });
 }
 
 beforeAll(async () => {
@@ -163,7 +164,7 @@ describe("the team's pages draw from real data", () => {
   it("Mail: every mail with who gets it and its words; the log with what happened; the team's addresses", async () => {
     const mails = await draw("mail", "/app/mail", "mail");
     for (const part of [
-      "No mail service is set up. Mails are kept in the log but not sent.", "Mails Log Team addresses 1", "Sent 1 Last 7 days", "Waiting 1", "Failed 1", "Not sent 1",
+      "No mail service is set up. Mails are kept in the log but not sent.", "Mails Log Team addresses 1 Settings", "Open Settings", "Sent 1 Last 7 days", "Waiting 1", "Failed 1", "Not sent 1",
       "Mails to sellers", "Account", "Orders", "Reviews", "Mails to the team", "Team alerts",
       "New order An order with the vendor's products is placed (one mail per order) Everyone active on the vendor's team On Switch off",
       "New review", "Off Switch on", "Password reset link", "Always on", "1 mail in total is switched off",
@@ -192,5 +193,34 @@ describe("the team's pages draw from real data", () => {
 
     const team = await draw("mail", "/app/mail?view=team", "mail-team");
     for (const part of ["Team addresses", "Email addresses, one on each line (up to 10)", "alerts@setustore.test", "Save", "Sellers never see these addresses."]) expect(team, part).toContain(part);
+  });
+
+  it("Mail settings: every value with where it comes from, and never the key itself", async () => {
+    const empty = await draw("mail", "/app/mail?view=settings", "mail-settings-empty");
+    for (const part of [
+      "Settings", "Resend API key", "None is set.", "Sender", "Name", "Address", "Reply address", "Test list", "Webhook signing secret", "Save",
+      "This is a development copy: with an empty list it mails nobody", "Not set.", "Check these settings", "It sends nothing.",
+    ]) expect(empty, part).toContain(part);
+    expect(empty).not.toContain("Remove the saved key");
+
+    // With values saved in the app (the key sealed with a server secret, as the app would).
+    const { saveMailSettings } = await import("../app/lib/mail/config.server");
+    process.env.SHOPIFY_API_SECRET = "render-test-secret";
+    try {
+      await saveMailSettings(db, shop, { apiKey: "re_RenderTestKey_4321", fromName: "Setu Store", fromAddress: "support@setustore.test", replyTo: "", onlyTo: "me@setustore.test" }, "admin:team@setustore.test");
+      const page = pages.mail;
+      const data = await (page.loader as (a: unknown) => Promise<unknown>)({ request: new Request("https://app.test/app/mail?view=settings"), params: {}, context: {} });
+      expect(JSON.stringify(data)).not.toContain("re_RenderTestKey_4321");
+      const saved = await draw("mail", "/app/mail?view=settings", "mail-settings");
+      for (const part of [
+        "Test mode: mails are really sent only to me@setustore.test.", "One is saved here, ending in 4321. Leave this empty to keep it.", "Remove the saved key",
+        "Saved here.", "Last changed", "by team@setustore.test", "me@setustore.test",
+      ]) expect(saved, part).toContain(part);
+      expect(saved).not.toContain("re_RenderTestKey");
+      expect(saved).not.toContain("Open Settings");
+    } finally {
+      delete process.env.SHOPIFY_API_SECRET;
+      await db.mailSetting.deleteMany({ where: { shop } });
+    }
   });
 });

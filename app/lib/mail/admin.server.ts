@@ -1,5 +1,6 @@
 import type { MailStatus, PrismaClient, Prisma } from "@prisma/client";
 import { isValidEmail, normaliseEmail } from "../vendors/vendors.server";
+import { mailEnv } from "./config.server";
 import { deliverDue, queueMail, sendAgain } from "./queue.server";
 import { LOG_PAGE_SIZE, LOG_STATUSES, TEAM_ADDRESSES_MAX } from "./rules";
 import { compose, isTemplateKey, TEMPLATE_KEYS, TEMPLATES, wordsFor, type DataOf, type TemplateKey } from "./templates";
@@ -104,10 +105,11 @@ export async function sendTest(db: PrismaClient, shop: string, template: string,
   if (!isValidEmail(to)) return { ok: false, error: "Enter the email address to send the test to." };
   const t = TEMPLATES[template] as { name: string; sample: unknown };
   await queueMail(db, shop, template as TemplateKey, [{ email: to, name: "Priya" }], t.sample as never, { env, force: true, test: true });
-  await deliverDue(db, env, new Date(), fetcher);
-  const m = await db.mailMessage.findFirst({ where: { shop, template, toEmail: to }, orderBy: { createdAt: "desc" } });
+  const queued = await db.mailMessage.findFirst({ where: { shop, template, toEmail: to, status: "queued" }, orderBy: { createdAt: "desc" }, select: { id: true } });
+  if (queued) await deliverDue(db, env, new Date(), fetcher, queued.id);
+  const m = queued && (await db.mailMessage.findUnique({ where: { id: queued.id } }));
   if (m?.status === "sent" || m?.status === "delivered") return { ok: true, message: `Test of “${t.name}” sent to ${to}.` };
-  if (m?.status === "logged") return { ok: false, error: `The test wasn't really sent. ${m.note ?? sendingMode(env).text}` };
+  if (m?.status === "logged") return { ok: false, error: `The test wasn't really sent. ${m.note ?? sendingMode(await mailEnv(db, shop, env)).text}` };
   if (m?.status === "failed") return { ok: false, error: `The test couldn't be sent. ${m.note ?? ""}`.trim() };
   return { ok: true, message: `Test of “${t.name}” is waiting to be sent to ${to}. Look in the log in a minute.` };
 }
@@ -117,8 +119,9 @@ export async function sendLogMailAgain(db: PrismaClient, shop: string, id: strin
   return r.ok ? { ok: true, message: "Put back in the queue. It goes out within a minute." } : { ok: false, error: r.error ?? "Couldn't send it again" };
 }
 
-/** How mail is sent here, and where sellers' replies go. */
-export function mailSetup(env: Env = process.env) {
+/** How mail is sent for this shop, and where sellers' replies go. */
+export async function mailSetup(db: PrismaClient, shop: string, serverEnv: Env = process.env) {
+  const env = await mailEnv(db, shop, serverEnv);
   const from = env.PORTAL_EMAIL_FROM ?? "";
   const replyTo = env.PORTAL_EMAIL_REPLY_TO || (from.match(/<([^>]+)>/)?.[1] ?? from);
   return { ...sendingMode(env), replyTo: replyTo || null };

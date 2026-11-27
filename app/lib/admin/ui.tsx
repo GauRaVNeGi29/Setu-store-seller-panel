@@ -53,6 +53,7 @@ const ACTIVITY: Record<string, string> = {
   "mail.template_on": "Mail switched on",
   "mail.template_off": "Mail switched off",
   "mail.team_addresses_updated": "Team mail addresses changed",
+  "mail.settings_updated": "Mail settings changed",
   "portal.team_view_opened": "Team opened a vendor's portal",
   "password.reset": "Password reset",
   "password.reset_requested": "Password reset asked for",

@@ -10,6 +10,7 @@ import { deliverDue, queueMail, sendAgain, sendSecret } from "../app/lib/mail/qu
 import { overdueOrders, runDailyChecks } from "../app/lib/mail/daily.server";
 import { applyReport, signedByResend } from "../app/lib/mail/webhook.server";
 import { cleanAddresses, mailLog, mailNumbers, mailTemplates, saveTeamAddresses, sendTest, setTemplateEnabled } from "../app/lib/mail/admin.server";
+import { checkMailSettings, cleanTestList, mailEnv, mailSettings, saveMailSettings, seal, unseal, webhookSecrets } from "../app/lib/mail/config.server";
 import { accessSentence, mailStoreCopyFailed } from "../app/lib/mail/notify.server";
 import { fullSync, saveOrder, syncOrder } from "../app/lib/orders/sync.server";
 import { addVendorUser, approveSignup, enableVendor, rejectSignup, removeVendorUser, setVendorStatus } from "../app/lib/vendors/vendors.server";
@@ -42,6 +43,7 @@ async function cleanup() {
   // The queue is one for the whole app, so mails other test files left waiting are cleared too.
   await db.mailMessage.deleteMany({});
   await db.mailTemplateSetting.deleteMany({ where: { shop } });
+  await db.mailSetting.deleteMany({ where: { shop } });
   await db.shopSetting.deleteMany({ where: { shop } });
   await db.portalSession.deleteMany({ where: { vendorUser: { shop } } });
   await db.passwordReset.deleteMany({ where: { vendorUser: { shop } } });
@@ -136,7 +138,7 @@ describe("what really goes out", () => {
   it("nothing without a mail service; outside production only to the test list", () => {
     expect(heldBack("a@b.example", {})).toMatch(/No mail service/);
     const dev = { RESEND_API_KEY: "k", PORTAL_EMAIL_FROM: "x@y.example", NODE_ENV: "development" };
-    expect(heldBack("a@b.example", dev)).toMatch(/outside production/);
+    expect(heldBack("a@b.example", dev)).toMatch(/development copy/);
     expect(heldBack("a@b.example", { ...dev, MAIL_ONLY_TO: "A@b.example, @setustore.test" })).toBeNull();
     expect(heldBack("someone@setustore.test", { ...dev, MAIL_ONLY_TO: "a@b.example, @setustore.test" })).toBeNull();
     expect(heldBack("seller@gmail.example", { ...dev, MAIL_ONLY_TO: "a@b.example, @setustore.test" })).toMatch(/test list/);
@@ -704,7 +706,7 @@ describe("the Mail page", () => {
     expect(await sendTest(db, shop, "review_new", "Me@setustore.test", LIVE, s.fetcher)).toEqual({ ok: true, message: "Test of “New review” sent to me@setustore.test." });
     expect(s.calls[0].body).toMatchObject({ to: ["me@setustore.test"], subject: expect.stringMatching(/^Test: /) });
     expect(await sendTest(db, shop, "review_new", "me@setustore.test", {}, s.fetcher)).toMatchObject({ ok: false, error: expect.stringContaining("wasn't really sent") });
-    expect(await sendTest(db, shop, "review_new", "me@setustore.test", { ...LIVE, NODE_ENV: "development" }, s.fetcher)).toMatchObject({ ok: false, error: expect.stringContaining("MAIL_ONLY_TO") });
+    expect(await sendTest(db, shop, "review_new", "me@setustore.test", { ...LIVE, NODE_ENV: "development" }, s.fetcher)).toMatchObject({ ok: false, error: expect.stringContaining("the list is empty") });
     expect(await sendTest(db, shop, "review_new", "me@setustore.test", LIVE, service([422]).fetcher)).toMatchObject({ ok: false, error: expect.stringContaining("couldn't be sent") });
     expect(await sendTest(db, shop, "review_new", "nope", LIVE, s.fetcher)).toMatchObject({ ok: false });
     expect(await sendTest(db, shop, "nope", "me@setustore.test", LIVE, s.fetcher)).toMatchObject({ ok: false });
@@ -741,5 +743,216 @@ describe("the Mail page", () => {
     await saveTeamAddresses(db, shop, "", ADMIN);
     d = await dashboard(db, shop);
     expect(d.alerts.find((a) => a.key === "mail_no_team")).toMatchObject({ tone: "warning", href: "/app/mail?view=team" });
+  });
+});
+
+describe("mail settings saved in the app", () => {
+  // What the server itself has: a secret to protect saved keys with, and nothing about mail.
+  const SERVER = { SHOPIFY_API_SECRET: "server-secret-for-tests", NODE_ENV: "production", PORTAL_URL: "https://vendors.setustore.test" };
+  const KEY = "re_AbCdEfGh_123456789";
+  const full = { apiKey: KEY, fromName: "Setu Store", fromAddress: "Support@SetuStore.test", replyTo: "help@setustore.test", onlyTo: "" };
+  /** Resend's answer to "which domains does this key have?" */
+  const resend = (status: number, body: unknown) => {
+    const calls: { url: string; headers: Record<string, string> }[] = [];
+    const fetcher = (async (url: string, init: { headers: Record<string, string> }) => {
+      calls.push({ url, headers: init.headers });
+      if (status === -1) throw new Error("connect ETIMEDOUT");
+      return new Response(JSON.stringify(body), { status });
+    }) as unknown as typeof fetch;
+    return { calls, fetcher };
+  };
+  const domains = (...list: [string, string][]) => ({ object: "list", has_more: false, data: list.map(([name, status]) => ({ id: name, name, status })) });
+  const item = (list: Awaited<ReturnType<typeof checkMailSettings>>, what: string) => list.find((c) => c.what === what);
+
+  it("a secret is stored sealed: unreadable without the server's secret, and useless if altered", () => {
+    const sealed = seal(KEY, SERVER)!;
+    expect(sealed).not.toContain(KEY);
+    expect(sealed).not.toBe(seal(KEY, SERVER)); // a fresh seal every time
+    expect(unseal(sealed, SERVER)).toBe(KEY);
+    expect(unseal(sealed, { SHOPIFY_API_SECRET: "another-secret" })).toBeNull();
+    expect(unseal(sealed.slice(0, -4) + "AAAA", SERVER)).toBeNull();
+    expect(unseal("nonsense", SERVER)).toBeNull();
+    expect(unseal(null, SERVER)).toBeNull();
+    expect(seal(KEY, {})).toBeNull();
+  });
+
+  it("saves the key, sender, reply address and test list; the key never comes back out", async () => {
+    expect(await saveMailSettings(db, shop, { ...full, onlyTo: "Me@SetuStore.test\n@setustore.test" }, ADMIN, SERVER)).toEqual({ ok: true, message: "Saved: key, sender, reply address, test list." });
+    const row = await db.mailSetting.findUniqueOrThrow({ where: { shop } });
+    expect(row).toMatchObject({ apiKeyHint: "6789", fromName: "Setu Store", fromAddress: "support@setustore.test", replyTo: "help@setustore.test", onlyTo: ["me@setustore.test", "@setustore.test"], updatedBy: ADMIN });
+    expect(JSON.stringify(row)).not.toContain(KEY);
+    const shown = await mailSettings(db, shop, SERVER);
+    expect(JSON.stringify(shown)).not.toContain(KEY);
+    expect(shown).toMatchObject({
+      key: { source: "app", hint: "6789", unreadable: false }, fromName: "Setu Store", fromAddress: "support@setustore.test", fromSource: "app",
+      replyTo: "help@setustore.test", onlyTo: ["me@setustore.test", "@setustore.test"], onlyToSource: "app", webhook: { source: "none" },
+      webhookUrl: "https://vendors.setustore.test/webhooks/resend", production: true, canStoreSecrets: true, updatedBy: "team@setustore.test",
+    });
+    // What the sender works with.
+    expect(await mailEnv(db, shop, SERVER)).toMatchObject({
+      RESEND_API_KEY: KEY, PORTAL_EMAIL_FROM: "Setu Store <support@setustore.test>", PORTAL_EMAIL_REPLY_TO: "help@setustore.test", MAIL_ONLY_TO: "me@setustore.test,@setustore.test", NODE_ENV: "production",
+    });
+    // The record says what changed, never the values.
+    const said = await db.auditLog.findFirstOrThrow({ where: { shop, action: "mail.settings_updated" } });
+    expect(said.detail).toEqual({ changed: ["key", "sender", "reply address", "test list"] });
+    expect(JSON.stringify(said.detail)).not.toContain(KEY);
+  });
+
+  it("an empty key keeps the saved one; ticking “remove” deletes it; saving the same again changes nothing", async () => {
+    await saveMailSettings(db, shop, full, ADMIN, SERVER);
+    const rest = { ...full, apiKey: "" };
+    expect(await saveMailSettings(db, shop, rest, ADMIN, SERVER)).toEqual({ ok: true, message: "Nothing was changed." });
+    expect((await mailEnv(db, shop, SERVER)).RESEND_API_KEY).toBe(KEY);
+    expect(await saveMailSettings(db, shop, { ...rest, fromName: "Setu Store Sellers" }, ADMIN, SERVER)).toEqual({ ok: true, message: "Saved: sender." });
+    expect((await mailEnv(db, shop, SERVER)).PORTAL_EMAIL_FROM).toBe("Setu Store Sellers <support@setustore.test>");
+    expect(await saveMailSettings(db, shop, { ...rest, removeApiKey: true }, ADMIN, SERVER)).toMatchObject({ ok: true, message: expect.stringContaining("key removed") });
+    expect((await mailEnv(db, shop, SERVER)).RESEND_API_KEY).toBeUndefined();
+    expect((await mailSettings(db, shop, SERVER)).key).toEqual({ source: "none", hint: null, unreadable: false });
+  });
+
+  it("a value saved here wins over the server's; an empty one goes back to the server's", async () => {
+    const server = { ...SERVER, RESEND_API_KEY: "re_from_the_server_1", PORTAL_EMAIL_FROM: "Old Name <old@setustore.test>", PORTAL_EMAIL_REPLY_TO: "old-reply@setustore.test", MAIL_ONLY_TO: "x@setustore.test" };
+    expect(await mailSettings(db, shop, server)).toMatchObject({
+      key: { source: "server", hint: null }, fromName: "Old Name", fromAddress: "old@setustore.test", fromSource: "server", replyTo: "old-reply@setustore.test", replySource: "server", onlyTo: ["x@setustore.test"], onlyToSource: "server",
+    });
+    expect(await mailEnv(db, shop, server)).toBe(server); // nothing saved: the server's values as they are
+    await saveMailSettings(db, shop, { ...full, onlyTo: "y@setustore.test" }, ADMIN, server);
+    expect(await mailEnv(db, shop, server)).toMatchObject({ RESEND_API_KEY: KEY, PORTAL_EMAIL_FROM: "Setu Store <support@setustore.test>", PORTAL_EMAIL_REPLY_TO: "help@setustore.test", MAIL_ONLY_TO: "y@setustore.test" });
+    await saveMailSettings(db, shop, { removeApiKey: true, fromName: "", fromAddress: "", replyTo: "", onlyTo: "" }, ADMIN, server);
+    expect(await mailEnv(db, shop, server)).toMatchObject({ RESEND_API_KEY: "re_from_the_server_1", PORTAL_EMAIL_FROM: "Old Name <old@setustore.test>", PORTAL_EMAIL_REPLY_TO: "old-reply@setustore.test", MAIL_ONLY_TO: "x@setustore.test" });
+  });
+
+  it("wrong values are refused with a reason for each, and nothing is saved", async () => {
+    const r = await saveMailSettings(db, shop, { apiKey: "my key", fromName: "Setu <Store>", fromAddress: "not-an-address", replyTo: "also wrong", onlyTo: "ok@setustore.test, setustore.test, @bad", webhookSecret: "secret" }, ADMIN, SERVER);
+    expect(r).toMatchObject({ ok: false, error: expect.stringContaining("Nothing was saved") });
+    if (r.ok) throw new Error("should have been refused");
+    expect(Object.keys(r.errors).sort()).toEqual(["apiKey", "fromAddress", "fromName", "onlyTo", "replyTo", "webhookSecret"]);
+    expect(r.errors.onlyTo).toContain("“setustore.test”, “@bad” aren't");
+    expect(await db.mailSetting.count({ where: { shop } })).toBe(0);
+    expect(await saveMailSettings(db, shop, { fromName: "Setu Store" }, ADMIN, SERVER)).toMatchObject({ ok: false, errors: { fromAddress: expect.any(String) } });
+    expect(await saveMailSettings(db, shop, { onlyTo: Array.from({ length: 21 }, (_, i) => `t${i}@setustore.test`).join(" ") }, ADMIN, SERVER)).toMatchObject({ ok: false, errors: { onlyTo: "Up to 20 entries." } });
+    // A server with no secret can't keep a key safely, so it refuses to keep one at all.
+    expect(await saveMailSettings(db, shop, full, ADMIN, { NODE_ENV: "production" })).toMatchObject({ ok: false, errors: { apiKey: expect.stringContaining("can't store secrets safely") } });
+    expect(await db.mailSetting.count({ where: { shop } })).toBe(0);
+    expect(cleanTestList(" A@b.example ; @Setustore.test\na@b.example ")).toEqual({ list: ["a@b.example", "@setustore.test"], bad: [] });
+  });
+
+  it("mails go out with the key and sender saved in the app, without anything in the server's settings", async () => {
+    await saveMailSettings(db, shop, full, ADMIN, SERVER);
+    await queueMail(db, shop, "signup_approved", [{ email: "seller@gmail.example" }], { brand: "Ashnur" });
+    const s = service();
+    expect(await deliverDue(db, SERVER, new Date(), s.fetcher)).toMatchObject({ sent: 1 });
+    expect(s.calls[0].headers.Authorization).toBe(`Bearer ${KEY}`);
+    expect(s.calls[0].body).toMatchObject({ from: "Setu Store <support@setustore.test>", reply_to: "help@setustore.test", to: ["seller@gmail.example"] });
+    // The one-time-link mails use them too.
+    const r = await sendSecret(db, shop, "password_reset", { email: "seller@gmail.example" }, { link: "https://x.test/r?token=T" }, { env: SERVER, fetcher: s.fetcher });
+    expect(r.delivered).toBe(true);
+    expect(s.calls[1].headers.Authorization).toBe(`Bearer ${KEY}`);
+    // Another shop's mails don't borrow these settings.
+    await queueMail(db, "other-mail-test.myshopify.com", "signup_approved", [{ email: "z@gmail.example" }], { brand: "Other" });
+    try {
+      expect(await deliverDue(db, SERVER, new Date(), s.fetcher)).toMatchObject({ sent: 0, logged: 1 });
+      expect(s.calls).toHaveLength(2);
+    } finally {
+      await db.mailMessage.deleteMany({ where: { shop: "other-mail-test.myshopify.com" } });
+    }
+  });
+
+  it("the page can't turn a development copy into one that mails everyone", async () => {
+    const dev = { ...SERVER, NODE_ENV: "development" };
+    await saveMailSettings(db, shop, full, ADMIN, dev); // key and sender, empty test list
+    await queueMail(db, shop, "signup_approved", [{ email: "seller@gmail.example" }], { brand: "Ashnur" });
+    const s = service();
+    expect(await deliverDue(db, dev, new Date(), s.fetcher)).toMatchObject({ sent: 0, logged: 1 });
+    expect(await mail("signup_approved")).toMatchObject({ status: "logged", note: expect.stringContaining("the list is empty") });
+    expect((await mailSettings(db, shop, dev)).mode).toMatchObject({ real: false });
+    // With a test list, only the list.
+    await saveMailSettings(db, shop, { ...full, apiKey: "", onlyTo: "me@setustore.test" }, ADMIN, dev);
+    await queueMail(db, shop, "vendor_paused", [{ email: "seller@gmail.example" }, { email: "me@setustore.test" }], { brand: "Ashnur" });
+    expect(await deliverDue(db, dev, new Date(), s.fetcher)).toMatchObject({ sent: 1, logged: 1 });
+    expect(s.calls.map((c) => (c.body.to as string[])[0])).toEqual(["me@setustore.test"]);
+    expect((await mailSettings(db, shop, dev)).mode).toMatchObject({ real: true, text: expect.stringContaining("me@setustore.test") });
+  });
+
+  it("a key saved under a server secret that has since changed is reported, not used", async () => {
+    await saveMailSettings(db, shop, full, ADMIN, SERVER);
+    const rotated = { ...SERVER, SHOPIFY_API_SECRET: "a-new-server-secret" };
+    expect((await mailEnv(db, shop, rotated)).RESEND_API_KEY).toBeUndefined();
+    expect((await mailSettings(db, shop, rotated)).key).toEqual({ source: "none", hint: null, unreadable: true });
+    const none = resend(200, domains());
+    expect(item(await checkMailSettings(db, shop, rotated, none.fetcher), "Resend key")).toMatchObject({ tone: "bad", text: expect.stringContaining("Enter the key again") });
+    expect(none.calls).toHaveLength(0);
+  });
+
+  it("the check: a working key and a verified domain are good; it sends nothing", async () => {
+    await saveMailSettings(db, shop, full, ADMIN, SERVER);
+    const ok = resend(200, domains(["other.example", "verified"], ["SetuStore.test", "verified"]));
+    const list = await checkMailSettings(db, shop, SERVER, ok.fetcher);
+    expect(ok.calls).toEqual([{ url: "https://api.resend.com/domains", headers: expect.objectContaining({ Authorization: `Bearer ${KEY}` }) }]);
+    expect(item(list, "Resend key")).toMatchObject({ tone: "ok" });
+    expect(item(list, "Sender's domain")).toMatchObject({ tone: "ok", text: "setustore.test is verified in Resend, so mail from this address will be accepted." });
+    expect(item(list, "Reply address")).toMatchObject({ tone: "ok", text: "A reply to a mail goes to help@setustore.test." });
+    expect(item(list, "Who really gets mail")).toMatchObject({ tone: "ok", text: "Everyone: sellers and the team." });
+    expect(item(list, "Delivery reports")).toMatchObject({ tone: "warn" });
+    expect(item(list, "Team addresses")).toMatchObject({ tone: "ok", text: expect.stringContaining(TEAM) });
+    expect(JSON.stringify(list)).not.toContain(KEY);
+    expect(await db.mailMessage.count({ where: { shop } })).toBe(0);
+  });
+
+  it("the check says what is wrong: domain not verified or not added, key refused, Resend unreachable, nothing set", async () => {
+    await saveMailSettings(db, shop, full, ADMIN, SERVER);
+    const check = (status: number, body: unknown, env: Record<string, string> = SERVER) => checkMailSettings(db, shop, env, resend(status, body).fetcher);
+    expect(item(await check(200, domains(["setustore.test", "pending"])), "Sender's domain")).toMatchObject({ tone: "warn", text: expect.stringContaining("not verified yet") });
+    expect(item(await check(200, domains(["setustore.test", "failed"])), "Sender's domain")).toMatchObject({ tone: "bad" });
+    expect(item(await check(200, domains(["mail.setustore.test", "verified"])), "Sender's domain")).toMatchObject({ tone: "bad", text: expect.stringContaining("isn't added in this Resend account (it has: mail.setustore.test)") });
+    // A key that can only send can't list domains, but Resend's answer shows the key is real.
+    const restricted = await check(401, { statusCode: 401, name: "restricted_api_key", message: "This API key is restricted to only send emails" });
+    expect(item(restricted, "Resend key")).toMatchObject({ tone: "ok", text: expect.stringContaining("Sending access") });
+    expect(item(restricted, "Sender's domain")).toMatchObject({ tone: "warn", text: expect.stringContaining("Send a test") });
+    expect(item(await check(403, { statusCode: 403, name: "validation_error", message: "API key is invalid" }), "Resend key")).toMatchObject({ tone: "bad", text: expect.stringContaining("API key is invalid") });
+    expect(item(await check(-1, null), "Resend key")).toMatchObject({ tone: "warn", text: expect.stringContaining("Couldn't reach Resend") });
+    expect(item(await check(500, null), "Resend key")).toMatchObject({ tone: "warn" });
+
+    // A development copy with an empty test list mails nobody; a live one with a test list is limited to it.
+    const dev = { ...SERVER, NODE_ENV: "development" };
+    expect(item(await check(200, domains(["setustore.test", "verified"]), dev), "Who really gets mail")).toMatchObject({ tone: "warn", text: expect.stringContaining("Nobody") });
+    await saveMailSettings(db, shop, { ...full, apiKey: "", onlyTo: "me@setustore.test" }, ADMIN, SERVER);
+    expect(item(await check(200, domains(["setustore.test", "verified"])), "Who really gets mail")).toMatchObject({ tone: "warn", text: expect.stringContaining("Only the test list: me@setustore.test") });
+
+    // Nothing set at all: says so, and doesn't call Resend.
+    await db.mailSetting.deleteMany({ where: { shop } });
+    await db.shopSetting.update({ where: { shop }, data: { adminEmails: [] } });
+    const none = resend(200, domains());
+    const empty = await checkMailSettings(db, shop, SERVER, none.fetcher);
+    expect(none.calls).toHaveLength(0);
+    expect(empty.filter((c) => c.tone === "bad").map((c) => c.what).sort()).toEqual(["Resend key", "Sender", "Who really gets mail"]);
+    expect(item(empty, "Team addresses")).toMatchObject({ tone: "warn" });
+  });
+
+  it("a webhook secret saved in the app is accepted for Resend's reports", async () => {
+    const secret = `whsec_${Buffer.from("saved-in-the-app").toString("base64")}`;
+    expect(await saveMailSettings(db, shop, { ...full, webhookSecret: secret }, ADMIN, SERVER)).toMatchObject({ ok: true, message: expect.stringContaining("webhook secret") });
+    expect(JSON.stringify(await db.mailSetting.findUniqueOrThrow({ where: { shop } }))).not.toContain(secret);
+    expect(await webhookSecrets(db, SERVER)).toEqual([secret]);
+    expect(await webhookSecrets(db, { ...SERVER, RESEND_WEBHOOK_SECRET: "whsec_server" })).toEqual(["whsec_server", secret]);
+    expect((await mailSettings(db, shop, SERVER)).webhook).toMatchObject({ source: "app", unreadable: false });
+    expect(item(await checkMailSettings(db, shop, SERVER, resend(200, domains(["setustore.test", "verified"])).fetcher), "Delivery reports")).toMatchObject({ tone: "ok", text: expect.stringContaining("/webhooks/resend") });
+
+    // The route itself, signed with the saved secret.
+    const { action } = await import("../app/routes/webhooks.resend");
+    await queueMail(db, shop, "signup_approved", [{ email: "a@b.example" }], { brand: "Ashnur" });
+    await deliverDue(db, SERVER, new Date(), service().fetcher);
+    const body = JSON.stringify({ type: "email.delivered", data: { email_id: "re_1" } });
+    const at = Math.floor(Date.now() / 1000);
+    const sig = createHmac("sha256", Buffer.from(secret.replace("whsec_", ""), "base64")).update(`msg_9.${at}.${body}`).digest("base64");
+    const post = (signature: string) => action({ request: new Request("https://app.test/webhooks/resend", { method: "POST", body, headers: { "svix-id": "msg_9", "svix-timestamp": String(at), "svix-signature": signature } }), params: {}, context: {} } as never);
+    process.env.SHOPIFY_API_SECRET = SERVER.SHOPIFY_API_SECRET;
+    try {
+      expect(((await post("v1,AAAA")) as Response).status).toBe(401);
+      expect(((await post(`v1,${sig}`)) as Response).status).toBe(200);
+      expect(await mail("signup_approved")).toMatchObject({ status: "delivered" });
+    } finally {
+      delete process.env.SHOPIFY_API_SECRET;
+    }
   });
 });

@@ -4,7 +4,8 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { mailLog, mailNumbers, mailSetup, mailTemplates, saveTeamAddresses, sendLogMailAgain, sendTest, setTemplateEnabled } from "../lib/mail/admin.server";
-import { LOG_KEPT_DAYS, LOG_STATUSES, TEAM_ADDRESSES_MAX } from "../lib/mail/rules";
+import { checkMailSettings, mailSettings, saveMailSettings, type CheckItem } from "../lib/mail/config.server";
+import { LOG_KEPT_DAYS, LOG_STATUSES, TEAM_ADDRESSES_MAX, TEST_LIST_MAX } from "../lib/mail/rules";
 import { cell, headRow, input, muted, plural, Stats, table, Tabs, when } from "../lib/admin/ui";
 
 /**
@@ -13,21 +14,27 @@ import { cell, headRow, input, muted, plural, Stats, table, Tabs, when } from ".
  *    or on, read it, send yourself a test.
  *  - Log: every mail that went out or didn't, and why; send one again.
  *  - Team addresses: who on the team gets the team's mails.
+ *  - Settings: the Resend key, the sender, the reply address and the test
+ *    list, with a check of them against Resend.
  */
 type Template = Awaited<ReturnType<typeof mailTemplates>>[number];
-type ActionResult = { ok: true; message: string } | { ok: false; error: string };
+type ActionResult = { ok: true; message: string; checks?: CheckItem[] } | { ok: false; error: string; errors?: Record<string, string> };
+type Settings = Awaited<ReturnType<typeof mailSettings>>;
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const q = new URL(request.url).searchParams;
-  const view = q.get("view") === "log" ? "log" as const : q.get("view") === "team" ? "team" as const : "mails" as const;
-  const [numbers, templates, log] = await Promise.all([
+  const wanted = q.get("view");
+  const view = wanted === "log" || wanted === "team" || wanted === "settings" ? wanted : "mails" as const;
+  const [numbers, templates, log, settings, mode] = await Promise.all([
     mailNumbers(db, session.shop),
     view === "mails" ? mailTemplates(db, session.shop) : Promise.resolve([] as Template[]),
     view === "log" ? mailLog(db, session.shop, { status: q.get("status") ?? "", template: q.get("mail") ?? "", to: q.get("to") ?? "", page: Number(q.get("page")) || 1 }) : Promise.resolve(null),
+    view === "settings" ? mailSettings(db, session.shop) : Promise.resolve(null),
+    mailSetup(db, session.shop),
   ]);
   const names = view === "log" ? (await mailTemplates(db, session.shop)).map((t) => ({ key: t.key, name: t.name })) : [];
-  return { view, numbers, templates, log, names, mode: mailSetup(), me: session.onlineAccessInfo?.associated_user?.email ?? "" };
+  return { view, numbers, templates, log, names, settings, mode, me: session.onlineAccessInfo?.associated_user?.email ?? "" };
 };
 
 export const action = async ({ request }: ActionFunctionArgs): Promise<ActionResult & { intent: string; key?: string }> => {
@@ -41,6 +48,16 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<ActionRes
   if (intent === "test") return { intent, key, ...(await sendTest(db, session.shop, key, f("to"))) };
   if (intent === "send_again") return { intent, key: f("id"), ...(await sendLogMailAgain(db, session.shop, f("id"))) };
   if (intent === "team_addresses") return { intent, ...(await saveTeamAddresses(db, session.shop, f("addresses"), actor)) };
+  if (intent === "settings_save") {
+    return {
+      intent,
+      ...(await saveMailSettings(db, session.shop, {
+        apiKey: f("apiKey"), removeApiKey: f("removeApiKey") === "on", fromName: f("fromName"), fromAddress: f("fromAddress"), replyTo: f("replyTo"),
+        onlyTo: f("onlyTo"), webhookSecret: f("webhookSecret"), removeWebhookSecret: f("removeWebhookSecret") === "on",
+      }, actor)),
+    };
+  }
+  if (intent === "settings_check") return { intent, ok: true, message: "Checked just now.", checks: await checkMailSettings(db, session.shop) };
   return { intent, ok: false, error: "Unknown action" };
 };
 
@@ -54,11 +71,13 @@ const STATUS_TEXT: Record<string, { label: string; tone?: "success" | "critical"
 };
 
 export default function Mail() {
-  const { view, numbers, templates, log, names, mode, me } = useLoaderData<typeof loader>();
+  const { view, numbers, templates, log, names, settings, mode, me } = useLoaderData<typeof loader>();
   const noTeam = numbers.team.length === 0;
   return (
     <s-page heading="Mail">
-      <s-banner tone={mode.real ? "info" : "warning"}>{mode.text}</s-banner>
+      <s-banner tone={mode.real ? "info" : "warning"}>
+        {mode.text}{view !== "settings" && !mode.real && <> <s-link href="/app/mail?view=settings">Open Settings</s-link></>}
+      </s-banner>
       {noTeam && view !== "team" && (
         <s-banner tone="warning">
           No team address is set, so the team&apos;s mails go to nobody. <s-link href="/app/mail?view=team">Add an address</s-link>
@@ -68,6 +87,7 @@ export default function Mail() {
         { id: "mails", label: "Mails", to: "/app/mail" },
         { id: "log", label: "Log", to: "/app/mail?view=log" },
         { id: "team", label: "Team addresses", to: "/app/mail?view=team", count: numbers.team.length },
+        { id: "settings", label: "Settings", to: "/app/mail?view=settings" },
       ]} />
       <s-section>
         <Stats items={[
@@ -81,6 +101,7 @@ export default function Mail() {
       {view === "mails" && <Mails templates={templates} testTo={numbers.team[0] ?? me} replyTo={mode.replyTo} />}
       {view === "log" && log && <Log log={log} names={names} />}
       {view === "team" && <Team addresses={numbers.team} />}
+      {view === "settings" && settings && <SettingsTab s={settings} />}
     </s-page>
   );
 }
@@ -312,6 +333,122 @@ function Team({ addresses }: { addresses: string[] }) {
       </fetcher.Form>
       <s-paragraph>Leave it empty and save to stop all team mails.</s-paragraph>
     </s-section>
+  );
+}
+
+const SOURCE_TEXT = { app: "Saved here", server: "From the server's .env file", none: "Not set" } as const;
+const CHECK_TONE = { ok: { label: "Good", tone: "success" }, warn: { label: "Look at this", tone: "warning" }, bad: { label: "Fix this", tone: "critical" } } as const;
+const fieldLabel = { display: "grid", gap: 4, fontSize: 13, maxWidth: 460 } as const;
+const help = { fontSize: 12, color: "#616161" } as const;
+const problem = { fontSize: 12, color: "#8e1f0b" } as const;
+
+function SettingsTab({ s }: { s: Settings }) {
+  const fetcher = useFetcher<typeof action>();
+  const busy = (intent: string) => fetcher.state !== "idle" && fetcher.formData?.get("intent") === intent;
+  const result = fetcher.data;
+  const saved = result?.intent === "settings_save" ? result : null;
+  const errors = (saved && !saved.ok && saved.errors) || {};
+  const checks = result?.intent === "settings_check" && result.ok ? result.checks ?? [] : null;
+  const secretNote = (x: Settings["key"]) =>
+    x.unreadable ? "One is saved but can't be read any more. Enter it again."
+      : x.source === "app" ? `One is saved here, ending in ${x.hint}. Leave this empty to keep it.`
+        : x.source === "server" ? "One is set in the server's .env file. Enter one here to use it instead."
+          : "None is set.";
+  return (
+    <>
+      <s-section heading="Settings">
+        <s-paragraph>
+          How the app sends mail. What you save here is used straight away, in place of the same value in the server&apos;s .env file; a field you leave empty goes back to the server&apos;s value.
+          {s.updatedAt && <> Last changed {when(s.updatedAt)}{s.updatedBy ? ` by ${s.updatedBy}` : ""}.</>}
+        </s-paragraph>
+        {saved && !saved.ok && <s-banner tone="critical">{saved.error}</s-banner>}
+        {saved?.ok && <s-banner tone="success">{saved.message} Press “Check these settings” to make sure they work.</s-banner>}
+        {!s.canStoreSecrets && <s-banner tone="warning">This server has no secret to protect a saved key with, so the key and the signing secret can&apos;t be saved here yet.</s-banner>}
+        <fetcher.Form method="post" key={s.updatedAt ?? "new"} style={{ display: "grid", gap: 18, marginTop: 12 }} autoComplete="off">
+          <input type="hidden" name="intent" value="settings_save" />
+
+          <div style={fieldLabel}>
+            <label htmlFor="apiKey" style={{ fontWeight: 600 }}>Resend API key</label>
+            <input id="apiKey" name="apiKey" type="password" autoComplete="new-password" placeholder={s.key.source === "app" ? `••••••••${s.key.hint}` : "re_…"} style={input} />
+            <span style={help}>{secretNote(s.key)} Create it in Resend under API Keys. It is stored encrypted and never shown again.</span>
+            {errors.apiKey && <span style={problem}>{errors.apiKey}</span>}
+            {s.key.source === "app" && <span style={{ fontSize: 13 }}><input type="checkbox" name="removeApiKey" id="removeApiKey" /> <label htmlFor="removeApiKey">Remove the saved key</label></span>}
+          </div>
+
+          <div style={{ display: "grid", gap: 4, maxWidth: 460 }}>
+            <b style={{ fontWeight: 600, fontSize: 13 }}>Sender</b>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr", gap: 8 }}>
+              <label style={{ display: "grid", gap: 4, fontSize: 13 }}>
+                Name
+                <input name="fromName" defaultValue={s.fromName} maxLength={60} placeholder="Setu Store" style={input} />
+              </label>
+              <label style={{ display: "grid", gap: 4, fontSize: 13 }}>
+                Address
+                <input name="fromAddress" type="email" defaultValue={s.fromAddress} placeholder="support@your-domain" style={input} />
+              </label>
+            </div>
+            <span style={help}>Who a mail comes from. The address&apos;s domain must be verified in Resend. {SOURCE_TEXT[s.fromSource]}.</span>
+            {errors.fromName && <span style={problem}>{errors.fromName}</span>}
+            {errors.fromAddress && <span style={problem}>{errors.fromAddress}</span>}
+          </div>
+
+          <label style={fieldLabel}>
+            <b style={{ fontWeight: 600 }}>Reply address</b>
+            <input name="replyTo" type="email" defaultValue={s.replyTo} placeholder="Same as the sender" style={input} />
+            <span style={help}>Where a seller&apos;s reply to a mail goes. Empty means the sender address. {SOURCE_TEXT[s.replySource]}.</span>
+            {errors.replyTo && <span style={problem}>{errors.replyTo}</span>}
+          </label>
+
+          <label style={fieldLabel}>
+            <b style={{ fontWeight: 600 }}>Test list</b>
+            <textarea name="onlyTo" rows={Math.max(2, s.onlyTo.length + 1)} defaultValue={s.onlyTo.join("\n")} placeholder={"you@your-domain\n@your-domain"} style={{ ...input, resize: "vertical" }} />
+            <span style={help}>
+              Only these really get mail; every other mail is kept in the log. One address on each line, or a whole domain written as @domain (up to {TEST_LIST_MAX}).{" "}
+              {s.production
+                ? "This is the live app: leave the list empty to mail everyone."
+                : "This is a development copy: with an empty list it mails nobody, so real sellers can't be mailed by accident."}{" "}
+              {SOURCE_TEXT[s.onlyToSource]}.
+            </span>
+            {errors.onlyTo && <span style={problem}>{errors.onlyTo}</span>}
+          </label>
+
+          <div style={fieldLabel}>
+            <label htmlFor="webhookSecret" style={{ fontWeight: 600 }}>Webhook signing secret</label>
+            <input id="webhookSecret" name="webhookSecret" type="password" autoComplete="new-password" placeholder={s.webhook.source === "app" ? `••••••••${s.webhook.hint}` : "whsec_…"} style={input} />
+            <span style={help}>
+              {secretNote(s.webhook)} Needed only for “Delivered” and “Bounced” in the log, once the app is hosted: in Resend, add a webhook
+              {s.webhookUrl ? <> to <code>{s.webhookUrl}</code></> : " to this app's address followed by /webhooks/resend"} and paste the secret it shows.
+            </span>
+            {errors.webhookSecret && <span style={problem}>{errors.webhookSecret}</span>}
+            {s.webhook.source === "app" && <span style={{ fontSize: 13 }}><input type="checkbox" name="removeWebhookSecret" id="removeWebhookSecret" /> <label htmlFor="removeWebhookSecret">Remove the saved secret</label></span>}
+          </div>
+
+          <div><s-button type="submit" variant="primary" {...(busy("settings_save") ? { loading: true } : {})}>Save</s-button></div>
+        </fetcher.Form>
+      </s-section>
+
+      <s-section heading="Check these settings">
+        <s-paragraph>Checks the saved settings: what is filled in, whether Resend accepts the key, whether the sender&apos;s domain is verified, and who would really get mail. It sends nothing.</s-paragraph>
+        <fetcher.Form method="post">
+          <input type="hidden" name="intent" value="settings_check" />
+          <s-button type="submit" {...(busy("settings_check") ? { loading: true } : {})}>Check these settings</s-button>
+        </fetcher.Form>
+        {checks && (
+          <table style={{ ...table, marginTop: 12 }}>
+            <tbody>
+              {checks.map((c, i) => (
+                <tr key={i}>
+                  <td style={{ ...cell, width: 170, fontWeight: 600 }}>{c.what}</td>
+                  <td style={{ ...cell, width: 120 }}><s-badge tone={CHECK_TONE[c.tone].tone}>{CHECK_TONE[c.tone].label}</s-badge></td>
+                  <td style={cell}>{c.text}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {checks && <s-paragraph>The surest check is a real mail: open <s-link href="/app/mail">Mails</s-link>, pick one and press “Send test”.</s-paragraph>}
+      </s-section>
+    </>
   );
 }
 

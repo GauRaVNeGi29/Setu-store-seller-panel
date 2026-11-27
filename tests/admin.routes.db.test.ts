@@ -73,6 +73,7 @@ async function cleanup() {
   await db.shopSetting.deleteMany({ where: { shop } });
   await db.mailMessage.deleteMany({ where: { shop } });
   await db.mailTemplateSetting.deleteMany({ where: { shop } });
+  await db.mailSetting.deleteMany({ where: { shop } });
 }
 beforeAll(async () => {
   await cleanup();
@@ -557,6 +558,25 @@ describe("Mail page", () => {
     expect(await post({ intent: "send_again", id: log.log.rows[0].id })).toMatchObject({ ok: true });
     expect(await post({ intent: "send_again", id: "nope" })).toMatchObject({ ok: false });
     expect((await call(mailPage.loader, "/app/mail?view=log&status=queued")).log.total).toBeGreaterThanOrEqual(1);
+  });
+
+  it("Settings: the team saves the sender, reply address and test list from the page; wrong values are refused; the check runs", async () => {
+    const page = await call(mailPage.loader, "/app/mail?view=settings");
+    expect(page.view).toBe("settings");
+    expect(page.settings).toMatchObject({ key: { source: "none" }, fromAddress: "", onlyTo: [], production: false });
+    expect(await post({ intent: "settings_save", fromName: "Setu Store", fromAddress: "nope", replyTo: "", onlyTo: "" })).toMatchObject({ ok: false, errors: { fromAddress: expect.any(String) } });
+    expect(await post({ intent: "settings_save", fromName: "Setu Store", fromAddress: "support@setustore.test", replyTo: "help@setustore.test", onlyTo: "me@setustore.test" }))
+      .toMatchObject({ ok: true, message: "Saved: sender, reply address, test list." });
+    const after = await call(mailPage.loader, "/app/mail?view=settings");
+    expect(after.settings).toMatchObject({ fromName: "Setu Store", fromAddress: "support@setustore.test", fromSource: "app", replyTo: "help@setustore.test", onlyTo: ["me@setustore.test"], updatedBy: "team@setustore.test" });
+    expect(after.mode).toMatchObject({ real: false, replyTo: "help@setustore.test" });
+    // No key is saved, so the check has nothing to ask Resend and says what is missing.
+    const checked = await post({ intent: "settings_check" });
+    expect(checked).toMatchObject({ ok: true });
+    expect(checked.checks.find((c: { what: string }) => c.what === "Resend key")).toMatchObject({ tone: "bad" });
+    expect(checked.checks.find((c: { what: string }) => c.what === "Reply address")).toMatchObject({ tone: "ok", text: "A reply to a mail goes to help@setustore.test." });
+    expect((await db.auditLog.findFirstOrThrow({ where: { shop, action: "mail.settings_updated" } })).detail).toEqual({ changed: ["sender", "reply address", "test list"] });
+    await db.mailSetting.deleteMany({ where: { shop } });
   });
 
   it("an order webhook mails the vendor's team once the order is copied", async () => {

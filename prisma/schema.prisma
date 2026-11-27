@@ -460,6 +460,32 @@ model ShopSetting {
   updatedAt DateTime @updatedAt
 }
 
+/// How mail is sent for a shop, entered on the Mail page of the app. A value
+/// saved here is used in place of the same value in the server's environment.
+/// The Resend key and the webhook secret are stored encrypted (AES-256-GCM,
+/// key derived from a server secret) and are never sent back to the browser:
+/// only the last four characters are kept readable, to recognise them by.
+model MailSetting {
+  shop String @id
+
+  apiKeyEnc  String? // "v1:<iv>:<tag>:<data>", base64 parts
+  apiKeyHint String? // last 4 characters
+
+  fromName    String? // "Setu Store"
+  fromAddress String? // the address mails come from; its domain must be verified in Resend
+  replyTo     String? // where a reply goes; empty = the from address
+
+  /// Test list: only these addresses or @domains really get mail. Required outside production.
+  onlyTo String[] @default([])
+
+  webhookSecretEnc  String?
+  webhookSecretHint String?
+
+  updatedBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 enum MailStatus {
   queued // waiting to be sent (or to be tried again)
   sending // being handed to the mail service right now
