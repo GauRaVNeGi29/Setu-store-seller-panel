@@ -1,0 +1,14 @@
+{%- doc -%}
+  A seller's rating as five stars with the number of reviews. Renders nothing
+  when there are no reviews.
+
+  @param {number} [rating] - average out of 5
+  @param {number} [count] - number of reviews
+{%- enddoc -%}
+{%- if count != blank and count > 0 and rating != blank -%}
+  {%- assign percent = rating | times: 20 | at_most: 100 | at_least: 0 -%}
+  <span class="setu-stars" role="img" aria-label="{{ 'setu_vendor.rating_label' | t: rating: rating, count: count }}">
+    <span class="setu-stars__row" aria-hidden="true">★★★★★<span class="setu-stars__on" style="width: {{ percent }}%;">★★★★★</span></span>
+    <span class="setu-stars__count" aria-hidden="true">{{ rating }} ({{ count }})</span>
+  </span>
+{%- endif -%}

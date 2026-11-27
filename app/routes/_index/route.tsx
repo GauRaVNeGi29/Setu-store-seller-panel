@@ -1,5 +1,5 @@
 import type { LoaderFunctionArgs } from "react-router";
-import { redirect, Form, useLoaderData } from "react-router";
+import { redirect, Form, Link, useLoaderData } from "react-router";
 
 import { login } from "../../shopify.server";
 
@@ -23,7 +23,16 @@ export default function App() {
       <div className={styles.content}>
         <h1 className={styles.heading}>Setu Store Vendor Portal</h1>
         <p className={styles.text}>
-          Internal app for Setu Store. Vendor sign-in is not available yet.
+          Sell on Setu Store? Sign in to see and pack your orders.
+        </p>
+        <p>
+          <Link className={styles.button} to="/portal/login">
+            Vendor sign-in
+          </Link>
+        </p>
+        <p className={styles.text}>
+          Setu Store team: open this app from Shopify admin, or sign in with
+          the shop domain below.
         </p>
         {showForm && (
           <Form className={styles.form} method="post" action="/auth/login">

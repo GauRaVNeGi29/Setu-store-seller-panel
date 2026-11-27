@@ -1,0 +1,170 @@
+{%- doc -%}
+  A seller's product listing page. part 'header' (the default): banner, logo,
+  name, minimum order, rating, arrival dates, brand values and description.
+  part 'reviews': "Ratings and reviews", meant for under the product listing.
+  Renders nothing unless the collection is a seller's own collection (the one
+  linked on the seller's marketplace_seller entry).
+
+  @param {string} [part] - 'header' (default) or 'reviews'
+
+  @param {collection} collection - the collection being viewed
+  @param {boolean} [show_banner] - show the seller's banner image
+  @param {boolean} [show_description] - show the seller's description
+  @param {boolean} [show_min] - show the minimum order value
+  @param {boolean} [show_rating] - show the rating once the seller has reviews
+  @param {boolean} [show_facts] - show city and country, joining date and number of products
+  @param {boolean} [show_times] - show when an order placed today arrives (the seller's processing time plus the store's delivery time)
+  @param {boolean} [show_values] - show the seller's brand values (up to five short tags) under the name
+  @param {boolean} [show_feedback] - header: make the rating a link to the reviews under the products
+  @param {string} [heading_tag] - tag for the seller's name: 'h1', 'h2' or 'p'
+{%- enddoc -%}
+{%- liquid
+  assign seller = nil
+  if collection != blank
+    # Two cheap lookups before any loop: by the collection's handle, then by the
+    # vendor of its first product. Only an empty collection needs the loop.
+    assign candidate = shop.metaobjects.marketplace_seller[collection.handle]
+    if candidate != nil and candidate.collection.value.id == collection.id
+      assign seller = candidate
+    endif
+    if seller == nil
+      assign first_vendor = collection.products.first.vendor
+      if first_vendor != blank
+        assign vendor_handle = first_vendor | handleize
+        assign candidate = shop.metaobjects.marketplace_seller[vendor_handle]
+        if candidate != nil and candidate.collection.value.id == collection.id
+          assign seller = candidate
+        endif
+      endif
+    endif
+    if seller == nil and collection.products_count == 0
+      for entry in shop.metaobjects.marketplace_seller.values
+        if entry.collection.value.id == collection.id
+          assign seller = entry
+          break
+        endif
+      endfor
+    endif
+  endif
+-%}
+{%- liquid
+  assign root = routes.root_url
+  if root == '/'
+    assign root = ''
+  endif
+-%}
+{%- if seller != nil and part == 'reviews' -%}
+  {%- assign reviews_url = root | append: '/apps/setu-seller/reviews' -%}
+  {%- render 'setu-reviews', seller: seller, return_url: collection.url, url: reviews_url -%}
+{%- elsif seller != nil -%}
+  {%- liquid
+    assign name = seller.display_name.value | default: seller.vendor_name.value
+    assign values = seller.brand_values.value
+    assign description = seller.description.value
+    assign logo = seller.logo.value
+    assign banner = seller.banner.value
+    assign mov = seller.minimum_order_value.value
+    assign tag = heading_tag | default: 'h2'
+    assign location = seller.location.value
+    assign joined = seller.joined_on.value
+    assign review_count = seller.review_count.value | default: 0
+    # Shipping times, in days. Processing is the seller's own; delivery is one
+    # setting for the whole store, kept by the app. Each needs both ends.
+    assign p_min = seller.processing_days_min.value
+    assign p_max = seller.processing_days_max.value
+    assign d_min = app.metafields.setu_seller.delivery_days_min.value
+    assign d_max = app.metafields.setu_seller.delivery_days_max.value
+    assign has_processing = false
+    if p_min != blank and p_max != blank and p_max > 0 and p_max >= p_min
+      assign has_processing = true
+    endif
+    assign has_delivery = false
+    if d_min != blank and d_max != blank and d_max > 0 and d_max >= d_min
+      assign has_delivery = true
+    endif
+  -%}
+  <div class="setu-vendor setu-seller{% if show_banner != false and banner != blank %} setu-seller--banner{% endif %}" data-setu-vendor="seller">
+    {%- if show_banner != false and banner != blank -%}
+      <div class="setu-seller__banner">
+        {{- banner | image_url: width: 2400 | image_tag: widths: '750, 1100, 1500, 2000, 2400', sizes: '100vw', alt: '', loading: 'eager', fetchpriority: 'high', class: 'setu-seller__banner-img' -}}
+      </div>
+    {%- endif -%}
+    <div class="setu-seller__body">
+      <span class="setu-seller__logo">
+        {%- if logo != blank -%}
+          {{- logo | image_url: width: 288 | image_tag: widths: '96, 192, 288', sizes: '96px', width: 96, height: 96, alt: '', loading: 'eager', class: 'setu-seller__logo-img' -}}
+        {%- else -%}
+          <span class="setu-seller__initial" aria-hidden="true">{{ name | slice: 0 | upcase | escape }}</span>
+        {%- endif -%}
+      </span>
+      <div class="setu-seller__text">
+        <{{ tag }} class="setu-seller__name">{{ name | escape }}</{{ tag }}>
+        {%- capture about_items -%}
+          {%- if show_rating != false and review_count > 0 -%}
+            <li>
+              {%- if show_feedback != false -%}
+                <a class="setu-seller__rating-link" href="#SetuReviews">{%- render 'setu-stars', rating: seller.rating.value, count: seller.review_count.value -%}</a>
+              {%- else -%}
+                {%- render 'setu-stars', rating: seller.rating.value, count: seller.review_count.value -%}
+              {%- endif -%}
+            </li>
+          {%- endif -%}
+          {%- if show_facts != false -%}
+            {%- if location != blank -%}
+              <li>{{ location | escape }}</li>
+            {%- endif -%}
+            {%- if joined != blank -%}
+              {%- assign joined_text = joined | date: '%B %Y' -%}
+              <li>{{ 'setu_vendor.joined' | t: date: joined_text }}</li>
+            {%- endif -%}
+            <li>{{ 'setu_vendor.product_count' | t: count: collection.all_products_count }}</li>
+          {%- endif -%}
+        {%- endcapture -%}
+        {%- if about_items != blank -%}
+          <ul class="setu-seller__meta setu-seller__meta--about">{{ about_items }}</ul>
+        {%- endif -%}
+        {%- capture terms_items -%}
+          {%- if show_min != false and mov != blank and mov > 0 -%}
+            {%- assign mov_cents = mov | times: 100 | round -%}
+            <li class="setu-seller__min"><span class="money">{{ mov_cents | money }}</span> {{ 'setu_vendor.minimum_after' | t }}</li>
+          {%- endif -%}
+          {%- if show_times != false and has_processing and has_delivery -%}
+            {%- liquid
+              # Today plus the seller's processing time plus the store's delivery time, as dates.
+              assign now_s = 'now' | date: '%s' | plus: 0
+              assign from_s = p_min | plus: d_min | times: 86400 | plus: now_s
+              assign to_s = p_max | plus: d_max | times: 86400 | plus: now_s
+              assign from_text = from_s | date: '%b %-d'
+              assign to_text = to_s | date: '%b %-d'
+            -%}
+            <li class="setu-seller__arrives">
+              {%- if from_text == to_text -%}
+                {{- 'setu_vendor.arrives_by' | t: date: to_text -}}
+              {%- else -%}
+                {{- 'setu_vendor.arrives_between' | t: from: from_text, to: to_text -}}
+              {%- endif -%}
+            </li>
+          {%- endif -%}
+        {%- endcapture -%}
+        {%- if terms_items != blank -%}
+          <ul class="setu-seller__meta setu-seller__meta--terms">{{ terms_items }}</ul>
+        {%- endif -%}
+        {%- if show_values != false and values != blank and values.size > 0 -%}
+          <ul class="setu-seller__values" aria-label="{{ 'setu_vendor.brand_values' | t | escape }}">
+            {%- for value in values limit: 5 -%}
+              <li>{{ value | escape }}</li>
+            {%- endfor -%}
+          </ul>
+        {%- endif -%}
+      </div>
+    </div>
+    {%- if show_description != false and description != blank -%}
+      <div class="setu-seller__about" data-setu-about>
+        <p class="setu-seller__about-text" id="SetuAbout" data-setu-about-text>{{ description | escape | newline_to_br }}</p>
+        <button type="button" class="setu-seller__about-toggle" data-setu-about-toggle data-more="{{ 'setu_vendor.show_more' | t | escape }}" data-less="{{ 'setu_vendor.show_less' | t | escape }}" aria-expanded="false" aria-controls="SetuAbout" hidden>
+          {{- 'setu_vendor.show_more' | t -}}
+        </button>
+      </div>
+    {%- endif -%}
+  </div>
+{%- endif -%}

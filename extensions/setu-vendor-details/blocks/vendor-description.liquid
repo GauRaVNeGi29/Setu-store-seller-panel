@@ -1,0 +1,32 @@
+{%- liquid
+  assign target_product = block.settings.product | default: product
+  render 'setu-vendor', part: 'description', product: target_product, show_link: block.settings.show_link, link_label: block.settings.link_label
+-%}
+
+{% schema %}
+{
+  "name": "Vendor description",
+  "target": "section",
+  "stylesheet": "setu-vendor.css",
+  "settings": [
+    {
+      "type": "product",
+      "id": "product",
+      "label": "Product",
+      "autofill": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_link",
+      "label": "Show link to the vendor's products",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "link_label",
+      "label": "Link text",
+      "info": "Leave empty for \"Shop all from\" and the vendor's name."
+    }
+  ]
+}
+{% endschema %}

@@ -14,8 +14,13 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  // The app's everyday connection. On Neon: the pooled address (host with -pooler), which copes
+  // with the database sleeping, plus ?pgbouncer=true&connect_timeout=15&pool_timeout=30.
+  url       = env("DATABASE_URL")
+  // Database structure changes (prisma migrate) only: the direct address. Migrations take a
+  // lock that the pooled address can't hold. Locally without Neon, set it to the same as DATABASE_URL.
+  directUrl = env("DIRECT_URL")
 }
 
 // ---------------------------------------------------------------------------
@@ -129,22 +134,49 @@ model Vendor {
   id          String       @id @default(cuid())
   shop        String
   vendorName  String // must equal the Shopify product Vendor, e.g. "Urban Store"
-  displayName String
+  displayName String // brand name shown in the portal; set by the team
   status      VendorStatus @default(active)
 
-  // Brand details (from sign-up; editable by the team)
-  phone             String?
-  gstNumber         String?
-  city              String?
-  state             String?
-  description       String?
-  policy            String?
-  productNote       String?
-  minimumOrderValue Decimal? @db.Decimal(12, 2) // INR, as given by the vendor; not yet applied to the cart
+  // Business details – the vendor changes these through a request the team approves
+  companyName  String? // registered company name
+  addressLine  String?
+  city         String?
+  state        String?
+  postalCode   String?
+  country      String  @default("India") // shown with the city on the seller's store page
+  gstFileId    String? // VendorFile ids (private documents)
+  iecFileId    String?
+  adCodeFileId String?
 
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
-  users     VendorUser[]
+  // Brand details – the vendor changes these directly
+  description       String?
+  shortDescription  String?
+  minimumOrderValue Decimal? @db.Decimal(12, 2) // INR, as given by the vendor; copied to the store, where the cart applies it
+  logoFileId        String?
+  bannerFileId      String?
+  processingDaysMin Int? // days the vendor needs to make or ready an order, as a range; both set or both empty
+  processingDaysMax Int?
+  brandValues       String[] @default([]) // up to five short tags ("Women owned"), shown on the seller's page
+
+  // The vendor's public listing on the store (the marketplace_seller metaobject entry)
+  storeEntryHandle  String? // handle of the entry the app keeps up to date
+  storeSyncedAt     DateTime? // last successful update
+  storeSyncError    String? // why the last update failed; cleared on success
+  storeCollectionId String? // the collection of this vendor's products that the app linked to the entry
+
+  // No longer shown (kept so nothing already saved is lost)
+  phone       String?
+  gstNumber   String?
+  policy      String?
+  productNote String?
+
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  users          VendorUser[]
+  changeRequests VendorChangeRequest[]
+  files          VendorFile[]
+  commissions    VendorCommission[]
+  reviews        VendorReview[]
 
   @@unique([shop, vendorName])
 }
@@ -154,31 +186,46 @@ enum UserStatus {
   pending // signed up on their own; waiting for the team to approve and link a vendor
   active // can sign in and see their vendor's orders
   rejected // sign-up declined by the team
-  disabled // access removed by the team
+  disabled // "Deactivated": access removed by the team or the vendor's owner
+}
+
+enum VendorRole {
+  owner // everything, including adding and managing staff
+  staff // what their access allows; never manages other people
+}
+
+enum StaffAccess {
+  view // sees orders and details; changes nothing
+  edit // can also edit brand details and send business changes for approval
 }
 
 /// A person who signs in. An email is unique per shop. vendorId is set by the
 /// team (invite or approval), never by the person.
 model VendorUser {
-  id           String     @id @default(cuid())
+  id           String      @id @default(cuid())
   shop         String
   vendorId     String?
-  vendor       Vendor?    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  vendor       Vendor?     @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   email        String // lower-case
   name         String?
   phone        String?
-  status       UserStatus @default(invited)
+  status       UserStatus  @default(invited)
+  role         VendorRole  @default(owner)
+  access       StaffAccess @default(edit) // used only when role = staff
+  invitedById  String? // the owner who added this staff member, if any
   passwordHash String? // scrypt; null until the person sets a password
   /// What a self sign-up submitted (brand name, GST, description, policy, MOV, …), kept for the team's review.
   application  Json?
   reviewedAt   DateTime?
   reviewedBy   String?
   lastLoginAt  DateTime?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
-  sessions PortalSession[]
-  resets   PasswordReset[]
+  sessions       PortalSession[]
+  resets         PasswordReset[]
+  changeRequests VendorChangeRequest[]
+  handoffs       PortalHandoff[]
 
   @@unique([shop, email])
   @@index([shop, status])
@@ -227,6 +274,269 @@ model PortalSession {
   revokedAt    DateTime?
   ip           String?
   userAgent    String?
+  /// Set when a Setu Store team member opened the portal "as" this vendor from
+  /// Shopify admin: the session is read-only and lasts at most an hour.
+  teamViewer   String?
 
   @@index([vendorUserId])
+}
+
+/// One-time link from Shopify admin into a vendor's portal (team view).
+/// Only the token's hash is stored; it works once, within 60 seconds.
+model PortalHandoff {
+  id           String     @id @default(cuid())
+  tokenHash    String     @unique
+  vendorUserId String
+  vendorUser   VendorUser @relation(fields: [vendorUserId], references: [id], onDelete: Cascade)
+  teamViewer   String // the team member who opened it, as recorded in the audit log ("admin:<their email>")
+  expiresAt    DateTime
+  usedAt       DateTime?
+  createdAt    DateTime   @default(now())
+
+  @@index([vendorUserId])
+}
+
+// ---------------------------------------------------------------------------
+// Business detail changes waiting for the team
+// ---------------------------------------------------------------------------
+
+enum ChangeStatus {
+  pending
+  approved
+  rejected
+  withdrawn // the vendor cancelled it
+}
+
+/// A vendor's request to change business details (name, GST, phone, city,
+/// state). Nothing changes on the vendor until the team approves. At most one
+/// pending request per vendor; a new one replaces it.
+model VendorChangeRequest {
+  id            String       @id @default(cuid())
+  shop          String
+  vendorId      String
+  vendor        Vendor       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  requestedById String?
+  requestedBy   VendorUser?  @relation(fields: [requestedById], references: [id], onDelete: SetNull)
+  /// { field: { from, to } } for the fields that differ, e.g. { "gstNumber": { "from": null, "to": "08ABCDE1234F1Z5" } }
+  changes       Json
+  status        ChangeStatus @default(pending)
+  note          String? // the team's reason, shown to the vendor when declined
+  reviewedAt    DateTime?
+  reviewedBy    String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([shop, status])
+  @@index([vendorId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Files vendors upload (documents, logo, banner)
+// ---------------------------------------------------------------------------
+
+enum FileKind {
+  gst // GST registration certificate
+  iec // Import Export Code certificate
+  ad_code // AD code letter from the bank
+  logo
+  banner
+}
+
+/// A file a vendor uploaded. Never public: served only to that vendor's own
+/// signed-in people and to the Setu Store team. Stored in the database for now.
+/// A Vendor's *FileId columns point at the files in use; files attached to a
+/// pending business change are referenced from the request until approved.
+model VendorFile {
+  id            String   @id @default(cuid())
+  shop          String
+  vendorId      String
+  vendor        Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  kind          FileKind
+  fileName      String // as uploaded, cleaned
+  mimeType      String // decided from the file's content, not from the browser
+  size          Int
+  sha256        String
+  data          Bytes
+  uploadedById  String? // VendorUser id, or null when the team uploaded it
+  shopifyFileId String? // copy in the store's Files (public brand images only: logo, banner)
+  createdAt     DateTime @default(now())
+
+  @@index([vendorId, kind])
+}
+
+// ---------------------------------------------------------------------------
+// Commission
+// ---------------------------------------------------------------------------
+
+/// A vendor's commission rate from `effectiveFrom` on. Rows are never edited:
+/// a change adds a row, so an order always uses the rate in force when it was
+/// placed. The first rate a vendor gets starts at the beginning of time.
+model VendorCommission {
+  id            String   @id @default(cuid())
+  shop          String
+  vendorId      String
+  vendor        Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  ratePercent   Decimal  @db.Decimal(5, 2) // 0.00 – 100.00, of the vendor's sales after discounts and refunds
+  effectiveFrom DateTime
+  setBy         String // "admin:<team member>"
+  createdAt     DateTime @default(now())
+
+  @@index([vendorId, effectiveFrom])
+}
+
+enum ReviewStatus {
+  published // counted in the rating and shown to buyers
+  hidden // taken down by the Setu Store team; the vendor still sees it, marked as hidden
+}
+
+/// A buyer's rating of a vendor. Only a buyer with a shipped order from that
+/// vendor can leave one, and each buyer has one review per vendor (they can
+/// change it). The vendor never sees who the buyer is.
+model VendorReview {
+  id       String @id @default(cuid())
+  shop     String
+  vendorId String
+  vendor   Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  customerId BigInt // Shopify customer; never shown to the vendor or on the storefront
+  orderId    BigInt // the order that proved the purchase
+  orderName  String // "#1003"
+  authorName String // what is shown with the review: a first name, or "Verified buyer"
+
+  rating  Int // 1–5
+  comment String? @db.Text
+  // City and country from the address on the buyer's order ("Bengaluru, India"). Shown beside their name. Never the street.
+  buyerLocation String?
+
+  // The products the buyer says the review is about: ones they bought from this vendor. Optional.
+  items VendorReviewItem[]
+  // Before reviews could name several products. No longer written; kept until older branches are merged.
+  productId    BigInt?
+  productTitle String?
+
+  status       ReviewStatus @default(published)
+  hiddenBy     String? // "admin:<team member>"
+  hiddenAt     DateTime?
+  hiddenReason String?
+
+  createdAt DateTime  @default(now())
+  editedAt  DateTime? // when the buyer last changed it
+  updatedAt DateTime  @updatedAt
+
+  @@unique([shop, vendorId, customerId])
+  @@index([shop, vendorId, status, createdAt])
+}
+
+/// A product a review is about. The title is the one on the buyer's order; the
+/// store shows the product's current title, picture and link when it can.
+model VendorReviewItem {
+  id        String       @id @default(cuid())
+  reviewId  String
+  review    VendorReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  productId BigInt
+  title     String
+  position  Int          @default(0)
+
+  @@unique([reviewId, productId])
+  @@index([productId])
+}
+
+/// Settings the Setu Store team changes in the Shopify app, one row per shop.
+model ShopSetting {
+  shop String @id
+
+  // Days a shipment takes to reach the buyer once the vendor hands it over, as a range.
+  // Shown on seller pages and added to the vendor's processing time. Both set or both empty.
+  deliveryDaysMin Int?
+  deliveryDaysMax Int?
+  deliveryError   String? // why the last copy to the store failed; cleared on success
+
+  // Mail: the team addresses that receive team mails, and the day (IST, YYYY-MM-DD) the daily checks last ran.
+  adminEmails String[] @default([])
+  dailyMailOn String?
+
+  updatedBy String? // "admin:<team member>"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// How mail is sent for a shop, entered on the Mail page of the app. A value
+/// saved here is used in place of the same value in the server's environment.
+/// The Resend key and the webhook secret are stored encrypted (AES-256-GCM,
+/// key derived from a server secret) and are never sent back to the browser:
+/// only the last four characters are kept readable, to recognise them by.
+model MailSetting {
+  shop String @id
+
+  apiKeyEnc  String? // "v1:<iv>:<tag>:<data>", base64 parts
+  apiKeyHint String? // last 4 characters
+
+  fromName    String? // "Setu Store"
+  fromAddress String? // the address mails come from; its domain must be verified in Resend
+  replyTo     String? // where a reply goes; empty = the from address
+
+  /// Test list: only these addresses or @domains really get mail. Required outside production.
+  onlyTo String[] @default([])
+
+  webhookSecretEnc  String?
+  webhookSecretHint String?
+
+  updatedBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum MailStatus {
+  queued // waiting to be sent (or to be tried again)
+  sending // being handed to the mail service right now
+  sent // the mail service accepted it
+  delivered // the mail service says it reached the inbox
+  bounced // the address refused it, or the reader marked it as spam
+  failed // given up after several tries
+  logged // kept in the log only: no mail service set up, or the address isn't on the test list
+}
+
+/// One mail to one address: what was (or would be) sent, and what became of it.
+/// Mails with a one-time link (password reset, staff invite) are sent at once
+/// and kept here without the link.
+model MailMessage {
+  id       String  @id @default(cuid())
+  shop     String
+  template String // key in app/lib/mail/templates.ts
+  audience String // "seller" | "admin"
+  toEmail  String
+  toName   String?
+  vendorId String? // the vendor it is about, if any
+
+  subject   String
+  body      String  @db.Text // the words, without greeting, link or sign-off
+  linkLabel String?
+  linkUrl   String?
+
+  status        MailStatus @default(queued)
+  attempts      Int        @default(0)
+  nextAttemptAt DateTime   @default(now())
+  note          String? // why it failed, bounced or was only logged
+  providerId    String? // the mail service's id, to match delivery reports
+  dedupeKey     String? // the same event never mails the same address twice
+
+  createdAt DateTime  @default(now())
+  sentAt    DateTime?
+  updatedAt DateTime  @updatedAt
+
+  @@unique([shop, dedupeKey])
+  @@index([shop, createdAt])
+  @@index([status, nextAttemptAt])
+  @@index([providerId])
+}
+
+/// Whether a kind of mail is switched on. No row means on.
+model MailTemplateSetting {
+  shop      String
+  template  String
+  enabled   Boolean  @default(true)
+  updatedBy String?
+  updatedAt DateTime @updatedAt
+
+  @@id([shop, template])
 }

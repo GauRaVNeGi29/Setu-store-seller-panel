@@ -18,6 +18,8 @@
     "graphql-codegen": "graphql-codegen",
     "vite": "vite",
     "typecheck": "react-router typegen && tsc --noEmit",
+    "reviews:sample": "tsx --env-file=.env scripts/sample-reviews.mts",
+    "test:storefront": "node tests/storefront/render.mjs extensions/setu-vendor-details .cache/storefront && python3 tests/storefront/browser.py .cache/storefront",
     "test": "vitest run",
     "test:db:setup": "dotenv -e .env.test -- prisma migrate deploy"
   },
@@ -58,6 +60,7 @@
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.0.1",
     "graphql-config": "^5.1.1",
+    "liquidjs": "^10.30.1",
     "prettier": "^3.6.2",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",

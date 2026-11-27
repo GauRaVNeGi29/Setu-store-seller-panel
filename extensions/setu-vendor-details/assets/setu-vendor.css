@@ -1,0 +1,1072 @@
+/* Setu Store vendor details. Inherits the theme's font and colours. */
+.setu-vendor {
+  --setu-line: rgba(0, 0, 0, 0.14);
+  --setu-line: color-mix(in srgb, currentColor 16%, transparent);
+  --setu-soft: rgba(0, 0, 0, 0.04);
+  --setu-soft: color-mix(in srgb, currentColor 5%, transparent);
+  --setu-muted: rgba(0, 0, 0, 0.62);
+  --setu-muted: color-mix(in srgb, currentColor 66%, transparent);
+}
+
+/* Header: logo · name (· short description) ……… Min ₹ */
+.setu-vendor-hd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  width: 100%;
+}
+.setu-vendor-hd__brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+.setu-vendor-hd__brand:hover .setu-vendor-hd__name {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.setu-vendor-hd__brand:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+.setu-vendor-hd__logo {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--setu-logo, 56px);
+  height: var(--setu-logo, 56px);
+  border: 1px solid var(--setu-line);
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--setu-soft);
+}
+.setu-vendor-hd__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.setu-vendor-hd__initial {
+  font-size: calc(var(--setu-logo, 56px) * 0.4);
+  font-weight: 600;
+  line-height: 1;
+}
+.setu-vendor-hd__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  line-height: 1.3;
+}
+.setu-vendor-hd__name {
+  font-weight: inherit;
+}
+.setu-vendor-hd__name--bold {
+  font-weight: 600;
+}
+.setu-vendor-hd__min {
+  flex: none;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35em;
+  padding: 6px 12px;
+  border: 1px solid var(--setu-line);
+  border-radius: 999px;
+  font-size: 0.875em;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+/* Description */
+.setu-vendor-ds__text {
+  margin: 0 0 0.75em;
+}
+.setu-vendor-ds__link {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.setu-vendor-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* A placeholder with nothing to show (vendor not listed) takes no space. */
+.setu-vendor-header:empty,
+.setu-vendor-description:empty {
+  display: none;
+}
+
+/* Rating: five stars, part-filled, with the number beside them. */
+.setu-stars {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.875em;
+  line-height: 1;
+  white-space: nowrap;
+}
+.setu-stars__row {
+  position: relative;
+  display: inline-block;
+  font-family: Arial, "Segoe UI Symbol", sans-serif;
+  font-size: 1.1em;
+  letter-spacing: 2px;
+  color: var(--setu-line);
+}
+.setu-stars__on {
+  position: absolute;
+  inset: 0 auto 0 0;
+  overflow: hidden;
+  color: #b7791f;
+}
+.setu-stars__count {
+  color: var(--setu-muted);
+}
+
+/* ------------------------------------------------------------------ Seller page header */
+.setu-seller-header--auto {
+  width: 100%;
+  max-width: var(--setu-page-width, 1400px);
+  margin-inline: auto;
+  padding: 16px var(--setu-page-margin, clamp(16px, 3vw, 40px)) 0;
+  box-sizing: border-box;
+}
+.setu-seller-header:empty,
+.setu-all-brands:empty {
+  display: none;
+}
+.setu-seller__banner {
+  aspect-ratio: 5 / 1;
+  min-height: 120px;
+  max-height: 320px;
+  width: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--setu-soft);
+}
+.setu-seller__banner-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.setu-seller__body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  padding: 20px 0 0;
+}
+.setu-seller--banner .setu-seller__body {
+  padding-inline: 20px;
+}
+.setu-seller__logo {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 96px;
+  height: 96px;
+  border: 1px solid var(--setu-line);
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--color-background, #fff);
+}
+.setu-seller--banner .setu-seller__logo {
+  margin-top: -56px;
+  box-shadow: 0 0 0 4px var(--color-background, #fff);
+}
+.setu-seller__logo-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.setu-seller__initial {
+  font-size: 2.25rem;
+  font-weight: 600;
+  line-height: 1;
+}
+.setu-seller__text {
+  flex: 1 1 240px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+.setu-seller__name {
+  margin: 0;
+  font-family: var(--font-heading--family, inherit);
+  font-weight: var(--font-heading--weight, 400);
+  font-size: clamp(1.75rem, 1.3rem + 1.6vw, 2.5rem);
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+/* Brand values: the seller's tags as pills. Each pill has a fixed height and
+   centres its words both ways; where the browser can, the line box is trimmed
+   to the letters so they sit in the true middle whatever the theme's font. */
+.setu-seller__values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.setu-seller__values li {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  height: 30px;
+  padding: 0 14px;
+  border: 1px solid var(--setu-value-line, #dedede);
+  border-radius: 999px;
+  background: var(--setu-value-bg, #fff);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  font-size: 0.8125em;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  text-align: center;
+  white-space: nowrap;
+  text-box: trim-both cap alphabetic;
+}
+/* The seller's description: a light grey box across the header's full width. With
+   the script it opens two lines tall ("is-short") and a button unfolds it. */
+.setu-seller__about {
+  margin: 16px 0 0;
+  padding: 14px 18px;
+  border: 1px solid var(--setu-about-line, #e4e4e4);
+  border-radius: 12px;
+  background: var(--setu-about-bg, #f7f7f7);
+}
+.setu-seller--banner .setu-seller__about {
+  margin-inline: 20px;
+}
+.setu-seller__about-text {
+  margin: 0;
+}
+.setu-seller__about.is-short .setu-seller__about-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+/* Folded, the paragraphs run on as one, so two lines hold two lines of words. */
+.setu-seller__about.is-short .setu-seller__about-text br {
+  display: none;
+}
+.setu-seller__about-toggle {
+  min-height: 24px;
+  margin: 8px 0 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.875em;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.setu-seller__about-toggle[hidden] {
+  display: none;
+}
+.setu-seller__about-toggle:focus-visible {
+  outline: 2px solid var(--color-foreground, currentColor);
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------------ Brands page */
+.setu-all-brands--auto {
+  width: 100%;
+  max-width: var(--setu-page-width, 1400px);
+  margin-inline: auto;
+  padding: 0 var(--setu-page-margin, clamp(16px, 3vw, 40px)) 40px;
+  box-sizing: border-box;
+}
+.setu-brands {
+  --setu-accent: var(--color-foreground, currentColor);
+  width: 100%;
+}
+/* setu-vendor.js widens a list that sits in a narrow text column (see widen()). */
+.setu-brands--wide {
+  box-sizing: border-box;
+  max-width: none;
+}
+.setu-brands__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+  margin-bottom: 20px;
+}
+.setu-brands__bar[hidden] {
+  display: none;
+}
+.setu-brands__sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.875em;
+}
+.setu-brands__sort select,
+.setu-brands__search input {
+  height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--setu-line);
+  border-radius: 999px;
+  background-color: transparent;
+  color: inherit;
+  font: inherit;
+}
+.setu-brands__sort select {
+  padding-right: 36px;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 16px;
+}
+.setu-brands__search {
+  flex: 0 1 280px;
+}
+.setu-brands__search input {
+  width: 100%;
+  box-sizing: border-box;
+}
+.setu-brands__sort select:focus-visible,
+.setu-brands__search input:focus-visible,
+.setu-brands__page:focus-visible,
+.setu-brand__nav:focus-visible,
+.setu-brand__seller:focus-visible,
+.setu-brand__card-link:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+/* The list often sits in a theme's rich text, which indents lists and gives
+   their items bullets and spacing: these selectors are strong enough to undo that. */
+.setu-brands ul.setu-brands__list,
+.setu-brands ul.setu-brand__track {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.setu-brands li.setu-brand,
+.setu-brands li.setu-brand__card {
+  list-style: none;
+}
+.setu-brands li.setu-brand__card {
+  margin: 0;
+  padding: 0;
+}
+.setu-brands li.setu-brand::before,
+.setu-brands li.setu-brand__card::before,
+.setu-brands li.setu-brand::marker,
+.setu-brands li.setu-brand__card::marker {
+  content: none;
+}
+.setu-brands li.setu-brand {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: center;
+  margin: 0 0 20px;
+  padding: 16px;
+  border: 1px solid var(--setu-line);
+  border-radius: 14px;
+}
+.setu-brands li.setu-brand[hidden] {
+  display: none;
+}
+.setu-brand__seller {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  color: inherit;
+  text-align: center;
+  text-decoration: none;
+  border-radius: 8px;
+}
+.setu-brand__logo {
+  display: grid;
+  place-items: center;
+  width: 96px;
+  height: 96px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--setu-soft);
+}
+.setu-brand__logo-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #fff;
+}
+.setu-brand__initial {
+  font-size: 2.25rem;
+  font-weight: 600;
+  line-height: 1;
+}
+.setu-brand__name {
+  font-size: 1.125em;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.setu-brand__seller:hover .setu-brand__name {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.setu-brand__min {
+  font-size: 0.75em;
+  line-height: 1.4;
+  color: var(--setu-muted);
+}
+.setu-brand__products {
+  position: relative;
+  min-width: 0;
+}
+.setu-brands ul.setu-brand__track {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  /* Snap to the padded edge, so a row that scrolls starts level with one that doesn't. */
+  scroll-padding-inline: 2px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  padding: 2px;
+}
+.setu-brand__track::-webkit-scrollbar {
+  display: none;
+}
+.setu-brand__card {
+  flex: 0 0 calc((100% - 36px) / 4);
+  min-width: 150px;
+  max-width: 240px;
+  scroll-snap-align: start;
+  border: 1px solid var(--setu-line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.setu-brand__card-link {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  color: inherit;
+  text-decoration: none;
+}
+.setu-brand__media {
+  display: block;
+  aspect-ratio: 1 / 1;
+  background: var(--setu-soft);
+}
+.setu-brand__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.setu-brand__title {
+  padding: 10px 12px 0;
+  font-size: 0.875em;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.setu-brand__card-link:hover .setu-brand__title {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.setu-brand__price {
+  padding: 4px 12px 12px;
+  font-size: 0.8125em;
+  line-height: 1.35;
+}
+.setu-brand__msrp {
+  margin-left: 6px;
+  font-size: 0.9em;
+  color: var(--setu-muted);
+}
+.setu-brand__card--all {
+  background: var(--setu-soft);
+}
+.setu-brand__card--all .setu-brand__card-link {
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 160px;
+  padding: 16px;
+  text-align: center;
+  font-size: 0.9375em;
+}
+.setu-brand__card--all .setu-brand__card-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.setu-brand__card--all svg {
+  margin-top: 8px;
+}
+.setu-brand__nav {
+  position: absolute;
+  top: 50%;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin-top: -18px;
+  padding: 0;
+  border: 1px solid var(--setu-line);
+  border-radius: 50%;
+  background: var(--color-background, #fff);
+  color: inherit;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+.setu-brand__nav[hidden] {
+  display: none;
+}
+.setu-brand__nav--prev {
+  left: -14px;
+}
+.setu-brand__nav--next {
+  right: -14px;
+}
+.setu-brand__empty {
+  margin: 0;
+  color: var(--setu-muted);
+}
+.setu-brands__none {
+  margin: 32px 0;
+  text-align: center;
+  color: var(--setu-muted);
+}
+.setu-brands__pager {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 28px;
+}
+.setu-brands__pager[hidden] {
+  display: none;
+}
+.setu-brands__page {
+  min-width: 40px;
+  height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--setu-line);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.875em;
+  cursor: pointer;
+}
+.setu-brands__page.is-current {
+  border-color: var(--setu-accent);
+  background: var(--setu-accent);
+  color: var(--color-background, #fff);
+}
+.setu-brands__page:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+@media screen and (max-width: 749px) {
+  .setu-brands li.setu-brand {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    padding: 12px;
+  }
+  .setu-brand__seller {
+    display: grid;
+    grid-template-columns: 56px minmax(0, 1fr);
+    column-gap: 12px;
+    row-gap: 2px;
+    align-items: center;
+    justify-items: start;
+    padding: 4px;
+    text-align: left;
+  }
+  .setu-brand__logo {
+    grid-row: 1 / span 3;
+    width: 56px;
+    height: 56px;
+  }
+  .setu-brand__name,
+  .setu-brand__min,
+  .setu-brand__seller .setu-stars {
+    grid-column: 2;
+  }
+  .setu-brand__card {
+    flex-basis: 44%;
+    min-width: 0;
+  }
+  .setu-brand__nav {
+    display: none;
+  }
+  .setu-brands__search {
+    flex: 1 1 100%;
+  }
+  .setu-seller__logo {
+    width: 72px;
+    height: 72px;
+  }
+  .setu-seller--banner .setu-seller__logo {
+    margin-top: -44px;
+  }
+  .setu-seller--banner .setu-seller__about {
+    margin-inline: 12px;
+  }
+  .setu-seller--banner .setu-seller__body {
+    padding-inline: 12px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .setu-brand__track {
+    scroll-behavior: auto;
+  }
+}
+
+/* ------------------------------------------------------------------ Seller facts and Feedback */
+/* Two lines under the name, items separated by a middle dot that stays with the item before it. */
+.setu-seller__meta {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.setu-seller__meta li {
+  display: inline-block;
+  vertical-align: baseline;
+}
+.setu-seller__meta li:not(:last-child)::after {
+  content: "\00b7";
+  margin-inline: 8px;
+  color: var(--setu-muted);
+}
+.setu-seller__meta--about {
+  font-size: 0.875em;
+  color: var(--setu-muted);
+}
+.setu-seller__meta .setu-stars {
+  font-size: 1em;
+  vertical-align: baseline;
+}
+/* ------------------------------------------------------------------ Ratings and reviews
+   Under the seller's products: the rating and a bar for each number of stars
+   on one side, the reviews on the other. One column on a phone. */
+.setu-seller-reviews--auto {
+  width: 100%;
+  max-width: var(--setu-page-width, 1400px);
+  margin-inline: auto;
+  padding: 0 var(--setu-page-margin, clamp(16px, 3vw, 40px)) 56px;
+  box-sizing: border-box;
+}
+.setu-seller-reviews:empty {
+  display: none;
+}
+.setu-reviews {
+  margin-top: 48px;
+  scroll-margin-top: 96px;
+}
+.setu-reviews [hidden] {
+  display: none;
+}
+.setu-reviews__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+  margin-bottom: 28px;
+}
+.setu-reviews__title {
+  margin: 0;
+  font-family: var(--font-heading--family, inherit);
+  font-weight: var(--font-heading--weight, 400);
+  font-size: 1.75em;
+  line-height: 1.2;
+}
+.setu-reviews__sort select,
+.setu-reviews__open,
+.setu-reviews__more,
+.setu-reviews__send {
+  height: 44px;
+  padding: 0 20px;
+  border: 1px solid var(--setu-line);
+  border-radius: 999px;
+  background: var(--color-background, #fff);
+  color: inherit;
+  font: inherit;
+  font-size: 0.9375em;
+  cursor: pointer;
+}
+.setu-reviews__sort select {
+  padding-right: 40px;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none' stroke='%23333' stroke-width='1.5'%3E%3Cpath d='m1 1.5 5 5 5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 16px center;
+}
+.setu-reviews__send {
+  border-color: var(--color-foreground, currentColor);
+  background: var(--color-foreground, currentColor);
+  color: var(--color-background, #fff);
+}
+.setu-reviews__sort select:focus-visible,
+.setu-reviews__open:focus-visible,
+.setu-reviews__more:focus-visible,
+.setu-reviews__send:focus-visible,
+.setu-reviews__field :focus-visible,
+.setu-seller__rating-link:focus-visible {
+  outline: 2px solid var(--color-foreground, currentColor);
+  outline-offset: 2px;
+}
+.setu-reviews__send:disabled,
+.setu-reviews__more:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.setu-seller__rating-link {
+  color: inherit;
+  text-decoration: none;
+  border-radius: 4px;
+}
+.setu-seller__rating-link .setu-stars__count {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.setu-reviews__cols {
+  display: grid;
+  grid-template-columns: minmax(240px, 360px) minmax(0, 1fr);
+  gap: 32px clamp(40px, 7vw, 96px);
+  align-items: start;
+}
+.setu-reviews__score {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  font-family: var(--font-heading--family, inherit);
+  font-weight: var(--font-heading--weight, 400);
+  font-size: 3.25em;
+  line-height: 1;
+  font-variant-numeric: lining-nums;
+}
+.setu-reviews__score-star {
+  font-family: Arial, "Segoe UI Symbol", sans-serif;
+  font-size: 0.5em;
+}
+.setu-reviews__count {
+  margin: 20px 0 0;
+}
+.setu-reviews__bars {
+  display: grid;
+  gap: 10px;
+  margin: 20px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.setu-reviews__bar {
+  display: grid;
+  grid-template-columns: 1.25em minmax(0, 1fr) 2.25em;
+  align-items: center;
+  gap: 8px;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.setu-reviews__bar-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--setu-line);
+  overflow: hidden;
+}
+.setu-reviews__bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--color-foreground, currentColor);
+}
+.setu-reviews__bar-c {
+  text-align: right;
+}
+.setu-reviews__write {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--setu-line);
+}
+.setu-reviews__status,
+.setu-reviews__note {
+  margin: 0;
+  color: var(--setu-muted);
+}
+.setu-reviews__note--small {
+  font-size: 0.8125em;
+}
+.setu-reviews__note a {
+  color: inherit;
+  text-underline-offset: 3px;
+}
+.setu-reviews__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.setu-reviews__list[aria-busy="true"] {
+  opacity: 0.5;
+}
+.setu-reviews__item {
+  padding: 28px 0;
+  border-top: 1px solid var(--setu-line);
+}
+.setu-reviews__item:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+.setu-stars--review {
+  font-size: 1.25em;
+}
+.setu-stars--review .setu-stars__row {
+  letter-spacing: 4px;
+}
+.setu-reviews__text {
+  margin: 14px 0 0;
+  max-width: 80ch;
+  font-size: 1.0625em;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.setu-reviews__meta {
+  margin: 12px 0 0;
+  font-size: 0.9375em;
+  color: var(--setu-muted);
+}
+.setu-reviews__meta span:not(:last-child)::after {
+  content: "\2022";
+  margin-inline: 6px;
+}
+.setu-reviews__more {
+  margin-top: 8px;
+}
+.setu-reviews__form {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+}
+.setu-reviews__form-title {
+  margin: 0;
+  font: inherit;
+  font-size: 1.125em;
+  font-weight: 400;
+}
+.setu-reviews__stars {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.setu-reviews__products {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+/* The products a buyer can tick: a list that scrolls when it is long. */
+.setu-reviews__picks {
+  display: grid;
+  gap: 2px;
+  max-height: 264px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--setu-line);
+  border-radius: 8px;
+}
+.setu-reviews__pick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.setu-reviews__pick:hover {
+  background: var(--setu-soft, rgba(0, 0, 0, 0.04));
+}
+.setu-reviews__pick input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--color-foreground, currentColor);
+}
+.setu-reviews__pick img {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+.setu-reviews__pick span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+/* Under a review: the products it is about, as pictures linked to the product. */
+.setu-reviews__bought-label {
+  margin: 20px 0 0;
+  font-size: 0.9375em;
+  color: var(--setu-muted);
+}
+.setu-reviews__bought {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.setu-reviews__product {
+  display: block;
+  border-radius: 6px;
+  color: inherit;
+  text-decoration: none;
+}
+.setu-reviews__product img {
+  display: block;
+  width: 72px;
+  height: 72px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: var(--setu-soft, rgba(0, 0, 0, 0.04));
+}
+a.setu-reviews__product:hover img {
+  opacity: 0.85;
+}
+.setu-reviews__product--words {
+  display: flex;
+  align-items: center;
+  min-height: 72px;
+  max-width: 180px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  border: 1px solid var(--setu-line);
+  font-size: 0.8125em;
+  overflow-wrap: anywhere;
+}
+a.setu-reviews__product--words {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.setu-reviews__product:focus-visible {
+  outline: 2px solid var(--color-foreground, currentColor);
+  outline-offset: 2px;
+}
+.setu-reviews__stars legend,
+.setu-reviews__products legend,
+.setu-reviews__field > span {
+  display: block;
+  margin-bottom: 6px;
+  padding: 0;
+  font-size: 0.875em;
+}
+.setu-reviews__star-row {
+  display: inline-flex;
+}
+.setu-reviews__star {
+  position: relative;
+  padding: 0 3px;
+  font-family: Arial, "Segoe UI Symbol", sans-serif;
+  font-size: 30px;
+  line-height: 1;
+  color: var(--setu-line);
+  cursor: pointer;
+}
+.setu-reviews__star input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+/* Every star up to the chosen (or hovered) one is filled. */
+.setu-reviews__star:has(input:checked),
+.setu-reviews__star:has(~ .setu-reviews__star input:checked),
+.setu-reviews__star-row:hover .setu-reviews__star:hover,
+.setu-reviews__star-row:hover .setu-reviews__star:has(~ .setu-reviews__star:hover) {
+  color: #b7791f;
+}
+.setu-reviews__star-row:hover .setu-reviews__star:hover ~ .setu-reviews__star {
+  color: var(--setu-line);
+}
+.setu-reviews__star:has(input:focus-visible) {
+  outline: 2px solid var(--color-foreground, currentColor);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.setu-reviews__field {
+  display: block;
+}
+.setu-reviews__field select,
+.setu-reviews__field textarea,
+.setu-reviews__field input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--setu-line);
+  border-radius: 8px;
+  background: var(--color-background, #fff);
+  color: inherit;
+  font: inherit;
+}
+.setu-reviews__field small {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.8125em;
+  color: var(--setu-muted);
+}
+.setu-reviews__error {
+  margin: 0;
+  color: #a63a32;
+}
+.setu-reviews__thanks {
+  margin: 12px 0 0;
+  color: #2c6b3f;
+}
+.setu-reviews__send {
+  justify-self: start;
+}
+@media screen and (max-width: 749px) {
+  .setu-reviews {
+    margin-top: 32px;
+  }
+  .setu-reviews__cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .setu-reviews__title {
+    font-size: 1.5em;
+  }
+  .setu-reviews__score {
+    font-size: 2.5em;
+  }
+}
+

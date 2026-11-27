@@ -6,9 +6,11 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { approveSignup, listSignups, rejectSignup } from "../lib/vendors/vendors.server";
+import { vendorCounts } from "../lib/admin/vendors.server";
+import { Tabs, vendorTabs } from "../lib/admin/ui";
 
 /**
- * Sign-ups waiting for review. Approving links the person to a Shopify vendor
+ * Sign-ups waiting for review: one of the views of Vendors (same tabs). Approving links the person to a Shopify vendor
  * name; from then on they see that vendor's orders. Until then they see nothing.
  */
 
@@ -17,13 +19,14 @@ const VENDORS_QUERY = `#graphql
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session, admin } = await authenticate.admin(request);
-  const [pending, rejected, vendorsRes] = await Promise.all([
+  const [pending, rejected, vendorsRes, { counts }] = await Promise.all([
     listSignups(db, session.shop, "pending"),
     listSignups(db, session.shop, "rejected"),
     admin.graphql(VENDORS_QUERY).then((r) => r.json()).catch(() => null),
+    vendorCounts(db, session.shop),
   ]);
   const shopifyVendors: string[] = vendorsRes?.data?.productVendors?.nodes ?? [];
-  return { pending, rejected: rejected.slice(-20).reverse(), shopifyVendors };
+  return { pending, rejected: rejected.slice(-20).reverse(), shopifyVendors, counts };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -43,7 +46,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 const when = (iso: string) => new Date(iso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
-const inr = (v: string) => `₹${Number(v).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 type Signup = Awaited<ReturnType<typeof loader>>["pending"][number];
 
@@ -60,19 +62,16 @@ function SignupCard({ s, vendors }: { s: Signup; vendors: string[] }) {
   const [vendorName, setVendorName] = useState(guess);
   const listId = `vendors-${s.id}`;
 
+  // Sign-up now asks only for the person's details. Older sign-ups also carried brand details; show them if present.
   const rows: [string, string | null | undefined][] = [
-    ["Person", [s.name, s.email, s.phone].filter(Boolean).join(" · ")],
-    ["Brand", a.brandName],
-    ["GST", a.gstNumber],
-    ["City / state", [a.city, a.state].filter(Boolean).join(", ")],
-    ["Sells", a.productNote],
-    ["Minimum order", a.minimumOrderValue ? inr(a.minimumOrderValue) : null],
-    ["Description", a.description],
-    ["Policy", a.policy],
+    ["Name", s.name],
+    ["Email", s.email],
+    ["Phone", s.phone],
+    ...(a.brandName ? ([["Brand (from sign-up)", a.brandName], ["City / state", [a.city, a.state].filter(Boolean).join(", ")]] as [string, string][]) : []),
   ];
 
   return (
-    <s-section heading={a.brandName || s.email}>
+    <s-section heading={s.name || s.email}>
       <s-paragraph>Signed up {when(s.createdAt)}</s-paragraph>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
         <tbody>
@@ -106,19 +105,20 @@ function SignupCard({ s, vendors }: { s: Signup; vendors: string[] }) {
 }
 
 export default function Signups() {
-  const { pending, rejected, shopifyVendors } = useLoaderData<typeof loader>();
+  const { pending, rejected, shopifyVendors, counts } = useLoaderData<typeof loader>();
 
   return (
-    <s-page heading="Sign-ups">
+    <s-page heading="Vendors">
+      <Tabs label="Vendors" current="signups" tabs={vendorTabs(counts)} />
       {pending.length === 0 ? (
-        <s-section><s-paragraph>No sign-ups waiting for review.</s-paragraph></s-section>
+        <s-section heading="Sign-ups waiting for approval"><s-paragraph>No sign-ups are waiting.</s-paragraph></s-section>
       ) : (
         pending.map((s) => <SignupCard key={s.id} s={s} vendors={shopifyVendors} />)
       )}
       {rejected.length > 0 && (
         <s-section heading="Recently declined">
           {rejected.map((s) => (
-            <s-paragraph key={s.id}>{s.application.brandName ?? "–"} · {s.email} · declined {s.reviewedAt ? when(s.reviewedAt) : ""}</s-paragraph>
+            <s-paragraph key={s.id}>{s.name ?? "–"} · {s.email} · declined {s.reviewedAt ? when(s.reviewedAt) : ""}</s-paragraph>
           ))}
         </s-section>
       )}

@@ -5,7 +5,8 @@ import { saveOrder } from "../app/lib/orders/sync.server";
 import { addVendorUser, enableVendor } from "../app/lib/vendors/vendors.server";
 import type { ShopifyOrder } from "../app/lib/orders/map";
 import fixture from "./fixtures/dev-orders-2026-11-20.json";
-import * as myOrders from "../app/routes/portal._index";
+import * as myOrders from "../app/routes/portal.orders._index";
+import * as dashboard from "../app/routes/portal._index";
 import * as orderDetail from "../app/routes/portal.orders.$orderId";
 import * as toShip from "../app/routes/portal.ship";
 import * as layout from "../app/routes/portal";
@@ -42,8 +43,8 @@ async function cleanup() {
   }
 }
 
-async function cookieFor(email: string, brandName: string) {
-  const r = await signUp(db, { name: "Test", email, password: PW, phone: "+91 98765 43210", brandName, city: "Jaipur", state: "Rajasthan" }, { shop });
+async function cookieFor(email: string) {
+  const r = await signUp(db, { name: "Test", email, password: PW, phone: "+91 98765 43210" }, { shop });
   if (!r.ok) throw new Error(JSON.stringify(r.errors));
   return `${COOKIE_NAME}=${encodeURIComponent(r.token)}`;
 }
@@ -74,9 +75,9 @@ beforeAll(async () => {
   const urban = await enableVendor(db, shop, "Urban Store", "test");
   await addVendorUser(db, shop, ashnur.id, "nusrat@ashnur.example", "Nusrat", "test");
   await addVendorUser(db, shop, urban.id, "owner@urban.example", null, "test");
-  ashnurCookie = await cookieFor("nusrat@ashnur.example", "Ashnur"); // invited → active
-  urbanCookie = await cookieFor("owner@urban.example", "Urban Store");
-  pendingCookie = await cookieFor("someone@newbrand.example", "Urban Store"); // claims to be Urban Store; not invited → pending
+  ashnurCookie = await cookieFor("nusrat@ashnur.example"); // invited → active
+  urbanCookie = await cookieFor("owner@urban.example");
+  pendingCookie = await cookieFor("someone@newbrand.example"); // not invited → pending
 });
 afterAll(async () => {
   await cleanup();
@@ -85,7 +86,8 @@ afterAll(async () => {
 
 describe("signed-out access", () => {
   it.each([
-    ["my orders", myOrders, "/portal"],
+    ["dashboard", dashboard, "/portal"],
+    ["my orders", myOrders, "/portal/orders"],
     ["order detail", orderDetail, "/portal/orders/19043720298605"],
     ["what to ship", toShip, "/portal/ship"],
     ["layout", layout, "/portal"],
@@ -101,7 +103,7 @@ describe("signed-out access", () => {
 
 describe("Ashnur sees only Ashnur", () => {
   it("My orders lists only orders with Ashnur items, with Ashnur's numbers", async () => {
-    const r = await load(myOrders, "/portal", ashnurCookie);
+    const r = await load(myOrders, "/portal/orders", ashnurCookie);
     const d = r.data as { orders: { orderName: string; net: string; toShip: number }[]; total: number };
     expect(d.orders.map((o) => o.orderName).sort()).toEqual(["#1003", "#1004", "#1005"]);
     expect(d.orders.find((o) => o.orderName === "#1003")).toMatchObject({ net: "1350.00", toShip: 7 });
@@ -109,7 +111,7 @@ describe("Ashnur sees only Ashnur", () => {
   });
 
   it("ignores any vendor or shop named in the URL", async () => {
-    const r = await load(myOrders, "/portal?vendor=Urban%20Store&vendorName=Urban%20Store&shop=other", ashnurCookie);
+    const r = await load(myOrders, "/portal/orders?vendor=Urban%20Store&vendorName=Urban%20Store&shop=other", ashnurCookie);
     for (const m of URBAN_MARKERS) expect(json(r.data)).not.toContain(m);
   });
 
@@ -144,8 +146,20 @@ describe("Ashnur sees only Ashnur", () => {
     for (const m of URBAN_MARKERS) expect(json(r.data)).not.toContain(m);
   });
 
+  it("the dashboard shows only Ashnur's figures, products and orders – whatever the URL says", async () => {
+    for (const path of ["/portal?range=all", "/portal?range=all&vendor=Urban%20Store&shop=someone-else.myshopify.com"]) {
+      const r = await load(dashboard, path, ashnurCookie);
+      const d = (r.data as { dash: { sales: { net: string }; kpis: { orders: { value: number } }; toShip: { units: number }; recent: { orderName: string }[] } }).dash;
+      expect(d.sales.net).toBe("1875.00");
+      expect(d.kpis.orders.value).toBe(2); // #1003, #1004 (#1005 cancelled)
+      expect(d.toShip.units).toBe(10);
+      expect(d.recent.map((o) => o.orderName).sort()).toEqual(["#1003", "#1004", "#1005"]);
+      for (const m of URBAN_MARKERS) expect(json(r.data)).not.toContain(m);
+    }
+  });
+
   it("never shows data from another shop with the same vendor name", async () => {
-    const r = await load(myOrders, "/portal", ashnurCookie);
+    const r = await load(myOrders, "/portal/orders", ashnurCookie);
     expect((r.data as { total: number }).total).toBe(3); // not 6
   });
 });
@@ -163,12 +177,13 @@ describe("Urban Store sees only Urban Store", () => {
 
 describe("an applicant waiting for approval", () => {
   it.each([
-    ["my orders", myOrders, "/portal"],
+    ["dashboard", dashboard, "/portal"],
+    ["my orders", myOrders, "/portal/orders"],
     ["order detail", orderDetail, "/portal/orders/19043720134765"],
     ["what to ship", toShip, "/portal/ship"],
     ["layout", layout, "/portal"],
     ["my brand", profile, "/portal/profile"],
-  ])("is sent to 'under review' from %s – even claiming a vendor's brand name", async (_n, mod, path) => {
+  ])("is sent to 'under review' from %s", async (_n, mod, path) => {
     const r = await load(mod, path, pendingCookie, { orderId: "19043720134765" });
     expect(r.status).toBe(302);
     expect(r.location).toBe("/portal/pending");

@@ -9,7 +9,7 @@ application_url = "https://shopify.dev/apps/default-app-home"
 
 [access_scopes]
 # Read-only. Stage 1 needs no write access and no theme access.
-scopes = "read_orders,read_products,read_metaobjects,read_merchant_managed_fulfillment_orders"
+scopes = "read_orders,write_app_proxy,write_products,read_publications,write_publications,read_merchant_managed_fulfillment_orders,write_metaobjects,write_metaobject_definitions,write_files"
 
 [webhooks]
 api_version = "2026-10"
@@ -30,6 +30,13 @@ api_version = "2026-10"
   [[webhooks.subscriptions]]
   uri = "/webhooks/orders"
   topics = [ "orders/delete" ]
+
+# Storefront requests to /apps/setu-seller/... are passed by Shopify, signed, to the app's /proxy/...
+# (seller reviews on the seller page: app/routes/proxy.reviews.tsx).
+[app_proxy]
+url = "/proxy"
+subpath = "setu-seller"
+prefix = "apps"
 
 [auth]
 redirect_urls = [ "https://shopify.dev/apps/default-app-home/api/auth" ]

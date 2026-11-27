@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import styles from "../../styles/portal.css?url";
 import { BridgeArch, IconCheck } from "./icons";
+import { BRAND_VALUES_MAX, SUGGESTED_BRAND_VALUES, splitBrandValues, toggleBrandValue } from "../vendors/values";
 
 /** Fonts and stylesheet for every portal page: Setu Store's storefront faces. */
 export const portalLinks = () => [
@@ -12,6 +13,7 @@ export const portalLinks = () => [
     href: "https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,300..600&family=Red+Hat+Display:wght@400..700&display=swap",
   },
   { rel: "stylesheet", href: styles },
+  { rel: "icon", type: "image/png", href: "/setu-favicon-logo.png" },
 ];
 
 export const Wordmark = ({ sub, to = "/portal" }: { sub?: string; to?: string }) => (
@@ -98,6 +100,72 @@ export function Field({ name, label, type = "text", error, hint, required, autoC
   );
 }
 
+/**
+ * Two whole numbers of days, "from" and "to" (e.g. 10 to 15). One group label,
+ * with the hint and error read out for both inputs.
+ */
+export function DayRangeField({ name, label, min, max, error, hint, required }: {
+  name: string; label: string; min: string; max: string; error?: string; hint?: string; required?: boolean;
+}) {
+  const describedBy = [error ? `${name}-error` : null, hint ? `${name}-hint` : null].filter(Boolean).join(" ") || undefined;
+  const input = (suffix: "Min" | "Max", value: string, what: string) => (
+    <input id={`${name}${suffix}`} name={`${name}${suffix}`} className="vp-input" type="number" inputMode="numeric" min={suffix === "Min" ? 0 : 1} max={365} step={1}
+      required={required} defaultValue={value} aria-label={`${label}: ${what}`} aria-invalid={error ? true : undefined} aria-describedby={describedBy} />
+  );
+  return (
+    <fieldset className="vp-field vp-range">
+      <legend>
+        {label}
+        {!required && <span className="vp-optional"> (optional)</span>}
+      </legend>
+      <div className="vp-range-row">
+        {input("Min", min, "from, in days")}
+        <span aria-hidden="true">to</span>
+        {input("Max", max, "to, in days")}
+        <span aria-hidden="true">days</span>
+      </div>
+      {hint && <p id={`${name}-hint`} className="vp-hint">{hint}</p>}
+      {error && <p id={`${name}-error`} className="vp-field-error">{error}</p>}
+    </fieldset>
+  );
+}
+
+/**
+ * Brand values: one text box (tags separated by commas) with one-tap choices
+ * under it. Tapping a choice adds it to the box or takes it out. Works as a
+ * plain text box before the page's script has loaded.
+ */
+export function BrandValuesField({ name, label, value, error, hint }: { name: string; label: string; value: string; error?: string; hint?: string }) {
+  const [typed, setTyped] = useState(value);
+  const chosen = splitBrandValues(typed).map((v) => v.toLowerCase());
+  const full = new Set(chosen).size >= BRAND_VALUES_MAX;
+  const describedBy = [error ? `${name}-error` : null, `${name}-hint`].filter(Boolean).join(" ");
+  return (
+    <div className="vp-field">
+      <label htmlFor={name}>
+        {label}
+        <span className="vp-optional"> (optional)</span>
+      </label>
+      <input id={name} name={name} className="vp-input" type="text" value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off"
+        placeholder="e.g. Women owned, Eco-friendly" aria-invalid={error ? true : undefined} aria-describedby={describedBy} />
+      <div className="vp-tags" role="group" aria-label={`Common ${label.toLowerCase()}: tap to add or remove`}>
+        {SUGGESTED_BRAND_VALUES.map((tag) => {
+          const on = chosen.includes(tag.toLowerCase());
+          return (
+            <button key={tag} type="button" className="vp-tag" aria-pressed={on} disabled={!on && full} onClick={() => setTyped(toggleBrandValue(typed, tag))}>
+              {tag}
+            </button>
+          );
+        })}
+      </div>
+      <p id={`${name}-hint`} className="vp-hint">
+        {hint} <span aria-live="polite">{new Set(chosen).size} of {BRAND_VALUES_MAX} chosen.</span>
+      </p>
+      {error && <p id={`${name}-error`} className="vp-field-error">{error}</p>}
+    </div>
+  );
+}
+
 export function DevEmailPreview({ preview }: { preview?: { subject: string; link?: string } }) {
   if (!preview) return null;
   return (
@@ -122,3 +190,46 @@ export const Status = ({ value }: { value: string }) => (
 );
 
 export const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+export type PortalFile = { id: string; fileName: string; mimeType: string; size: number } | null;
+
+const kb = (n: number) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+
+/** Link to one of the vendor's own files (opens in a new tab). */
+export function FileLink({ file, label }: { file: NonNullable<PortalFile>; label?: string }) {
+  return (
+    <a className="vp-filelink" href={`/portal/files/${file.id}`} target="_blank" rel="noreferrer">
+      <span className="vp-filename">{label ?? file.fileName}</span>
+      <span className="vp-small"> · {file.mimeType === "application/pdf" ? "PDF" : file.mimeType.replace("image/", "").toUpperCase()} · {kb(file.size)}</span>
+    </a>
+  );
+}
+
+/** File picker with the current file, the rules and any error. `removable` adds a "Remove" tick box. */
+export function FileField({ name, label, current, accept, hint, error, removable, image }: {
+  name: string; label: string; current: PortalFile; accept: string; hint: string; error?: string; removable?: boolean; image?: boolean;
+}) {
+  const describedBy = [error ? `${name}-error` : null, `${name}-hint`].filter(Boolean).join(" ");
+  return (
+    <div className="vp-field vp-filefield">
+      <label htmlFor={name}>{label}<span className="vp-optional"> (optional)</span></label>
+      {current && (
+        <div className="vp-filecurrent">
+          {image && <img src={`/portal/files/${current.id}`} alt="" className={`vp-thumb vp-thumb--${name}`} />}
+          <span>Current: <FileLink file={current} /></span>
+          {removable && (
+            <label className="vp-remove" htmlFor={`remove_${name}`}>
+              <input type="checkbox" id={`remove_${name}`} name={`remove_${name}`} value="1" /> Remove
+            </label>
+          )}
+        </div>
+      )}
+      <input
+        id={name} name={name} type="file" accept={accept} className="vp-input vp-file"
+        aria-invalid={error ? true : undefined} aria-describedby={describedBy}
+      />
+      <p id={`${name}-hint`} className="vp-hint">{current ? "Choose a file only if you want to replace it. " : ""}{hint}</p>
+      {error && <p id={`${name}-error`} className="vp-field-error">{error}</p>}
+    </div>
+  );
+}
