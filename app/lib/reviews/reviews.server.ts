@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import { ANONYMOUS_AUTHOR, AUTHOR_MAX, COMMENT_MAX, HIDE_REASON_MAX, LOCATION_MAX, PUBLIC_PAGE, REVIEW_ITEMS_MAX, REVIEWS_PER_PAGE, type ReviewSort, type ReviewSummary } from "./rules";
+import { mailReview, mailReviewVisibility } from "../mail/notify.server";
 
 /**
  * Buyers' ratings of vendors.
@@ -106,7 +107,7 @@ export async function submitReview(db: PrismaClient, shop: string, input: Review
 
   const data = { rating, comment: comment || null, authorName: displayAuthor(input.authorName), orderId: order.orderId, orderName: order.orderName };
   const key = { shop_vendorId_customerId: { shop, vendorId: vendor.id, customerId: input.customerId } };
-  const before = await db.vendorReview.findUnique({ where: key, select: { id: true } });
+  const before = await db.vendorReview.findUnique({ where: key, select: { id: true, rating: true } });
   // A review the team has hidden stays hidden when the buyer changes it.
   const rows = items.map((i, position) => ({ productId: BigInt(i.id), title: i.title, position }));
   const where = buyerLocationText(input.buyerLocation);
@@ -120,6 +121,7 @@ export async function submitReview(db: PrismaClient, shop: string, input: Review
   await db.auditLog.create({
     data: { shop, actor: "buyer", action: before ? "review.changed" : "review.added", target: `vendor:${vendor.id}`, detail: { reviewId: saved.id, rating, order: order.orderName } },
   });
+  await mailReview(db, shop, vendor.id, { rating, comment: data.comment, author: data.authorName }, before?.rating ?? null);
   return { ok: true, id: saved.id, replaced: !!before };
 }
 
@@ -255,7 +257,7 @@ export async function reviewNumbers(db: PrismaClient, shop: string, now = new Da
 export async function setReviewHidden(
   db: PrismaClient, shop: string, vendorId: string, reviewId: string, hide: boolean, actor: string, reason?: string | null,
 ): Promise<Result> {
-  const review = await db.vendorReview.findFirst({ where: { id: reviewId, shop, vendorId }, select: { id: true, status: true } });
+  const review = await db.vendorReview.findFirst({ where: { id: reviewId, shop, vendorId }, select: { id: true, status: true, rating: true } });
   if (!review) return { ok: false, error: "Review not found" };
   const why = text(reason).slice(0, HIDE_REASON_MAX) || null;
   if (hide && !why) return { ok: false, error: "Say why you're hiding this review. The vendor sees the reason." };
@@ -269,6 +271,7 @@ export async function setReviewHidden(
     }),
     db.auditLog.create({ data: { shop, actor, action: hide ? "review.hidden" : "review.shown", target: `vendor:${vendorId}`, detail: { reviewId: review.id, reason: why } } }),
   ]);
+  await mailReviewVisibility(db, shop, vendorId, { rating: review.rating, hidden: hide, reason: why });
   return { ok: true };
 }
 

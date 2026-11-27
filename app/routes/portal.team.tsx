@@ -32,7 +32,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const token = await createInviteLink(db, r.userId, { shop: me.shop, ip: clientIp(request) });
     const link = `${portalBaseUrl(request)}/portal/reset?token=${encodeURIComponent(token)}`;
     try {
-      const sent = await sendStaffInvite(r.email, r.name, me.vendor.displayName, me.user.name || me.user.email, link);
+      const sent = await sendStaffInvite(db, { shop: me.shop, to: r.email, name: r.name, vendorId: me.vendor.id }, me.vendor.displayName, me.user.name || me.user.email, link);
       return { ok: true as const, intent, message: `Invite sent to ${r.email}.`, devPreview: sent.devPreview };
     } catch (e) {
       console.error("[vendor-portal] could not send invite", e);

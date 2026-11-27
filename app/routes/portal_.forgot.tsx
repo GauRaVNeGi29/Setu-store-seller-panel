@@ -20,7 +20,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   if (r.status === "sent") {
     const link = `${portalBaseUrl(request)}/portal/reset?token=${encodeURIComponent(r.token)}`;
     try {
-      devPreview = (await sendPasswordReset(r.email, r.name, link)).devPreview;
+      devPreview = (await sendPasswordReset(db, { shop, to: r.email, name: r.name }, link)).devPreview;
     } catch (e) {
       console.error("[vendor-portal] could not send reset email", e);
       return { sent: false, error: "The email couldn't be sent just now. Try again in a few minutes." };

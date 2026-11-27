@@ -451,7 +451,66 @@ model ShopSetting {
   deliveryDaysMax Int?
   deliveryError   String? // why the last copy to the store failed; cleared on success
 
+  // Mail: the team addresses that receive team mails, and the day (IST, YYYY-MM-DD) the daily checks last ran.
+  adminEmails String[] @default([])
+  dailyMailOn String?
+
   updatedBy String? // "admin:<team member>"
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+enum MailStatus {
+  queued // waiting to be sent (or to be tried again)
+  sending // being handed to the mail service right now
+  sent // the mail service accepted it
+  delivered // the mail service says it reached the inbox
+  bounced // the address refused it, or the reader marked it as spam
+  failed // given up after several tries
+  logged // kept in the log only: no mail service set up, or the address isn't on the test list
+}
+
+/// One mail to one address: what was (or would be) sent, and what became of it.
+/// Mails with a one-time link (password reset, staff invite) are sent at once
+/// and kept here without the link.
+model MailMessage {
+  id       String  @id @default(cuid())
+  shop     String
+  template String // key in app/lib/mail/templates.ts
+  audience String // "seller" | "admin"
+  toEmail  String
+  toName   String?
+  vendorId String? // the vendor it is about, if any
+
+  subject   String
+  body      String  @db.Text // the words, without greeting, link or sign-off
+  linkLabel String?
+  linkUrl   String?
+
+  status        MailStatus @default(queued)
+  attempts      Int        @default(0)
+  nextAttemptAt DateTime   @default(now())
+  note          String? // why it failed, bounced or was only logged
+  providerId    String? // the mail service's id, to match delivery reports
+  dedupeKey     String? // the same event never mails the same address twice
+
+  createdAt DateTime  @default(now())
+  sentAt    DateTime?
+  updatedAt DateTime  @updatedAt
+
+  @@unique([shop, dedupeKey])
+  @@index([shop, createdAt])
+  @@index([status, nextAttemptAt])
+  @@index([providerId])
+}
+
+/// Whether a kind of mail is switched on. No row means on.
+model MailTemplateSetting {
+  shop      String
+  template  String
+  enabled   Boolean  @default(true)
+  updatedBy String?
+  updatedAt DateTime @updatedAt
+
+  @@id([shop, template])
 }

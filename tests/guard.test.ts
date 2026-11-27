@@ -23,10 +23,12 @@ describe("store guard", () => {
 import { showDevEmailsOnPage } from "../app/lib/portal/email.server";
 
 describe("dev emails shown on the page", () => {
-  it("only when explicitly enabled, outside production, without an email provider", () => {
+  it("only when explicitly enabled and outside production", () => {
     expect(showDevEmailsOnPage({ PORTAL_DEV_SHOW_EMAILS: "true", NODE_ENV: "development" })).toBe(true);
     expect(showDevEmailsOnPage({ PORTAL_DEV_SHOW_EMAILS: "true", NODE_ENV: "production" })).toBe(false);
     expect(showDevEmailsOnPage({ NODE_ENV: "development" })).toBe(false);
-    expect(showDevEmailsOnPage({ PORTAL_DEV_SHOW_EMAILS: "true", NODE_ENV: "development", RESEND_API_KEY: "k", PORTAL_EMAIL_FROM: "a@b.c" })).toBe(false);
+    // With a mail service, a mail held back by the test list is still not really sent, so its link may be shown.
+    expect(showDevEmailsOnPage({ PORTAL_DEV_SHOW_EMAILS: "true", NODE_ENV: "development", RESEND_API_KEY: "k", PORTAL_EMAIL_FROM: "a@b.c" })).toBe(true);
+    expect(showDevEmailsOnPage({ PORTAL_DEV_SHOW_EMAILS: "true", NODE_ENV: "production", RESEND_API_KEY: "k", PORTAL_EMAIL_FROM: "a@b.c" })).toBe(false);
   });
 });

@@ -78,6 +78,11 @@ export default function Dashboard() {
             note: `${plural(n.reviews.published, "published review")}${n.reviews.hidden ? `, ${n.reviews.hidden} hidden` : ""} · ${n.reviews.last30Days} in the last 30 days`,
             to: "/app/reviews", linkLabel: "All reviews",
           },
+          {
+            label: "Mails sent", value: String(n.mail.sent),
+            note: `Last 7 days${n.mail.waiting ? ` · ${n.mail.waiting} waiting` : ""}${n.mail.failed ? ` · ${n.mail.failed} failed` : ""}${n.mail.bounced ? ` · ${n.mail.bounced} bounced` : ""}`,
+            to: "/app/mail", linkLabel: "Mail",
+          },
         ]} />
       </s-section>
 

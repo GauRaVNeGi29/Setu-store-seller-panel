@@ -35,6 +35,7 @@ const vendorPage = await import("../app/routes/app.vendor");
 const signups = await import("../app/routes/app.signups");
 const webhook = await import("../app/routes/webhooks.orders");
 const fileRoute = await import("../app/routes/app.files.$fileId");
+const mailPage = await import("../app/routes/app.mail");
 
 const db = new PrismaClient();
 const shop = "seller-panel-dev.myshopify.com";
@@ -70,6 +71,8 @@ async function cleanup() {
   await db.syncState.deleteMany({ where: { shop } });
   await db.auditLog.deleteMany({ where: { shop } });
   await db.shopSetting.deleteMany({ where: { shop } });
+  await db.mailMessage.deleteMany({ where: { shop } });
+  await db.mailTemplateSetting.deleteMany({ where: { shop } });
 }
 beforeAll(async () => {
   await cleanup();
@@ -515,5 +518,69 @@ describe("Reviews page (all sellers)", () => {
     expect(await post({ intent: "delete_review" })).toMatchObject({ ok: false });
     expect(await post({ intent: "show_review" })).toMatchObject({ ok: true, message: "Review shown again" });
     expect((await call(dashboard.loader, "/app")).numbers.reviews).toMatchObject({ published: 3, hidden: 1, average: "3.3" });
+  });
+});
+
+describe("Mail page", () => {
+  const post = (fields: Record<string, string>) => call(mailPage.action, "/app/mail", fields);
+
+  it("is in the app's menu, and opens on the mails with nothing really being sent here", async () => {
+    const page = await call(mailPage.loader, "/app/mail");
+    expect(page.view).toBe("mails");
+    expect(page.mode).toMatchObject({ real: false });
+    expect(page.templates.length).toBeGreaterThan(20);
+    expect(page.me).toBe("team@setustore.test");
+  });
+
+  it("the team sets its addresses, switches a mail off and on, and can't switch off a required one", async () => {
+    expect(await post({ intent: "team_addresses", addresses: "not an address" })).toMatchObject({ ok: false });
+    expect(await post({ intent: "team_addresses", addresses: "alerts@setustore.test, ops@setustore.test" })).toMatchObject({ ok: true });
+    expect((await call(mailPage.loader, "/app/mail?view=team")).numbers.team).toEqual(["alerts@setustore.test", "ops@setustore.test"]);
+    const enabled = async (key: string) => (await call(mailPage.loader, "/app/mail")).templates.find((t: { key: string }) => t.key === key).enabled;
+    expect(await post({ intent: "template_off", template: "order_new" })).toMatchObject({ ok: true, key: "order_new" });
+    expect(await enabled("order_new")).toBe(false);
+    expect(await post({ intent: "template_on", template: "order_new" })).toMatchObject({ ok: true });
+    expect(await enabled("order_new")).toBe(true);
+    expect(await post({ intent: "template_off", template: "password_reset" })).toMatchObject({ ok: false });
+    expect(await enabled("password_reset")).toBe(true);
+    expect(await post({ intent: "something_else" })).toMatchObject({ ok: false, error: "Unknown action" });
+    const said = (await db.auditLog.findMany({ where: { shop, action: { startsWith: "mail." } }, orderBy: { at: "asc" } })).map((a) => [a.action, a.actor]);
+    expect(said).toEqual([["mail.team_addresses_updated", "admin:team@setustore.test"], ["mail.template_off", "admin:team@setustore.test"], ["mail.template_on", "admin:team@setustore.test"]]);
+  });
+
+  it("a test from the page is written to the log and held back here; the log can send a held-back mail again", async () => {
+    const r = await post({ intent: "test", template: "order_new", to: "me@setustore.test" });
+    expect(r).toMatchObject({ ok: false, key: "order_new", error: expect.stringContaining("wasn't really sent") });
+    const log = await call(mailPage.loader, "/app/mail?view=log&to=me@setustore.test");
+    expect(log.log.rows).toHaveLength(1);
+    expect(log.log.rows[0]).toMatchObject({ subject: "Test: New order #1042 for Ashnur", status: "logged", canSendAgain: true });
+    expect(await post({ intent: "send_again", id: log.log.rows[0].id })).toMatchObject({ ok: true });
+    expect(await post({ intent: "send_again", id: "nope" })).toMatchObject({ ok: false });
+    expect((await call(mailPage.loader, "/app/mail?view=log&status=queued")).log.total).toBeGreaterThanOrEqual(1);
+  });
+
+  it("an order webhook mails the vendor's team once the order is copied", async () => {
+    await db.mailMessage.deleteMany({ where: { shop } });
+    const fresh = orders();
+    for (const o of fresh) o.createdAt = new Date().toISOString();
+    who.orders = fresh;
+    const order = fresh[0]; // #1001, Urban Store only
+    await db.vendorOrderLine.deleteMany({ where: { shop, orderId: BigInt(order.id.split("/").pop()!) } });
+    const urban = await db.vendor.upsert({ where: { shop_vendorName: { shop, vendorName: "Urban Store" } }, create: { shop, vendorName: "Urban Store", displayName: "Urban Store" }, update: { status: "active" } });
+    await db.vendorUser.upsert({
+      where: { shop_email: { shop, email: "packer@urban.example" } },
+      create: { shop, vendorId: urban.id, email: "packer@urban.example", name: "Packer", status: "active", role: "staff", access: "view" },
+      update: { status: "active", vendorId: urban.id },
+    });
+    who.webhook = { shop, topic: "ORDERS_CREATE", payload: { id: Number(order.id.split("/").pop()), admin_graphql_api_id: order.id } };
+    await call(webhook.action, "/webhooks/orders", {});
+    await drainOrderQueue(shop);
+    who.webhook = { shop, topic: "ORDERS_UPDATED", payload: { id: Number(order.id.split("/").pop()), admin_graphql_api_id: order.id } };
+    await call(webhook.action, "/webhooks/orders", {});
+    await drainOrderQueue(shop);
+    const sent = await db.mailMessage.findMany({ where: { shop, template: "order_new", toEmail: "packer@urban.example" } });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ subject: "New order #1001 for Urban Store", status: "queued", vendorId: urban.id });
+    who.orders = orders();
   });
 });

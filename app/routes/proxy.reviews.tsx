@@ -137,6 +137,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const r = await submitReview(db, c.shop, { vendorId: vendor.id, customerId: c.customerId, orderIds: orders, buyerLocation, rating: f("rating"), comment: f("comment"), authorName: f("name"), productIds: form.getAll("item").filter((v): v is string => typeof v === "string") });
   if (!r.ok) return json(r, 422);
   // The rating shown on the store follows. If this fails the review is still saved; the team sees why on the vendor page.
-  void updateStoreListing(db, c.shop, vendor.id).catch(() => {});
+  void updateStoreListing(db, c.shop, vendor.id, { alert: true }).catch(() => {});
   return json({ ok: true, replaced: r.replaced });
 };

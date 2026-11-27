@@ -5,8 +5,15 @@ import { createReadableStreamFromReadable } from "@react-router/node";
 import { type EntryContext } from "react-router";
 import { isbot } from "isbot";
 import { addDocumentResponseHeaders } from "./shopify.server";
+import db from "./db.server";
+import { startMailClock } from "./lib/mail/daily.server";
+import { kick } from "./lib/mail/queue.server";
 
 export const streamTimeout = 5000;
+
+// Mail: send anything left waiting from before a restart, and start the daily checks.
+kick(db);
+startMailClock(db);
 
 export default async function handleRequest(
   request: Request,

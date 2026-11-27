@@ -38,7 +38,7 @@ Custom Shopify app that will give Setu Store's vendors a secure place to see the
 
 ## The app in Shopify admin
 
-Four pages, each laid out the same way: tabs under the title, the main numbers, then tables.
+Five pages, each laid out the same way: tabs under the title, the main numbers, then tables.
 
 | Page | Route | What is there |
 |---|---|---|
@@ -46,6 +46,7 @@ Four pages, each laid out the same way: tabs under the title, the main numbers, 
 | **Vendors** | `/app/vendors`, `/app/signups`, `/app/vendor?name=` | Tabs: *All vendors* (owner, people, commission, minimum order, processing time, rating, net sales, status, what needs attention; search), *Needs attention*, *Sign-ups* (approve or decline), *Without portal access* (Shopify vendors with orders but no account). *Tools*: update all store listings, the portal sign-in page. One vendor's page holds its people, commission, details, store listing, reviews and order lines. |
 | **Shipping and orders** | `/app/orders` | Tabs: *Shipping* (waiting to ship by vendor, the store's delivery time, each seller's processing time and total), *Sales by vendor*, *Order sync*. |
 | **Reviews** | `/app/reviews` | Tabs: *All reviews* (every seller; narrow by seller, status or stars; hide with a reason, show again), *By seller* (rating and counts). |
+| **Mail** | `/app/mail` | Tabs: *Mails* (every mail the app sends: when, to whom, on or off, its words, send a test), *Log* (every mail and what happened to it; send again), *Team addresses* (who gets the team's mails). |
 
 Shared pieces (tabs, number tiles, the review row) are in `app/lib/admin/ui.tsx`; the Dashboard's data in `app/lib/admin/dashboard.server.ts`.
 `tests/admin.render.db.test.ts` draws every page from its real loader data and writes plain-HTML copies to `.cache/admin-preview/`.
@@ -94,6 +95,20 @@ Buyers rate a seller from 1 to 5 stars, with an optional comment. Code: `app/lib
 - **Shopify app:** the vendor page lists the reviews; the team can hide one with a reason (the seller sees the reason) or show it again. Hidden reviews aren't counted. The **Reviews** page lists every seller's reviews with the same controls; *Vendors* shows each rating.
 - **Store listing:** the average and the number of reviews are copied to the seller's Marketplace seller entry (`rating`, `review_count`) for the theme.
 - **Not built yet:** the storefront form where buyers leave a review. Until then, `npm run reviews:sample` adds clearly labelled sample reviews on the development store only (`npm run reviews:sample -- remove` takes them out).
+
+## Mail
+
+The app mails sellers and the Setu Store team when something happens. Code: `app/lib/mail/`.
+
+- **Service:** [Resend](https://resend.com). Mails come from `PORTAL_EMAIL_FROM`; replies go to `PORTAL_EMAIL_REPLY_TO`.
+- **The mails:** all in one file, `templates.ts`: who each is for, when it goes out, its words and an example. To sellers: account (sign-up received / approved / declined, added by the team, staff invite, password reset, password changed, sign-in paused, access changed, vendor paused / active), profile (business change sent / approved / declined, details changed by the team, commission rate), orders (new order, order changed, order not shipped in time) and reviews (new, hidden, shown again). To the team: sign-up waiting, business change waiting, low review, orders past their processing time, and what broke (orders stopped copying, store update failed, a seller's address bouncing).
+- **Order mails:** one mail per order per vendor, to everyone active on that vendor's team, listing only that vendor's items and quantities. Sent when Shopify reports the order (the webhook path); a full resync mails nobody. A change (cancelled, refunded, items edited) mails once per change; marking as shipped mails nobody.
+- **What mails never contain:** order totals, the buyer's name, email, phone or address. Password-reset and invite links are sent but never kept in the log.
+- **Queue:** `queueMail` writes the mail and returns; a timer hands waiting mails to Resend every minute. A mail that fails for a passing reason is tried again after 1, 5, 30 and 120 minutes, then marked failed (the Dashboard shows an alert; *Mail → Log* can send it again). The same event never mails the same address twice.
+- **Daily check** (from 9:00 India time): orders still unshipped after the vendor's processing time remind that vendor once per order and go to the team as one list. Mails older than 180 days leave the log.
+- **Development stores can't mail real people.** Without `RESEND_API_KEY` nothing is sent: mails are only kept in the log ("Not sent"). With a key, outside production mail goes only to the addresses or `@domains` in `MAIL_ONLY_TO`; everything else stays in the log. Leave `MAIL_ONLY_TO` empty in production to send to everyone.
+- **Delivered / Bounced:** add a webhook in Resend pointing at `https://<app address>/webhooks/resend` (events: delivered, bounced, failed, complained) and put its signing secret in `RESEND_WEBHOOK_SECRET`. Unsigned reports are refused.
+- **Team addresses** are entered on *Mail → Team addresses* in the app, not in code or environment variables.
 
 ## Vendor details on the storefront (product page)
 

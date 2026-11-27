@@ -1,62 +1,41 @@
+import type { PrismaClient } from "@prisma/client";
+import { sendSecret } from "../mail/queue.server";
+import type { Env } from "../mail/transport.server";
+
 /**
- * Emails from the vendor portal.
+ * The two portal mails that carry a one-time link: password reset and staff
+ * invite. They go out at once (the person is waiting) through the same mail
+ * service and log as every other mail (app/lib/mail), but the log never keeps
+ * the link.
  *
- * - With RESEND_API_KEY and PORTAL_EMAIL_FROM set: sent through Resend (https://resend.com).
- * - Without them, outside production: printed in the `npm run dev` output, and
- *   (with PORTAL_DEV_SHOW_EMAILS=true) also shown on the page that sent them,
- *   because the Shopify CLI terminal doesn't always display app output.
- * - Without them in production: refused, so links are never only logged in production.
- *
- * Emails carry no order or customer data.
+ * When the mail can't really be sent (no mail service, or the address isn't
+ * on the test list):
+ *  - outside production the link is printed in the `npm run dev` output, and
+ *    with PORTAL_DEV_SHOW_EMAILS=true also shown on the page that sent it,
+ *    because the Shopify CLI terminal doesn't always display app output;
+ *  - in production it is refused, so a link is never only logged in production.
  */
 
-type Env = Record<string, string | undefined>;
-
+/** Whether a link that wasn't really mailed may be shown on the page. Never in production. */
 export function showDevEmailsOnPage(env: Env = process.env) {
-  return env.NODE_ENV !== "production" && env.PORTAL_DEV_SHOW_EMAILS === "true" && !(env.RESEND_API_KEY && env.PORTAL_EMAIL_FROM);
+  return env.NODE_ENV !== "production" && env.PORTAL_DEV_SHOW_EMAILS === "true";
 }
 
 export type Sent = { delivered: "email" | "console"; devPreview?: { subject: string; link?: string } };
 
-async function send(to: string, subject: string, text: string, link: string | undefined, env: Env): Promise<Sent> {
-  if (env.RESEND_API_KEY && env.PORTAL_EMAIL_FROM) {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from: env.PORTAL_EMAIL_FROM, to: [to], subject, text }),
-    });
-    if (!res.ok) throw new Error(`Email provider refused the message (${res.status})`);
-    return { delivered: "email" };
-  }
-  if (env.NODE_ENV === "production") throw new Error("No email provider configured (RESEND_API_KEY, PORTAL_EMAIL_FROM)");
-  console.log(`\n[vendor-portal] DEV ONLY – email to ${to}: ${subject}${link ? `\n  ${link}` : ""}\n`);
-  return { delivered: "console", ...(showDevEmailsOnPage(env) ? { devPreview: { subject, link } } : {}) };
+type Target = { shop: string; to: string; name: string | null; vendorId?: string | null };
+
+async function finish(r: { delivered: boolean; note: string | null; subject: string; link: string | null }, to: string, env: Env): Promise<Sent> {
+  if (r.delivered) return { delivered: "email" };
+  if (env.NODE_ENV === "production") throw new Error(r.note ?? "The mail couldn't be sent");
+  console.log(`\n[vendor-portal] DEV ONLY – email to ${to}: ${r.subject}${r.link ? `\n  ${r.link}` : ""}\n`);
+  return { delivered: "console", ...(showDevEmailsOnPage(env) ? { devPreview: { subject: r.subject, link: r.link ?? undefined } } : {}) };
 }
 
-export function sendPasswordReset(to: string, name: string | null, link: string, env: Env = process.env) {
-  const text = [
-    `Hello${name ? ` ${name}` : ""},`,
-    "",
-    "Someone asked to reset the password for your Setu Store vendor portal account.",
-    "Open this link to choose a new password. It works once and expires in 30 minutes:",
-    "",
-    link,
-    "",
-    "If you didn't ask for this, you can ignore this email; your password stays the same.",
-  ].join("\n");
-  return send(to, "Reset your Setu Store vendor portal password", text, link, env);
+export async function sendPasswordReset(db: PrismaClient, t: Target, link: string, env: Env = process.env) {
+  return finish(await sendSecret(db, t.shop, "password_reset", { email: t.to, name: t.name }, { link }, { vendorId: t.vendorId, env }), t.to, env);
 }
 
-export function sendStaffInvite(to: string, name: string | null, brand: string, invitedBy: string, link: string, env: Env = process.env) {
-  const text = [
-    `Hello${name ? ` ${name}` : ""},`,
-    "",
-    `${invitedBy} added you to ${brand}'s team on the Setu Store vendor portal.`,
-    "Open this link to choose your password. It works once and expires in 7 days:",
-    "",
-    link,
-    "",
-    "After that, sign in with this email address. If the link expires, use “Forgot password” on the sign-in page.",
-  ].join("\n");
-  return send(to, `Join ${brand} on the Setu Store vendor portal`, text, link, env);
+export async function sendStaffInvite(db: PrismaClient, t: Target, brand: string, invitedBy: string, link: string, env: Env = process.env) {
+  return finish(await sendSecret(db, t.shop, "staff_invite", { email: t.to, name: t.name }, { brand, invitedBy, link }, { vendorId: t.vendorId, env }), t.to, env);
 }

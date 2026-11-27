@@ -1,6 +1,7 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { PHONE } from "../portal/auth.server";
 import { isValidEmail, normaliseEmail } from "./vendors.server";
+import { accessSentence, mailAccessChanged, mailChangeDecided, mailChangeSubmitted, mailDetailsChangedByTeam } from "../mail/notify.server";
 
 /**
  * Who may change what, for one vendor.
@@ -193,6 +194,8 @@ export async function requestBusinessChange(db: PrismaClient, me: Me, raw: Input
     await db.vendorChangeRequest.create({ data: { shop: me.shop, vendorId: me.vendor.id, requestedById: me.user.id, changes: changes as Prisma.InputJsonValue } });
   }
   await db.auditLog.create({ data: { shop: me.shop, actor: `portal:${me.user.email}`, action: "vendor.business_change_requested", target: `vendor:${me.vendor.id}`, detail: { fields: Object.keys(changes) } } });
+  // An edit to a request that is already waiting tells nobody again.
+  if (!pending) await mailChangeSubmitted(db, me.shop, me.vendor.id, current.displayName || current.vendorName, me.user.email, Object.keys(changes));
   return { ok: true };
 }
 
@@ -298,6 +301,7 @@ export async function ownerUpdateStaff(db: PrismaClient, me: Me, userId: string,
     ...(data.status === "disabled" ? [db.portalSession.updateMany({ where: { vendorUserId: u.id, revokedAt: null }, data: { revokedAt: new Date() } })] : []),
     db.auditLog.create({ data: { shop: me.shop, actor: `portal:${me.user.email}`, action: "vendor_user.staff_updated", target: `vendor:${me.vendor.id}`, detail: { email: u.email, ...change } } }),
   ]);
+  await tellAccessChange(db, me.shop, u, data);
   return { ok: true };
 }
 
@@ -311,7 +315,30 @@ export async function ownerRemoveStaff(db: PrismaClient, me: Me, userId: string)
     db.vendorUser.delete({ where: { id: u.id } }),
     db.auditLog.create({ data: { shop: me.shop, actor: `portal:${me.user.email}`, action: "vendor_user.staff_removed", target: `vendor:${me.vendor.id}`, detail: { email: u.email } } }),
   ]);
+  if (u.status === "active" || u.status === "invited") {
+    const brand = await brandOf(db, me.vendor.id);
+    await mailAccessChanged(db, me.shop, me.vendor.id, brand, u, `Your access to ${brand} on the vendor portal was removed. You can no longer sign in.`);
+  }
   return { ok: true };
+}
+
+async function brandOf(db: PrismaClient, vendorId: string) {
+  const v = await db.vendor.findUnique({ where: { id: vendorId }, select: { displayName: true, vendorName: true } });
+  return v?.displayName || v?.vendorName || "your brand";
+}
+
+/** Mails a person when their status, role or access was changed by someone else. */
+async function tellAccessChange(
+  db: PrismaClient, shop: string,
+  u: { email: string; name: string | null; vendorId: string | null; status: string; role: string; access: string },
+  data: { status?: unknown; role?: unknown; access?: unknown },
+) {
+  if (!u.vendorId) return;
+  const brand = await brandOf(db, u.vendorId);
+  // "Invited" after a deactivation means active again for someone who hasn't set a password yet.
+  const status = data.status === "invited" && u.status === "disabled" ? "active" : (data.status as string | undefined);
+  const sentence = accessSentence(brand, u, { status, role: data.role as string | undefined, access: data.access as string | undefined });
+  if (sentence) await mailAccessChanged(db, shop, u.vendorId, brand, u, sentence);
 }
 
 // ---------------------------------------------------------------------------
@@ -343,6 +370,7 @@ export async function adminUpdateUser(
     ...(endsAccess ? [db.portalSession.updateMany({ where: { vendorUserId: u.id, revokedAt: null }, data: { revokedAt: new Date() } })] : []),
     db.auditLog.create({ data: { shop, actor, action: "vendor_user.updated", target: `vendor:${u.vendorId}`, detail: { email: u.email, ...change } } }),
   ]);
+  await tellAccessChange(db, shop, u, data);
   return { ok: true };
 }
 
@@ -370,6 +398,7 @@ export async function reviewBusinessChange(
     await deleteFilesIfUnused(db, r.vendorId, BUSINESS_FILES.filter((f) => changes[f]).map((f) => current[f]));
   }
   await db.auditLog.create({ data: { shop, actor, action: `vendor.business_change_${decision === "approve" ? "approved" : "rejected"}`, target: `vendor:${r.vendorId}` } });
+  await mailChangeDecided(db, shop, r.vendorId, decision === "approve", reviewed.note);
   return { ok: true };
 }
 
@@ -388,6 +417,9 @@ export async function adminUpdateDetails(db: PrismaClient, shop: string, vendorI
   for (const f of BUSINESS_TEXT) data[f] = textOrNull(s.v[f]);
   await db.vendor.update({ where: { id: vendor.id }, data });
   await db.auditLog.create({ data: { shop, actor, action: "vendor.details_updated_by_team", target: `vendor:${vendor.id}` } });
+  const before = vendor as unknown as Record<string, unknown>;
+  const same = (a: unknown, b: unknown) => (Array.isArray(a) || Array.isArray(b) ? JSON.stringify(a ?? []) === JSON.stringify(b ?? []) : (a ?? null) === (b ?? null));
+  if (Object.keys(data).some((k) => !same(before[k], data[k]))) await mailDetailsChangedByTeam(db, shop, vendor.id);
   return { ok: true };
 }
 
